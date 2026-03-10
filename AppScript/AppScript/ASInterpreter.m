@@ -290,19 +290,27 @@
         [argValues addObject:argValue ?: [NSNull null]];
     }
 
-    // Get method signature. Handle class objects vs instance objects.
+    // Obtain the method signature by querying the runtime directly.
+    //
+    // Using -methodSignatureForSelector: would route through our own
+    // ASMethodSignatureForSelectorIMP trampoline (installed on every AppScript
+    // class and its metaclass), whose super-call path for non-AppScript
+    // selectors like +new is fragile.  Asking the runtime directly is
+    // unambiguous: class_getClassMethod for class-object receivers,
+    // class_getInstanceMethod for instance receivers.
     NSMethodSignature *sig = nil;
-    if (receiver != nil && [receiver isKindOfClass:[NSObject class]]) {
-        sig = [(NSObject *)receiver methodSignatureForSelector:sel];
-    } else if (receiver != nil) {
-        // receiver is a Class object
-        sig = [((Class)receiver) methodSignatureForSelector:sel];
-    }
-
-    if (sig == nil) {
-        // Check if the receiver itself is a class
-        if (object_getClass(receiver) == object_getClass([NSObject class])) {
-            sig = [((Class)receiver) methodSignatureForSelector:sel];
+    if (receiver != nil) {
+        BOOL receiverIsClass = class_isMetaClass(object_getClass(receiver));
+        if (receiverIsClass) {
+            Method m = class_getClassMethod((Class)receiver, sel);
+            if (m) {
+                sig = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(m)];
+            }
+        } else {
+            Method m = class_getInstanceMethod(object_getClass(receiver), sel);
+            if (m) {
+                sig = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(m)];
+            }
         }
     }
 
