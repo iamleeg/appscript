@@ -109,7 +109,11 @@ static Class ASFindMethodMapClassForSelector(Class startClass, NSString *selecto
 }
 
 static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) {
-    Class cls = object_getClass(self);
+    // When self is a class object (class-method dispatch), object_getClass(self) is the
+    // metaclass — but the method map is stored on the class object itself, so use self
+    // directly as the lookup start.
+    BOOL isClassDispatch = class_isMetaClass(object_getClass(self));
+    Class cls = isClassDispatch ? (Class)self : object_getClass(self);
     NSString *selectorString = NSStringFromSelector(invocation.selector);
 
     // Walk the class hierarchy to find which class installed this method.
@@ -160,7 +164,8 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 // ---------------------------------------------------------------------------
 
 static NSMethodSignature *ASMethodSignatureForSelectorIMP(id self, SEL _cmd, SEL selector) {
-    Class cls = object_getClass(self);
+    BOOL isClassDispatch = class_isMetaClass(object_getClass(self));
+    Class cls = isClassDispatch ? (Class)self : object_getClass(self);
     NSString *selectorString = NSStringFromSelector(selector);
 
     // Walk the class hierarchy to find which class installed this method.
@@ -324,8 +329,10 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
         }
     }
 
-    // 5. Install forwardInvocation: and methodSignatureForSelector: overrides.
+    // 5. Install forwardInvocation: and methodSignatureForSelector: overrides on both
+    //    the class (for instance methods) and its metaclass (for class methods).
     [self installForwardingOverridesOnClass:newClass];
+    [self installForwardingOverridesOnClass:object_getClass(newClass)];
 
     // 6. Build the per-class method map (selector string → ASMethodNode).
     NSMutableDictionary<NSString *, ASMethodNode *> *methodMap = [NSMutableDictionary dictionary];
@@ -459,7 +466,10 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     NSUInteger paramCount = methodNode.parameterNames.count;
     const char *encoding = ASTypeEncodingForParamCount(paramCount);
     SEL sel = NSSelectorFromString(methodNode.selector);
-    class_addMethod(cls, sel, (IMP)_objc_msgForward, encoding);
+    // Class methods must be installed on the metaclass so the ObjC runtime finds them
+    // when the selector is sent to the class object itself.
+    Class targetClass = methodNode.isClassMethod ? object_getClass(cls) : cls;
+    class_addMethod(targetClass, sel, (IMP)_objc_msgForward, encoding);
 }
 
 // ---------------------------------------------------------------------------
