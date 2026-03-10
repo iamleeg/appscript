@@ -88,6 +88,16 @@
 /// Evaluates an expression node and returns its value.
 - (nullable id)evaluateExpression:(ASASTNode *)node context:(ASExecutionContext *)ctx;
 
+/// Executes a block body in a child scope with the given arguments bound to paramNames.
+/// Returns the block's return value (nil if no return statement was reached).
+- (nullable id)executeBlockBody:(NSArray<ASASTNode *> *)body
+                    parentScope:(ASScope *)parentScope
+                     scriptPath:(NSString *)scriptPath
+                      weakNames:(NSMutableSet<NSString *> *)weakNames
+                  constantNames:(NSMutableSet<NSString *> *)constantNames
+                      arguments:(NSArray *)arguments
+                     paramNames:(NSArray<NSString *> *)paramNames;
+
 /// Reports a runtime error and aborts.
 - (void)reportError:(NSString *)message
                node:(nullable ASASTNode *)node
@@ -348,6 +358,32 @@
 // Block literal
 // ---------------------------------------------------------------------------
 
+- (nullable id)executeBlockBody:(NSArray<ASASTNode *> *)body
+                    parentScope:(ASScope *)parentScope
+                     scriptPath:(NSString *)scriptPath
+                      weakNames:(NSMutableSet<NSString *> *)weakNames
+                  constantNames:(NSMutableSet<NSString *> *)constantNames
+                      arguments:(NSArray *)arguments
+                     paramNames:(NSArray<NSString *> *)paramNames {
+    ASScope *blockScope = [[ASScope alloc] initWithEnclosingScope:parentScope];
+    NSUInteger bindCount = MIN(paramNames.count, arguments.count);
+    for (NSUInteger i = 0; i < bindCount; i++) {
+        id val = arguments[i];
+        [blockScope setValue:(val == [NSNull null] ? nil : val) forName:paramNames[i]];
+    }
+    ASExecutionContext *blockCtx = [[ASExecutionContext alloc] initWithScope:blockScope
+                                                                  scriptPath:scriptPath];
+    blockCtx.weakNames = weakNames;
+    blockCtx.constantNames = constantNames;
+    for (ASASTNode *statement in body) {
+        [self executeStatement:statement context:blockCtx];
+        if (blockCtx.didReturn) {
+            break;
+        }
+    }
+    return blockCtx.returnValue;
+}
+
 - (id)evaluateBlockLiteral:(ASBlockLiteralNode *)node context:(ASExecutionContext *)ctx {
     // Capture what we need by value so the block remains valid after this stack frame.
     NSArray<NSString *> *paramNames = node.parameterNames;
@@ -358,28 +394,69 @@
     NSMutableSet<NSString *> *capturedConstantNames = [ctx.constantNames mutableCopy];
     ASInterpreter *interpreter = self;
 
-    id (^block)(void) = ^id(void) {
-        // Create a child scope extending the captured scope.
-        ASScope *blockScope = [[ASScope alloc] initWithEnclosingScope:capturedScope];
-        ASExecutionContext *blockCtx = [[ASExecutionContext alloc] initWithScope:blockScope
-                                                                     scriptPath:scriptPath];
-        blockCtx.weakNames = capturedWeakNames;
-        blockCtx.constantNames = capturedConstantNames;
+    // Create an arity-specific ObjC block so that argument passing works correctly
+    // when native Objective-C code invokes the block with the expected number of
+    // arguments.  All AppScript block parameters are `id`.
+    NSUInteger paramCount = paramNames.count;
 
-        for (ASASTNode *statement in body) {
-            [interpreter executeStatement:statement context:blockCtx];
-            if (blockCtx.didReturn) {
-                break;
-            }
-        }
-        return blockCtx.returnValue;
+    if (paramCount == 0) {
+        id (^block)(void) = ^id {
+            return [interpreter executeBlockBody:body parentScope:capturedScope
+                                      scriptPath:scriptPath weakNames:capturedWeakNames
+                                  constantNames:capturedConstantNames
+                                      arguments:@[] paramNames:paramNames];
+        };
+        return [block copy];
+    }
+
+    if (paramCount == 1) {
+        NSString *p0 = paramNames[0];
+        id (^block)(id) = ^id(id a0) {
+            return [interpreter executeBlockBody:body parentScope:capturedScope
+                                      scriptPath:scriptPath weakNames:capturedWeakNames
+                                  constantNames:capturedConstantNames
+                                      arguments:@[a0 ?: [NSNull null]]
+                                     paramNames:@[p0]];
+        };
+        return [block copy];
+    }
+
+    if (paramCount == 2) {
+        NSString *p0 = paramNames[0], *p1 = paramNames[1];
+        id (^block)(id, id) = ^id(id a0, id a1) {
+            return [interpreter executeBlockBody:body parentScope:capturedScope
+                                      scriptPath:scriptPath weakNames:capturedWeakNames
+                                  constantNames:capturedConstantNames
+                                      arguments:@[a0 ?: [NSNull null], a1 ?: [NSNull null]]
+                                     paramNames:@[p0, p1]];
+        };
+        return [block copy];
+    }
+
+    if (paramCount == 3) {
+        NSString *p0 = paramNames[0], *p1 = paramNames[1], *p2 = paramNames[2];
+        id (^block)(id, id, id) = ^id(id a0, id a1, id a2) {
+            return [interpreter executeBlockBody:body parentScope:capturedScope
+                                      scriptPath:scriptPath weakNames:capturedWeakNames
+                                  constantNames:capturedConstantNames
+                                      arguments:@[a0 ?: [NSNull null], a1 ?: [NSNull null],
+                                                  a2 ?: [NSNull null]]
+                                     paramNames:@[p0, p1, p2]];
+        };
+        return [block copy];
+    }
+
+    // Four-parameter blocks cover all common Foundation patterns.
+    NSString *p0 = paramNames[0], *p1 = paramNames[1];
+    NSString *p2 = paramNames[2], *p3 = paramNames[3];
+    id (^block)(id, id, id, id) = ^id(id a0, id a1, id a2, id a3) {
+        return [interpreter executeBlockBody:body parentScope:capturedScope
+                                  scriptPath:scriptPath weakNames:capturedWeakNames
+                              constantNames:capturedConstantNames
+                                  arguments:@[a0 ?: [NSNull null], a1 ?: [NSNull null],
+                                              a2 ?: [NSNull null], a3 ?: [NSNull null]]
+                                 paramNames:@[p0, p1, p2, p3]];
     };
-
-    // Suppress unused-variable warning for paramNames — block parameters in AppScript
-    // are bound via NSInvocation at call sites that know the parameter names; in the
-    // zero-arg block representation they are not used directly here.
-    (void)paramNames;
-
     return [block copy];
 }
 

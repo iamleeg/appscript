@@ -240,3 +240,20 @@ This method searches for `*.appscript` files in the bundle, searches the files f
 If the interpreter encounters an error while executing an AppScript method, it must output information about the error including the AppScript file path and line number where the error occurred, then crash the application.
 
 AppScript uses Objective-C ARC to manage memory. The interpreter can be active on multiple threads simultaneously, and can execute code that causes operations on different threads; for example, a script can call `-[NSObject performSelectorOnMainThread:]`.
+
+### Block implementation
+
+When the interpreter evaluates a block literal such as `^(a b) { return [a compare:b] }`, it creates an Objective-C block whose arity matches the number of declared parameters. The interpreter supports blocks with zero to four parameters; blocks with more parameters produce a runtime error. All parameters and the return value are typed as `id`.
+
+The parameter names, body AST, and captured scope chain are closed over by the block at creation time, so no additional storage (such as associated objects on the block instance) is necessary. When the block is invoked by Objective-C code, the received arguments are bound into a new child scope under the captured scope, and the body is executed.
+
+Because all AppScript blocks return `id`, there is a mismatch when a native Objective-C API expects a block that returns a C primitive type. For example, `sortedArrayUsingComparator:` expects a block returning `NSComparisonResult` (an `NSInteger`), not an `id`. The AppScript runtime provides `as_`-prefixed adaptor methods on Foundation classes to bridge this gap:
+
+```objc
+@interface NSArray (AppScriptBlocks)
+/// Returns the array sorted using a comparator block that returns NSComparisonResult as an NSNumber.
+- (NSArray *)as_sortedArrayUsingBlock:(id (^)(id, id))comparatorBlock;
+@end
+```
+
+AppScript code calls `as_sortedArrayUsingBlock:` instead of `sortedArrayUsingComparator:` and returns the result of `[a compare:b]` directly — the runtime adaptor unboxes the `NSNumber` return value to `NSComparisonResult` before forwarding to Foundation.

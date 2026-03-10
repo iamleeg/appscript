@@ -72,6 +72,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			publicHeaders = (
 				AppScript.h,
+				"NSArray+AppScriptBlocks.h",
 				"NSBundle+AppScriptLoading.h",
 			);
 			target = 980EBA002F5F35DD0023077B /* AppScript */;
@@ -160,6 +161,7 @@
 				980EBA3C2F5F36230023077B /* AppScriptHarnessUITests */,
 				98ACC1E22F5F369A0063EA86 /* Frameworks */,
 				980EBA022F5F35DD0023077B /* Products */,
+				98F04B0E2F60544B0081BDAF /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -182,6 +184,14 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		98F04B0E2F60544B0081BDAF /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				98SCRIPTS12F5F36220023077B /* Scripts */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -193,7 +203,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXHeadersBuildPhase section */
-
 
 /* Begin PBXNativeTarget section */
 		980EBA002F5F35DD0023077B /* AppScript */ = {

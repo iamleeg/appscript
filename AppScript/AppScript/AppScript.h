@@ -22,3 +22,4 @@ FOUNDATION_EXPORT double AppScriptVersionNumber;
 FOUNDATION_EXPORT const unsigned char AppScriptVersionString[];
 
 #import <AppScript/NSBundle+AppScriptLoading.h>
+#import <AppScript/NSArray+AppScriptBlocks.h>
