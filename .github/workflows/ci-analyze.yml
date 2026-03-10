@@ -1,0 +1,21 @@
+name: CI – Static Analyzer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  analyze:
+    name: Clang static analyzer
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Analyze
+        run: |
+          xcodebuild analyze \
+            -project AppScript/AppScript.xcodeproj \
+            -scheme AppScript \
+            -configuration Debug \
+            | xcpretty && exit ${PIPESTATUS[0]}

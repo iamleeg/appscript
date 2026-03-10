@@ -1,0 +1,24 @@
+name: CI – Thread Sanitizer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tsan:
+    name: Build and test with TSan
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test (TSan)
+        run: |
+          xcodebuild test \
+            -project AppScript/AppScript.xcodeproj \
+            -scheme AppScriptTests \
+            -configuration Debug \
+            OTHER_CFLAGS="-fsanitize=thread" \
+            OTHER_LDFLAGS="-fsanitize=thread" \
+            ENABLE_THREAD_SANITIZER=YES \
+            | xcpretty && exit ${PIPESTATUS[0]}

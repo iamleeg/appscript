@@ -1,0 +1,24 @@
+name: CI – Address Sanitizer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  asan:
+    name: Build and test with ASan
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test (ASan)
+        run: |
+          xcodebuild test \
+            -project AppScript/AppScript.xcodeproj \
+            -scheme AppScriptTests \
+            -configuration Debug \
+            OTHER_CFLAGS="-fsanitize=address" \
+            OTHER_LDFLAGS="-fsanitize=address" \
+            ENABLE_ADDRESS_SANITIZER=YES \
+            | xcpretty && exit ${PIPESTATUS[0]}
