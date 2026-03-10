@@ -1,0 +1,22 @@
+@class MessageSendsTest : NSObject
+
+- runTests {
+    // Unary message send to an Objective-C object
+    id str = @"hello world"
+    id upper = [str uppercaseString]
+
+    // Keyword message send
+    id appended = [upper stringByAppendingString:@"!"]
+
+    // Multi-keyword message send; NSString rangeOfString:options: uses a C integer
+    // for options — the runtime auto-unboxes the NSNumber to NSStringCompareOptions.
+    id sub = @"HELLO"
+    id found = [upper hasPrefix:sub]
+
+    id result = [NSMutableArray array]
+    [result addObject:appended]
+    [result addObject:found]
+    return result
+}
+
+@end

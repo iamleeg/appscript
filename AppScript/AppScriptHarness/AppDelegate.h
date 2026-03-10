@@ -17,15 +17,13 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <Cocoa/Cocoa.h>
-#import <AppScript/NSBundle+AppScriptLoading.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
 /// Application delegate for the AppScriptHarness integration test runner.
 ///
-/// Loads all `.as` test scripts from the app bundle, runs each test class,
-/// compares results to `.expected` files, then exits with code 0 (all pass)
-/// or 1 (any failure).
+/// Creates and shows the `ASHarnessWindowController` on launch, then
+/// triggers an initial test run so results are visible immediately.
 @interface AppDelegate : NSObject <NSApplicationDelegate>
 @end
 

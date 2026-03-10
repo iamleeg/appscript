@@ -1,0 +1,26 @@
+@class DoUntilTest : NSObject
+
+- runTests {
+    // do:until: runs the body at least once, then stops when testBlock returns truthy.
+    id count = 0
+    [self do:^{
+        count = [count numberByAdding:1]
+    } until:^{
+        return [count isEqual:3]
+    }]
+
+    // do:while: does NOT run when condition is immediately false; verify unchanged value.
+    id neverRan = YES
+    [self do:^{
+        neverRan = NO
+    } while:^{
+        return NO
+    }]
+
+    id result = [NSMutableArray array]
+    [result addObject:count]
+    [result addObject:neverRan]
+    return result
+}
+
+@end

@@ -1,0 +1,23 @@
+@class ReturnValuesTest : NSObject
+
+@property steps
+
+- init {
+    // init returns self — the standard initialiser pattern.
+    [self setSteps:[NSMutableArray array]]
+    return self
+}
+
+- addStep: label {
+    // Returning self enables message chaining.
+    [[self steps] addObject:label]
+    return self
+}
+
+- runTests {
+    // Chain two calls; both must execute and be recorded in order.
+    [[self addStep:@"first"] addStep:@"second"]
+    return [self steps]
+}
+
+@end

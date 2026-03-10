@@ -1,0 +1,26 @@
+@class ImplicitVars : NSObject
+
+- checkCmd {
+    // _cmd is the current selector as a string, implicitly in scope.
+    return _cmd
+}
+
+@end
+
+@class ImplicitVarsTest : NSObject
+
+- runTests {
+    // self is the receiver; verify it is the expected class.
+    id selfClass = NSStringFromClass([self class])
+
+    // _cmd is the current selector string.
+    id iv = [ImplicitVars new]
+    id cmdResult = [iv checkCmd]
+
+    id result = [NSMutableArray array]
+    [result addObject:selfClass]
+    [result addObject:cmdResult]
+    return result
+}
+
+@end

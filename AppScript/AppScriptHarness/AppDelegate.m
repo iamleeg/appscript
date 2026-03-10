@@ -17,69 +17,23 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "AppDelegate.h"
+#import "ASHarnessWindowController.h"
+
+@interface AppDelegate ()
+@property (nonatomic, strong) ASHarnessWindowController *windowController;
+@end
 
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-    NSError *error = nil;
-    if (![[NSBundle mainBundle] loadAppScriptsInBundle:&error]) {
-        fprintf(stderr, "Failed to load AppScripts: %s\n", error.localizedDescription.UTF8String);
-        exit(1);
-    }
+    self.windowController = [[ASHarnessWindowController alloc] init];
+    [self.windowController showWindow:nil];
+    [self.windowController.window center];
+    [self.windowController runTests:nil];
+}
 
-    NSArray<NSURL *> *scriptURLs = [[NSBundle mainBundle] URLsForResourcesWithExtension:@"as"
-                                                                           subdirectory:@"Scripts"];
-    NSInteger passed = 0;
-    NSInteger failed = 0;
-
-    for (NSURL *scriptURL in scriptURLs) {
-        NSString *baseName = scriptURL.lastPathComponent.stringByDeletingPathExtension;
-        NSString *className = [baseName stringByAppendingString:@"Test"];
-
-        NSURL *expectedURL = [[scriptURL URLByDeletingPathExtension]
-                              URLByAppendingPathExtension:@"expected"];
-
-        Class cls = NSClassFromString(className);
-        if (cls == nil) {
-            fprintf(stdout, "FAIL: %s (class not found)\n", className.UTF8String);
-            failed++;
-            continue;
-        }
-
-        id instance = [cls new];
-        id result = [instance runTests];
-        NSString *got = [[result description]
-                         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-
-        NSError *readError = nil;
-        NSString *expectedRaw = [NSString stringWithContentsOfURL:expectedURL
-                                                         encoding:NSUTF8StringEncoding
-                                                            error:&readError];
-        if (expectedRaw == nil) {
-            fprintf(stdout, "FAIL: %s (could not read expected file: %s)\n",
-                    className.UTF8String,
-                    readError.localizedDescription.UTF8String);
-            failed++;
-            continue;
-        }
-
-        NSString *expected = [expectedRaw
-                              stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-
-        if ([got isEqualToString:expected]) {
-            fprintf(stdout, "PASS: %s\n", className.UTF8String);
-            passed++;
-        } else {
-            fprintf(stdout, "FAIL: %s (expected: \"%s\", got: \"%s\")\n",
-                    className.UTF8String,
-                    expected.UTF8String,
-                    got.UTF8String);
-            failed++;
-        }
-    }
-
-    fprintf(stdout, "%ld passed, %ld failed\n", (long)passed, (long)failed);
-    exit(failed == 0 ? 0 : 1);
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
+    return YES;
 }
 
 @end

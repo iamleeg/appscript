@@ -1,0 +1,29 @@
+@class Counter : NSObject
+
+@property count
+
++ counterStartingAt: initialValue {
+    id obj = [self new]
+    [obj setCount:initialValue]
+    return obj
+}
+
+- increment {
+    id next = [[self count] numberByAdding:1]
+    [self setCount:next]
+    return self
+}
+
+@end
+
+@class ClassMethodsTest : NSObject
+
+- runTests {
+    // Exercise the class method + to create an instance, then instance methods.
+    id c = [Counter counterStartingAt:10]
+    [c increment]
+    [c increment]
+    return [c count]
+}
+
+@end
