@@ -52,6 +52,8 @@ id array = [NSMutableArray mutableArrayWithCapacity: n] // Runtime calls [n inte
 id count = [array count] // Runtime converts return value into a NSNumber
 ```
 
+AppScript supports **only** Objective-C message sends. C functions, C operators, preprocessor macros, and inline expressions are not available. Every operation must be expressed as a message to an object. Where Objective-C programmers would normally reach for a C function (e.g. `NSStringFromClass`), use an equivalent message send instead (e.g. `[[self class] description]`). If no suitable method exists on the target class, the AppScript runtime provides one via a category on the relevant Foundation class.
+
 ### Blocks
 
 Blocks must always be declared inside a method body. `self` inside a block refers to the enclosing method's receiver, not the block itself.
