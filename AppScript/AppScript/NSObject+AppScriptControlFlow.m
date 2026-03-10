@@ -17,9 +17,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "NSObject+AppScriptControlFlow.h"
+#import "ASNull.h"
 
 static BOOL AppScriptIsFalsy(id _Nullable value) {
-    return value == nil || [value isEqual:@NO];
+    return value == nil || value == [ASNull null] || [value isEqual:@NO];
 }
 
 @implementation NSObject (AppScriptControlFlow)

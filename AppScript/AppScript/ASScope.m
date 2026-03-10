@@ -17,6 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "ASScope.h"
+#import "ASNull.h"
 
 @implementation ASScope {
     NSMutableDictionary<NSString *, id> *_bindings;
@@ -36,16 +37,16 @@
     if (value != nil) {
         return value;
     }
-    // NSNull is a valid stored value meaning "nil was explicitly set"
+    // ASNull is the sentinel meaning "nil was explicitly set in this scope frame"
     if ([_bindings objectForKey:name] != nil) {
-        return [NSNull null];
+        return [ASNull null];
     }
     return [_enclosingScope valueForName:name];
 }
 
 - (void)setValue:(nullable id)value forName:(NSString *)name {
-    if (value == nil) {
-        _bindings[name] = [NSNull null];
+    if (value == nil || value == [ASNull null]) {
+        _bindings[name] = [ASNull null];
     } else {
         _bindings[name] = value;
     }

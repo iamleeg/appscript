@@ -18,6 +18,7 @@
 
 #import "ASInterpreter.h"
 #import "ASScope.h"
+#import "ASNull.h"
 #import <objc/runtime.h>
 #import "ASBoxer.h"
 
@@ -222,7 +223,7 @@
         // Handle built-in literals expressed as identifiers.
         if ([name isEqualToString:@"YES"]) return @YES;
         if ([name isEqualToString:@"NO"])  return @NO;
-        if ([name isEqualToString:@"nil"]) return [NSNull null];
+        if ([name isEqualToString:@"nil"]) return [ASNull null];
 
         // Look up in scope chain.
         if ([ctx.currentScope hasName:name]) {
@@ -247,7 +248,9 @@
         NSMutableArray *result = [NSMutableArray arrayWithCapacity:arrayNode.elements.count];
         for (ASASTNode *element in arrayNode.elements) {
             id value = [self evaluateExpression:element context:ctx];
-            [result addObject:value ?: [NSNull null]];
+            // evaluateExpression returns [ASNull null] for AppScript nil; ObjC nil cannot
+            // be stored in NSArray, so fall back to [ASNull null] as the placeholder.
+            [result addObject:value ?: [ASNull null]];
         }
         return [result copy];
     }
@@ -257,8 +260,8 @@
         ASDictionaryLiteralNode *dictNode = (ASDictionaryLiteralNode *)node;
         NSMutableDictionary *result = [NSMutableDictionary dictionaryWithCapacity:dictNode.keys.count];
         for (NSUInteger i = 0; i < dictNode.keys.count; i++) {
-            id key   = [self evaluateExpression:dictNode.keys[i]   context:ctx] ?: [NSNull null];
-            id value = [self evaluateExpression:dictNode.values[i] context:ctx] ?: [NSNull null];
+            id key   = [self evaluateExpression:dictNode.keys[i]   context:ctx] ?: [ASNull null];
+            id value = [self evaluateExpression:dictNode.values[i] context:ctx] ?: [ASNull null];
             result[key] = value;
         }
         return [result copy];
@@ -297,7 +300,7 @@
     NSMutableArray *argValues = [NSMutableArray arrayWithCapacity:argNodes.count];
     for (ASASTNode *argNode in argNodes) {
         id argValue = [self evaluateExpression:argNode context:ctx];
-        [argValues addObject:argValue ?: [NSNull null]];
+        [argValues addObject:argValue ?: [ASNull null]];
     }
 
     // Obtain the method signature by querying the runtime directly.
@@ -339,12 +342,9 @@
 
     for (NSUInteger i = 0; i < argValues.count; i++) {
         id arg = argValues[i];
-        // Unwrap NSNull back to nil for id arguments.
-        if (arg == [NSNull null]) {
-            const char *typeEnc = [sig getArgumentTypeAtIndex:i + 2];
-            if (typeEnc && typeEnc[0] == '@') {
-                arg = nil;
-            }
+        // Unwrap ASNull (AppScript nil) to ObjC nil before native dispatch.
+        if (arg == [ASNull null]) {
+            arg = nil;
         }
         [ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv];
     }
@@ -369,7 +369,9 @@
     NSUInteger bindCount = MIN(paramNames.count, arguments.count);
     for (NSUInteger i = 0; i < bindCount; i++) {
         id val = arguments[i];
-        [blockScope setValue:(val == [NSNull null] ? nil : val) forName:paramNames[i]];
+        // ASNull means the caller passed AppScript nil; store as-is so the
+        // parameter evaluates to [ASNull null] (AppScript nil) in the block body.
+        [blockScope setValue:val forName:paramNames[i]];
     }
     ASExecutionContext *blockCtx = [[ASExecutionContext alloc] initWithScope:blockScope
                                                                   scriptPath:scriptPath];
@@ -415,7 +417,7 @@
             return [interpreter executeBlockBody:body parentScope:capturedScope
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
-                                      arguments:@[a0 ?: [NSNull null]]
+                                      arguments:@[a0 ?: [ASNull null]]
                                      paramNames:@[p0]];
         };
         return [block copy];
@@ -427,7 +429,7 @@
             return [interpreter executeBlockBody:body parentScope:capturedScope
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
-                                      arguments:@[a0 ?: [NSNull null], a1 ?: [NSNull null]]
+                                      arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null]]
                                      paramNames:@[p0, p1]];
         };
         return [block copy];
@@ -439,8 +441,8 @@
             return [interpreter executeBlockBody:body parentScope:capturedScope
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
-                                      arguments:@[a0 ?: [NSNull null], a1 ?: [NSNull null],
-                                                  a2 ?: [NSNull null]]
+                                      arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null],
+                                                  a2 ?: [ASNull null]]
                                      paramNames:@[p0, p1, p2]];
         };
         return [block copy];
@@ -453,8 +455,8 @@
         return [interpreter executeBlockBody:body parentScope:capturedScope
                                   scriptPath:scriptPath weakNames:capturedWeakNames
                               constantNames:capturedConstantNames
-                                  arguments:@[a0 ?: [NSNull null], a1 ?: [NSNull null],
-                                              a2 ?: [NSNull null], a3 ?: [NSNull null]]
+                                  arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null],
+                                              a2 ?: [ASNull null], a3 ?: [ASNull null]]
                                  paramNames:@[p0, p1, p2, p3]];
     };
     return [block copy];

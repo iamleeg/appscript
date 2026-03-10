@@ -18,6 +18,7 @@
 
 #import <XCTest/XCTest.h>
 #import <AppScript/ASInterpreter.h>
+#import <AppScript/ASNull.h>
 #import <AppScript/ASASTNode.h>
 #import <AppScript/ASReturnNode.h>
 #import <AppScript/ASVariableDeclarationNode.h>
@@ -310,6 +311,73 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                   @"count should return an NSNumber");
     XCTAssertEqual([result unsignedIntegerValue], (NSUInteger)0,
                    @"[[NSMutableArray new] count] should be 0");
+}
+
+// ---------------------------------------------------------------------------
+// 11. nil identifier evaluates to ASNull, not NSNull and not ObjC nil
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateExpression_nilIdentifier_returnsASNull {
+    // body: return nil
+    NSArray<ASASTNode *> *body = @[ returnNode(identNode(@"nil")) ];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                           selector:@"test"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    XCTAssertEqual(result, [ASNull null],
+                   @"The nil identifier should evaluate to [ASNull null]");
+    XCTAssertNotEqual(result, [NSNull null],
+                      @"The nil identifier must not evaluate to [NSNull null]");
+}
+
+// ---------------------------------------------------------------------------
+// 12. A variable assigned nil holds ASNull, not NSNull and not ObjC nil
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateExpression_variableAssignedNil_holdsASNull {
+    // body: id x = nil; return x;
+    NSArray<ASASTNode *> *body = @[
+        varDeclNode(@"x", identNode(@"nil")),
+        returnNode(identNode(@"x")),
+    ];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                           selector:@"test"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    XCTAssertEqual(result, [ASNull null],
+                   @"A variable assigned nil should evaluate to [ASNull null]");
+    XCTAssertNotEqual(result, [NSNull null],
+                      @"A variable assigned nil must not evaluate to [NSNull null]");
+}
+
+// ---------------------------------------------------------------------------
+// 13. NSNull returned from a native API is distinct from ASNull
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateExpression_nativeNSNullReturnValue_isPreserved {
+    // [NSNull null] returns [NSNull null] — a native ObjC object, not AppScript nil.
+    // body: return [NSNull null]
+    ASMessageSendNode *send = messageSendNode(identNode(@"NSNull"),
+                                              @[@"null"],
+                                              @[]);
+    NSArray<ASASTNode *> *body = @[ returnNode(send) ];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                           selector:@"test"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    XCTAssertEqual(result, [NSNull null],
+                   @"[NSNull null] from a native message send should be returned as-is");
+    XCTAssertNotEqual(result, [ASNull null],
+                      @"[NSNull null] from a native call must not be conflated with ASNull");
 }
 
 @end
