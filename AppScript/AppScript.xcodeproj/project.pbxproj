@@ -10,6 +10,7 @@
 		980EBA0D2F5F35DD0023077B /* AppScript.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 980EBA012F5F35DD0023077B /* AppScript.framework */; };
 		98ACC1E32F5F369A0063EA86 /* AppScript.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 980EBA012F5F35DD0023077B /* AppScript.framework */; };
 		98ACC1E42F5F369A0063EA86 /* AppScript.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 980EBA012F5F35DD0023077B /* AppScript.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		98SCRIPTS22F5F36220023077B /* Scripts in Resources */ = {isa = PBXBuildFile; fileRef = 98SCRIPTS12F5F36220023077B /* Scripts */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 		980EBA1F2F5F36220023077B /* AppScriptHarness.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppScriptHarness.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		980EBA2F2F5F36230023077B /* AppScriptHarnessTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppScriptHarnessTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		980EBA392F5F36230023077B /* AppScriptHarnessUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppScriptHarnessUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		98SCRIPTS12F5F36220023077B /* Scripts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Scripts; path = AppScriptHarness/Scripts; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -192,29 +194,6 @@
 		};
 /* End PBXHeadersBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		98CAFE002F5F36220023077B /* Copy Scripts */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/AppScriptHarness/Scripts",
-			);
-			name = "Copy Scripts";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Scripts",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\nmkdir -p \"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Scripts\"\nrsync -a --delete \"${SRCROOT}/AppScriptHarness/Scripts/\" \"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Scripts/\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		980EBA002F5F35DD0023077B /* AppScript */ = {
@@ -270,7 +249,6 @@
 				980EBA1B2F5F36220023077B /* Sources */,
 				980EBA1C2F5F36220023077B /* Frameworks */,
 				980EBA1D2F5F36220023077B /* Resources */,
-				98CAFE002F5F36220023077B /* Copy Scripts */,
 				98ACC1E72F5F369A0063EA86 /* Embed Frameworks */,
 			);
 			buildRules = (
@@ -405,6 +383,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				98SCRIPTS22F5F36220023077B /* Scripts in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
