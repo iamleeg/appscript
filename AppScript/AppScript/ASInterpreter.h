@@ -38,7 +38,7 @@ NS_ASSUME_NONNULL_BEGIN
 ///   - selector: The selector being invoked (available as `_cmd` inside the method).
 ///   - arguments: The (already-boxed) argument objects, parallel to the method's parameter names.
 ///   - parameterNames: The parameter variable names declared in the method signature.
-///   - scriptPath: The path of the `.as` file containing this method, for error messages.
+///   - scriptPath: The path of the `.appscript` file containing this method, for error messages.
 /// - Returns: The value returned by a `return` statement, or `nil` if the body completes without returning.
 - (nullable id)evaluateMethodBody:(NSArray<ASASTNode *> *)body
                      withReceiver:(id)receiver

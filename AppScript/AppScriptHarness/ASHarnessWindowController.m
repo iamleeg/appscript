@@ -76,7 +76,7 @@ static NSString * const kColumnActual   = @"actual";
     self.runButton = runBtn;
 
     // --- Summary label ---
-    NSTextField *summary = [NSTextField labelWithString:@"Press "Run Tests" to begin."];
+    NSTextField *summary = [NSTextField labelWithString:@"Press \"Run Tests\" to begin."];
     summary.translatesAutoresizingMaskIntoConstraints = NO;
     summary.lineBreakMode = NSLineBreakByTruncatingTail;
     [content addSubview:summary];
@@ -162,7 +162,7 @@ static NSString * const kColumnActual   = @"actual";
     }
 
     NSArray<NSURL *> *scriptURLs =
-        [[NSBundle mainBundle] URLsForResourcesWithExtension:@"as"
+        [[NSBundle mainBundle] URLsForResourcesWithExtension:@"appscript"
                                                 subdirectory:@"Scripts"];
 
     NSMutableArray<ASTestResult *> *results = [NSMutableArray array];

@@ -33,7 +33,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Executes all integration tests found in the app bundle and refreshes the table.
 ///
 /// Loads AppScript files from the bundle (if not already loaded), discovers every
-/// `.as` script in the `Scripts` subdirectory, instantiates the corresponding `*Test`
+/// `.appscript` script in the `Scripts` subdirectory, instantiates the corresponding `*Test`
 /// class, calls `-runTests`, and compares the result to the paired `.expected` file.
 - (IBAction)runTests:(nullable id)sender;
 

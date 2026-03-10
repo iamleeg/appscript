@@ -69,7 +69,7 @@ typedef NS_ENUM(NSInteger, ASRuntimeInstallerErrorCode) {
 /// - Parameters:
 ///   - nodes: The top-level AST nodes returned by `ASParser` (`ASClassDefinitionNode` and
 ///     `ASCategoryDefinitionNode`). Nodes of other types are silently ignored.
-///   - scriptPath: The path of the `.as` file containing the definitions, used in error messages.
+///   - scriptPath: The path of the `.appscript` file containing the definitions, used in error messages.
 ///   - error: On failure, set to describe the error (e.g. unknown superclass, duplicate class).
 /// - Returns: `YES` on success; `NO` if registration fails.
 - (BOOL)installNodes:(NSArray<ASASTNode *> *)nodes

@@ -4,7 +4,7 @@ Write AppScript class and category definitions and understand how they map to th
 
 ## Overview
 
-AppScript supports defining new Objective-C subclasses and categories directly in `.as` script files. ``ASRuntimeInstaller`` translates these definitions into live Objective-C types at load time.
+AppScript supports defining new Objective-C subclasses and categories directly in `.appscript` script files. ``ASRuntimeInstaller`` translates these definitions into live Objective-C types at load time.
 
 ## Defining a class
 

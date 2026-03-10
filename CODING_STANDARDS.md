@@ -103,7 +103,7 @@ The `AppScriptHarness` app is a macOS application that performs end-to-end integ
 
 **Structure:**
 
-The harness loads `.as` script files from a bundle. Each script file has a paired `.expected` file in the same bundle that specifies the expected output. The harness:
+The harness loads `.appscript` script files from a bundle. Each script file has a paired `.expected` file in the same bundle that specifies the expected output. The harness:
 
 1. Calls `loadAppScriptsInBundle:` on the bundle containing the test scripts.
 2. For each script, instantiates the class defined in that script and calls `-runTests` on it.
@@ -127,7 +127,7 @@ This makes the harness usable in CI without a GUI.
 
 **Adding a harness test:**
 
-1. Create `MyFeature.as` in `AppScriptHarness/Scripts/`.
+1. Create `MyFeature.appscript` in `AppScriptHarness/Scripts/`.
 2. Create `MyFeature.expected` alongside it with the exact expected output.
 3. Verify the harness exits 0 locally before opening a pull request.
 

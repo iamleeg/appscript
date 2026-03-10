@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// NSBundle+AppScriptLoading.h — Top-level entry point for loading .as files from a bundle
+// NSBundle+AppScriptLoading.h — Top-level entry point for loading .appscript files from a bundle
 // Copyright (C) 2026 Graham Lee
 //
 // This program is free software: you can redistribute it and/or modify
@@ -27,9 +27,9 @@ extern NSString * const ASBundleLoadingErrorDomain;
 typedef NS_ENUM(NSInteger, ASBundleLoadingErrorCode) {
     /// The bundle has already been loaded via a previous call to -loadAppScriptsInBundle:.
     ASBundleLoadingErrorDuplicateLoad  = 1,
-    /// A lexer error occurred while processing an .as file.
+    /// A lexer error occurred while processing an .appscript file.
     ASBundleLoadingErrorLexerFailure   = 2,
-    /// A parser error occurred while processing an .as file.
+    /// A parser error occurred while processing an .appscript file.
     ASBundleLoadingErrorParserFailure  = 3,
     /// The runtime installer could not install the parsed definitions.
     ASBundleLoadingErrorInstallFailure = 4,
@@ -40,14 +40,14 @@ typedef NS_ENUM(NSInteger, ASBundleLoadingErrorCode) {
 
 /// Discovers all AppScript source files in the bundle and loads them into the host application.
 ///
-/// This method searches for `*.as` files in the bundle, lexes and parses each one, and
+/// This method searches for `*.appscript` files in the bundle, lexes and parses each one, and
 /// registers the defined classes and categories with the Objective-C runtime.
 ///
 /// Call this method once per bundle. Calling it a second time on the same bundle returns `NO`
 /// and sets `error` to describe the duplicate-load attempt. The method may be called on
 /// different bundles without restriction.
 ///
-/// If any `.as` file contains a lexer or parser error, the method returns `NO` and sets
+/// If any `.appscript` file contains a lexer or parser error, the method returns `NO` and sets
 /// `error` to describe the first error encountered. Classes from successfully parsed files
 /// that were already registered before the error occurred remain registered.
 ///

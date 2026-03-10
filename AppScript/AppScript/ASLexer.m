@@ -259,7 +259,7 @@ NSString * const ASLexerErrorDomain = @"ASLexerErrorDomain";
                     }
                 }
                 NSString *atWord = [@"@" stringByAppendingString:word];
-                ASTokenType kwType;
+                ASTokenType kwType = ASTokenTypeIdentifier;
                 BOOL isKeyword = YES;
                 if ([word isEqualToString:@"class"]) {
                     kwType = ASTokenTypeKwClass;
@@ -383,7 +383,7 @@ NSString * const ASLexerErrorDomain = @"ASLexerErrorDomain";
         {
             NSUInteger tokLine = state.line;
             NSUInteger tokCol = state.column;
-            ASTokenType punctType;
+            ASTokenType punctType = ASTokenTypeIdentifier;
             NSString *punctText = [NSString stringWithCharacters:&ch length:1];
             BOOL recognised = YES;
             switch (ch) {

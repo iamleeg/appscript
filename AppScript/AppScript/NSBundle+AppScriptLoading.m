@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// NSBundle+AppScriptLoading.m — Top-level entry point for loading .as files from a bundle
+// NSBundle+AppScriptLoading.m — Top-level entry point for loading .appscript files from a bundle
 // Copyright (C) 2026 Graham Lee
 //
 // This program is free software: you can redistribute it and/or modify
@@ -66,10 +66,10 @@ static NSString *bundleKey(NSBundle *bundle) {
     }
 
     // -----------------------------------------------------------------------
-    // 2. Discover .as files.
+    // 2. Discover .appscript files.
     // -----------------------------------------------------------------------
     NSArray<NSURL *> *scriptURLs =
-        [self URLsForResourcesWithExtension:@"as" subdirectory:nil];
+        [self URLsForResourcesWithExtension:@"appscript" subdirectory:nil];
 
     if (scriptURLs.count == 0) {
         // Nothing to do — mark the bundle as loaded and return success.
@@ -80,7 +80,7 @@ static NSString *bundleKey(NSBundle *bundle) {
     }
 
     // -----------------------------------------------------------------------
-    // 3. Process each .as file in order.
+    // 3. Process each .appscript file in order.
     // -----------------------------------------------------------------------
     ASLexer *lexer = [ASLexer new];
     ASParser *parser = [ASParser new];

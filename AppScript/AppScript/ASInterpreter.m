@@ -18,6 +18,7 @@
 
 #import "ASInterpreter.h"
 #import "ASScope.h"
+#import <objc/runtime.h>
 #import "ASBoxer.h"
 
 // AST node types
@@ -268,6 +269,7 @@
                        @"Unknown AST node type: %@", NSStringFromClass([node class])]
                  node:node
               context:ctx];
+    return nil;
 }
 
 // ---------------------------------------------------------------------------

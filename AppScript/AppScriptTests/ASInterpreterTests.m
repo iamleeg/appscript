@@ -107,7 +107,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertNil(result, @"An empty method body should return nil");
 }
 
@@ -124,7 +124,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertEqualObjects(result, @"hello",
                           @"Returning a string literal should yield the string value");
 }
@@ -145,7 +145,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertEqualObjects(result, @"world",
                           @"A variable declared and returned should yield its initializer value");
 }
@@ -166,7 +166,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertNotNil(result, @"[NSString string] should not return nil");
     XCTAssertTrue([result isKindOfClass:[NSString class]],
                   @"[NSString string] should return an NSString");
@@ -188,7 +188,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertEqual(result, receiver,
                    @"Returning 'self' should yield the receiver object");
 }
@@ -206,7 +206,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test:"
                                           arguments:@[ @"bound-value" ]
                                      parameterNames:@[ @"param" ]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertEqualObjects(result, @"bound-value",
                           @"A bound parameter should be accessible by its declared name");
 }
@@ -228,7 +228,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertEqualObjects(result, @"second",
                           @"Assigning a new value to a variable should update it");
 }
@@ -250,7 +250,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertTrue([result isKindOfClass:[NSArray class]],
                   @"An array literal should evaluate to an NSArray");
     XCTAssertEqual([(NSArray *)result count], (NSUInteger)2,
@@ -277,7 +277,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertTrue([result isKindOfClass:[NSDictionary class]],
                   @"A dictionary literal should evaluate to an NSDictionary");
     XCTAssertEqualObjects(result, (@{@"key": @"val"}),
@@ -304,7 +304,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
-                                         scriptPath:@"test.as"];
+                                         scriptPath:@"test.appscript"];
     XCTAssertNotNil(result, @"count should not return nil");
     XCTAssertTrue([result isKindOfClass:[NSNumber class]],
                   @"count should return an NSNumber");

@@ -23,7 +23,7 @@
 // Helper: a fake NSBundle subclass backed by a temporary directory.
 //
 // FakeBundle overrides the two NSBundle methods used by -loadAppScriptsInBundle:
-// so we can control exactly which .as files it "contains" and give it a
+// so we can control exactly which .appscript files it "contains" and give it a
 // stable, unique identifier — without touching any real bundle on disk.
 // ---------------------------------------------------------------------------
 
@@ -59,11 +59,11 @@
 @implementation NSBundle_AppScriptLoadingTests
 
 // ---------------------------------------------------------------------------
-// 1. A bundle with no .as files returns YES immediately.
+// 1. A bundle with no .appscript files returns YES immediately.
 // ---------------------------------------------------------------------------
 
 - (void)test_loadAppScriptsInBundle_bundleWithNoScripts_returnsYES {
-    // Use a FakeBundle that reports zero .as files so we avoid touching any
+    // Use a FakeBundle that reports zero .appscript files so we avoid touching any
     // real bundle that may already have been registered by another test run.
     FakeBundle *bundle = [[FakeBundle alloc] init];
     bundle.fakeIdentifier = [NSString stringWithFormat:@"com.appscript.test.noScripts.%@",
@@ -73,7 +73,7 @@
     NSError *error = nil;
     BOOL result = [bundle loadAppScriptsInBundle:&error];
 
-    XCTAssertTrue(result, @"A bundle with no .as files should return YES");
+    XCTAssertTrue(result, @"A bundle with no .appscript files should return YES");
     XCTAssertNil(error, @"No error should be set when there are no scripts to load");
 }
 
@@ -115,7 +115,7 @@
 // 3. Calling -loadAppScriptsInBundle: on [NSBundle mainBundle] does not crash.
 //
 //    In the XCTest environment the main bundle almost certainly contains no
-//    .as files, so the method will return YES (or NO with a duplicate-load
+//    .appscript files, so the method will return YES (or NO with a duplicate-load
 //    error if this test runs more than once in a session). Either way there
 //    must be no exception.
 // ---------------------------------------------------------------------------

@@ -65,9 +65,23 @@
 		980EBA392F5F36230023077B /* AppScriptHarnessUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppScriptHarnessUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		98F045092F60333E0081BDAF /* Exceptions for "AppScript" folder in "AppScript" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			publicHeaders = (
+				AppScript.h,
+				"NSBundle+AppScriptLoading.h",
+			);
+			target = 980EBA002F5F35DD0023077B /* AppScript */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		980EBA032F5F35DD0023077B /* AppScript */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				98F045092F60333E0081BDAF /* Exceptions for "AppScript" folder in "AppScript" target */,
+			);
 			path = AppScript;
 			sourceTree = "<group>";
 		};

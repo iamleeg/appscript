@@ -90,7 +90,7 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 - (void)test_installNodes_emptyArray_returnsYES {
     NSError *error = nil;
     BOOL result = [self.installer installNodes:@[]
-                                    scriptPath:@"test.as"
+                                    scriptPath:@"test.appscript"
                                          error:&error];
     XCTAssertTrue(result, @"Installing an empty node array should succeed");
     XCTAssertNil(error, @"No error should be set for an empty node array");
@@ -106,7 +106,7 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
     NSError *error = nil;
     BOOL result = [self.installer installNodes:@[classDef]
-                                    scriptPath:@"test.as"
+                                    scriptPath:@"test.appscript"
                                          error:&error];
 
     XCTAssertTrue(result, @"Installing a valid class definition should succeed");
@@ -126,7 +126,7 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
     NSError *error = nil;
     BOOL result = [self.installer installNodes:@[classDef]
-                                    scriptPath:@"test.as"
+                                    scriptPath:@"test.appscript"
                                          error:&error];
 
     XCTAssertTrue(result, @"Installing the class should succeed");
@@ -169,7 +169,7 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
     NSError *error = nil;
     BOOL result = [self.installer installNodes:@[classDef]
-                                    scriptPath:@"test.as"
+                                    scriptPath:@"test.appscript"
                                          error:&error];
 
     XCTAssertFalse(result, @"Installing a class with an unknown superclass should fail");
@@ -191,14 +191,14 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
     // First install should succeed.
     NSError *error = nil;
     BOOL first = [self.installer installNodes:@[classDef]
-                                   scriptPath:@"test.as"
+                                   scriptPath:@"test.appscript"
                                         error:&error];
     XCTAssertTrue(first, @"First installation should succeed");
 
     // Second install with the same class name should fail.
     NSError *secondError = nil;
     BOOL second = [self.installer installNodes:@[classDef]
-                                    scriptPath:@"test.as"
+                                    scriptPath:@"test.appscript"
                                          error:&secondError];
 
     XCTAssertFalse(second, @"Installing the same class name a second time should fail");
@@ -230,7 +230,7 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
     NSError *error = nil;
     BOOL result = [self.installer installNodes:@[classDef]
-                                    scriptPath:@"test.as"
+                                    scriptPath:@"test.appscript"
                                          error:&error];
 
     XCTAssertTrue(result, @"Installing the class should succeed");
@@ -268,7 +268,7 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
     NSError *error = nil;
     BOOL result = [self.installer installNodes:@[categoryDef]
-                                    scriptPath:@"test.as"
+                                    scriptPath:@"test.appscript"
                                          error:&error];
 
     XCTAssertTrue(result, @"Installing a category should succeed");
