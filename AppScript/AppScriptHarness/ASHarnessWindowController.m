@@ -17,7 +17,20 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "ASHarnessWindowController.h"
-#import "ASTestResult.h"
+#import <objc/runtime.h>
+
+/// Protocol mirroring the interface of the AppScript-defined ASTestResult class.
+/// Used only for compile-time type checking; the actual implementation is loaded at runtime.
+@protocol ASTestResultProtocol <NSObject>
+- (NSString *)testName;
+- (NSNumber *)isPassed;
+- (NSString *)expected;
+- (NSString *)actual;
+- (instancetype)initWithTestName:(NSString *)testName
+                          passed:(NSNumber *)passed
+                        expected:(NSString *)expected
+                          actual:(NSString *)actual;
+@end
 
 static NSString * const kColumnStatus   = @"status";
 static NSString * const kColumnTest     = @"test";
@@ -31,7 +44,7 @@ static NSString * const kColumnActual   = @"actual";
 @property (nonatomic, strong) NSButton    *runButton;
 
 /// Ordered test results from the most recent run.
-@property (nonatomic, copy) NSArray<ASTestResult *> *results;
+@property (nonatomic, copy) NSArray<id<ASTestResultProtocol>> *results;
 
 @end
 
@@ -145,35 +158,53 @@ static NSString * const kColumnActual   = @"actual";
     self.runButton.enabled = NO;
     self.summaryLabel.stringValue = @"Running…";
 
-    NSArray<NSURL *> *scriptURLs =
-        [[NSBundle mainBundle] URLsForResourcesWithExtension:@"appscript"
-                                                subdirectory:@"Scripts"];
+    // Discover all direct and indirect subclasses of ASTestCase loaded in the runtime.
+    Class testCaseClass = NSClassFromString(@"ASTestCase");
+    NSMutableArray<id<ASTestResultProtocol>> *results = [NSMutableArray array];
 
-    NSMutableArray<ASTestResult *> *results = [NSMutableArray array];
-
-    for (NSURL *scriptURL in scriptURLs) {
-        ASTestResult *result = [self runTestAtURL:scriptURL];
-        [results addObject:result];
-        // Log to stdout so CI captures output.
-        fprintf(stdout, "%s: %s\n",
-                result.isPassed ? "PASS" : "FAIL",
-                result.testName.UTF8String);
+    if (testCaseClass != nil) {
+        int classCount = objc_getClassList(NULL, 0);
+        Class *classes = (Class *)malloc(sizeof(Class) * (size_t)classCount);
+        classCount = objc_getClassList(classes, classCount);
+        for (int i = 0; i < classCount; i++) {
+            Class cls = classes[i];
+            // Walk the superclass chain to check for ASTestCase ancestry.
+            Class superclass = class_getSuperclass(cls);
+            BOOL isTestCase = NO;
+            while (superclass != nil) {
+                if (superclass == testCaseClass) {
+                    isTestCase = YES;
+                    break;
+                }
+                superclass = class_getSuperclass(superclass);
+            }
+            if (!isTestCase) continue;
+            id<ASTestResultProtocol> result = [self runTestClass:cls];
+            [results addObject:result];
+            // Log to stdout so CI captures output.
+            fprintf(stdout, "%s: %s\n",
+                    [result isPassed] ? "PASS" : "FAIL",
+                    [[result testName] UTF8String]);
+        }
+        free(classes);
     }
 
     // Sort: failures first, then alphabetically.
-    [results sortUsingComparator:^NSComparisonResult(ASTestResult *a, ASTestResult *b) {
-        if (a.isPassed != b.isPassed) {
-            return a.isPassed ? NSOrderedDescending : NSOrderedAscending;
+    [results sortUsingComparator:^NSComparisonResult(id<ASTestResultProtocol> a, id<ASTestResultProtocol> b) {
+        BOOL aPassed = [[a isPassed] boolValue];
+        BOOL bPassed = [[b isPassed] boolValue];
+        if (aPassed != bPassed) {
+            return aPassed ? NSOrderedDescending : NSOrderedAscending;
         }
-        return [a.testName compare:b.testName];
+        return [[a testName] compare:[b testName]];
     }];
 
     self.results = results;
     [self.tableView reloadData];
 
     NSInteger passed = 0;
-    for (ASTestResult *r in results) {
-        if (r.isPassed) passed++;
+    for (id<ASTestResultProtocol> r in results) {
+        if ([[r isPassed] boolValue]) passed++;
     }
     NSInteger failed = (NSInteger)results.count - passed;
     self.summaryLabel.stringValue =
@@ -182,21 +213,18 @@ static NSString * const kColumnActual   = @"actual";
     self.runButton.enabled = YES;
 }
 
-/// Runs a single test script and returns its result.
-- (ASTestResult *)runTestAtURL:(NSURL *)scriptURL {
-    NSString *baseName = scriptURL.lastPathComponent.stringByDeletingPathExtension;
-    NSString *className = [baseName stringByAppendingString:@"Test"];
-    NSURL *expectedURL = [[scriptURL URLByDeletingPathExtension]
-                          URLByAppendingPathExtension:@"expected"];
+/// Runs a single test class and returns its result.
+/// The test name is the class name with the "Test" suffix stripped.
+/// The expected output is read from the "Scripts/<testName>.expected" bundle resource.
+- (id<ASTestResultProtocol>)runTestClass:(Class)cls {
+    NSString *className = NSStringFromClass(cls);
+    NSString *testName = [className hasSuffix:@"Test"]
+        ? [className substringToIndex:className.length - 4]
+        : className;
 
-    Class cls = NSClassFromString(className);
-    if (cls == nil) {
-        NSString *msg = [NSString stringWithFormat:@"class %@ not found", className];
-        return [[ASTestResult alloc] initWithTestName:baseName
-                                               passed:NO
-                                             expected:@"(unknown)"
-                                               actual:msg];
-    }
+    NSURL *expectedURL = [[NSBundle mainBundle] URLForResource:testName
+                                                 withExtension:@"expected"
+                                                  subdirectory:@"Scripts"];
 
     id instance = [cls new];
 #pragma clang diagnostic push
@@ -207,6 +235,15 @@ static NSString * const kColumnActual   = @"actual";
                         stringByTrimmingCharactersInSet:
                             [NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
+    if (expectedURL == nil) {
+        NSString *msg = [NSString stringWithFormat:@"no .expected file for %@", testName];
+        return (id<ASTestResultProtocol>)[[NSClassFromString(@"ASTestResult") alloc]
+                                         initWithTestName:testName
+                                                   passed:@NO
+                                                 expected:msg
+                                                   actual:actual];
+    }
+
     NSError *readError = nil;
     NSString *expectedRaw = [NSString stringWithContentsOfURL:expectedURL
                                                      encoding:NSUTF8StringEncoding
@@ -214,20 +251,22 @@ static NSString * const kColumnActual   = @"actual";
     if (expectedRaw == nil) {
         NSString *msg = [NSString stringWithFormat:@"cannot read .expected: %@",
                          readError.localizedDescription];
-        return [[ASTestResult alloc] initWithTestName:baseName
-                                               passed:NO
-                                             expected:msg
-                                               actual:actual];
+        return (id<ASTestResultProtocol>)[[NSClassFromString(@"ASTestResult") alloc]
+                                         initWithTestName:testName
+                                                   passed:@NO
+                                                 expected:msg
+                                                   actual:actual];
     }
 
     NSString *expected = [expectedRaw
                           stringByTrimmingCharactersInSet:
                               [NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    BOOL passed = [actual isEqualToString:expected];
-    return [[ASTestResult alloc] initWithTestName:baseName
-                                           passed:passed
-                                         expected:expected
-                                           actual:actual];
+    NSNumber *passed = [NSNumber numberWithBool:[actual isEqualToString:expected]];
+    return (id<ASTestResultProtocol>)[[NSClassFromString(@"ASTestResult") alloc]
+                                      initWithTestName:testName
+                                                passed:passed
+                                              expected:expected
+                                                actual:actual];
 }
 
 #pragma mark - NSTableViewDataSource
@@ -241,7 +280,7 @@ static NSString * const kColumnActual   = @"actual";
 - (nullable NSView *)tableView:(NSTableView *)tableView
             viewForTableColumn:(nullable NSTableColumn *)tableColumn
                            row:(NSInteger)row {
-    ASTestResult *result = self.results[(NSUInteger)row];
+    id<ASTestResultProtocol> result = self.results[(NSUInteger)row];
     NSString *identifier = tableColumn.identifier;
 
     NSTextField *cell = [tableView makeViewWithIdentifier:identifier owner:self];
@@ -251,21 +290,22 @@ static NSString * const kColumnActual   = @"actual";
         cell.lineBreakMode = NSLineBreakByTruncatingTail;
     }
 
+    BOOL isPassed = [[result isPassed] boolValue];
     if ([identifier isEqualToString:kColumnStatus]) {
-        cell.stringValue = result.isPassed ? @"✓" : @"✗";
-        cell.textColor = result.isPassed
+        cell.stringValue = isPassed ? @"✓" : @"✗";
+        cell.textColor = isPassed
             ? [NSColor systemGreenColor]
             : [NSColor systemRedColor];
         cell.alignment = NSTextAlignmentCenter;
     } else if ([identifier isEqualToString:kColumnTest]) {
-        cell.stringValue = result.testName;
+        cell.stringValue = [result testName];
         cell.textColor = [NSColor labelColor];
     } else if ([identifier isEqualToString:kColumnExpected]) {
-        cell.stringValue = [result.expected stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
+        cell.stringValue = [[result expected] stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
         cell.textColor = [NSColor labelColor];
     } else if ([identifier isEqualToString:kColumnActual]) {
-        cell.stringValue = [result.actual stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
-        cell.textColor = result.isPassed
+        cell.stringValue = [[result actual] stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
+        cell.textColor = isPassed
             ? [NSColor labelColor]
             : [NSColor systemRedColor];
     }

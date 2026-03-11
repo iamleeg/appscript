@@ -1,4 +1,4 @@
-@class StringLiteralsTest : NSObject
+@class StringLiteralsTest : ASTestCase
 
 - runTests {
     id greeting = @"hello"

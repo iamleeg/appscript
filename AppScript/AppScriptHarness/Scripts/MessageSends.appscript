@@ -1,4 +1,4 @@
-@class MessageSendsTest : NSObject
+@class MessageSendsTest : ASTestCase
 
 - runTests {
     // Unary message send to an Objective-C object

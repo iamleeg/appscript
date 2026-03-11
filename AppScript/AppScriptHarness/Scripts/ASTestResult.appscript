@@ -1,0 +1,20 @@
+@class ASTestResult : NSObject
+
+@property (copy, nonatomic) testName
+@property (strong, nonatomic) passed
+@property (copy, nonatomic) expected
+@property (copy, nonatomic) actual
+
+- initWithTestName: aTestName passed: aPassed expected: anExpected actual: anActual {
+    [self setTestName:aTestName]
+    [self setPassed:aPassed]
+    [self setExpected:anExpected]
+    [self setActual:anActual]
+    return self
+}
+
+- isPassed {
+    return [self passed]
+}
+
+@end

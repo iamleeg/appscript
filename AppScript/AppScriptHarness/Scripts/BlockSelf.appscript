@@ -1,4 +1,4 @@
-@class BlockSelfTest : NSObject
+@class BlockSelfTest : ASTestCase
 
 @property label
 

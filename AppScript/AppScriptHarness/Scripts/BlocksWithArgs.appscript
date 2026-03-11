@@ -1,4 +1,4 @@
-@class BlocksWithArgsTest : NSObject
+@class BlocksWithArgsTest : ASTestCase
 
 - runTests {
     // Pass a two-parameter block to as_sortedArrayUsingBlock:.

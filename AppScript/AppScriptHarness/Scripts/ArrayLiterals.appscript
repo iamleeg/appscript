@@ -1,4 +1,4 @@
-@class ArrayLiteralsTest : NSObject
+@class ArrayLiteralsTest : ASTestCase
 
 - runTests {
     id items = @[@"apple", @"banana", @"cherry"]

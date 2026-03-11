@@ -1,4 +1,4 @@
-@class ArithmeticTest : NSObject
+@class ArithmeticTest : ASTestCase
 
 - runTests {
     id a = 12

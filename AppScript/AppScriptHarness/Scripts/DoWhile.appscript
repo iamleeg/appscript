@@ -1,4 +1,4 @@
-@class DoWhileTest : NSObject
+@class DoWhileTest : ASTestCase
 
 - runTests {
     // do:while: uses the idiomatic NSEnumerator pattern from ARCHITECTURE.md.

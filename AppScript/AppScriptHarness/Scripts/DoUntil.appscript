@@ -1,4 +1,4 @@
-@class DoUntilTest : NSObject
+@class DoUntilTest : ASTestCase
 
 - runTests {
     // do:until: runs the body at least once, then stops when testBlock returns truthy.

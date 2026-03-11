@@ -1,4 +1,4 @@
-@class VariablesTest : NSObject
+@class VariablesTest : ASTestCase
 
 - runTests {
     id strong = @"strong"

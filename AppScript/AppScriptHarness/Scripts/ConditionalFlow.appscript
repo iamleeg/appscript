@@ -1,4 +1,4 @@
-@class ConditionalFlowTest : NSObject
+@class ConditionalFlowTest : ASTestCase
 
 - runTests {
     // ifTrue:ifFalse: executes the true branch when the receiver is YES.

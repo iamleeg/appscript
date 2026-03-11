@@ -7,7 +7,7 @@
 
 @end
 
-@class CategoriesTest : NSObject
+@class CategoriesTest : ASTestCase
 
 - runTests {
     id greeting = @"hello"

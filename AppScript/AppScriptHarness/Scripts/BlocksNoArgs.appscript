@@ -1,4 +1,4 @@
-@class BlocksNoArgsTest : NSObject
+@class BlocksNoArgsTest : ASTestCase
 
 - runTests {
     // Declare a no-argument block literal and have it invoked via ifTrue:ifFalse:.

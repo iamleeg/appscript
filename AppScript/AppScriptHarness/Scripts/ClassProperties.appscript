@@ -1,4 +1,4 @@
-@class ClassPropertiesTest : NSObject
+@class ClassPropertiesTest : ASTestCase
 
 @property (strong, nonatomic) title
 @property (copy) tag

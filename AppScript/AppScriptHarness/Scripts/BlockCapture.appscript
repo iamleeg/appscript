@@ -1,4 +1,4 @@
-@class BlockCaptureTest : NSObject
+@class BlockCaptureTest : ASTestCase
 
 - runTests {
     // Non-constant captured variables are implicitly mutable from within blocks

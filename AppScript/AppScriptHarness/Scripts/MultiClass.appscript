@@ -24,7 +24,7 @@
 
 @end
 
-@class MultiClassTest : NSObject
+@class MultiClassTest : ASTestCase
 
 - runTests {
     // One AppScript class creates and uses instances of two other AppScript classes.

@@ -7,7 +7,7 @@
 
 @end
 
-@class ImplicitVarsTest : NSObject
+@class ImplicitVarsTest : ASTestCase
 
 - runTests {
     // self is the receiver; verify it is the expected class.

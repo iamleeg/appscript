@@ -1,4 +1,4 @@
-@class DictionaryLiteralsTest : NSObject
+@class DictionaryLiteralsTest : ASTestCase
 
 - runTests {
     id dict = @{@"name": @"AppScript", @"version": @"1"}

@@ -16,7 +16,7 @@
 
 @end
 
-@class ClassMethodsTest : NSObject
+@class ClassMethodsTest : ASTestCase
 
 - runTests {
     // Exercise the class method + to create an instance, then instance methods.

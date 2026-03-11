@@ -1,4 +1,4 @@
-@class ReturnValuesTest : NSObject
+@class ReturnValuesTest : ASTestCase
 
 @property steps
 

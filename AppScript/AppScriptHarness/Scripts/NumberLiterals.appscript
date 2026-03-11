@@ -1,4 +1,4 @@
-@class NumberLiteralsTest : NSObject
+@class NumberLiteralsTest : ASTestCase
 
 - runTests {
     id integer = 42

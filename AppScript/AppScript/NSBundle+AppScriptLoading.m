@@ -20,6 +20,7 @@
 #import "ASLexer.h"
 #import "ASParser.h"
 #import "ASRuntimeInstaller.h"
+#import "ASClassDefinitionNode.h"
 
 NSString * const ASBundleLoadingErrorDomain = @"ASBundleLoadingErrorDomain";
 
@@ -80,11 +81,14 @@ static NSString *bundleKey(NSBundle *bundle) {
     }
 
     // -----------------------------------------------------------------------
-    // 3. Process each .appscript file in order.
+    // 3. Lex and parse all files, collecting (url, nodes) pairs.
     // -----------------------------------------------------------------------
     ASLexer *lexer = [ASLexer new];
     ASParser *parser = [ASParser new];
     ASRuntimeInstaller *installer = [ASRuntimeInstaller new];
+
+    // Each entry: @{ @"url": NSURL, @"nodes": NSArray<ASASTNode *> }
+    NSMutableArray<NSDictionary *> *parsedScripts = [NSMutableArray array];
 
     for (NSURL *url in scriptURLs) {
         // 3a. Read source text.
@@ -93,8 +97,6 @@ static NSString *bundleKey(NSBundle *bundle) {
                                                     encoding:NSUTF8StringEncoding
                                                        error:&readError];
         if (!source) {
-            // Treat a read failure as a lexer-level failure (I/O is a precondition
-            // for lexing; we propagate the underlying error in userInfo).
             if (error) {
                 *error = [NSError errorWithDomain:ASBundleLoadingErrorDomain
                                              code:ASBundleLoadingErrorLexerFailure
@@ -139,7 +141,93 @@ static NSString *bundleKey(NSBundle *bundle) {
             return NO;
         }
 
-        // 3d. Install.
+        [parsedScripts addObject:@{ @"url": url, @"nodes": nodes }];
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Topologically sort parsed scripts by intra-bundle superclass dependency.
+    //
+    // Build a map of className → script index for every class defined across
+    // all parsed scripts. Then perform Kahn's algorithm: repeatedly pick a
+    // script whose classes have no unsatisfied intra-bundle superclass
+    // dependency (i.e., the superclass is either already in the ObjC runtime
+    // or has already been scheduled). Scripts with no intra-bundle dependencies
+    // are placed first; the relative order of independent scripts is
+    // unspecified but stable.
+    // -----------------------------------------------------------------------
+
+    // Map class name → index of the script that defines it (within parsedScripts).
+    NSMutableDictionary<NSString *, NSNumber *> *classToScriptIndex =
+        [NSMutableDictionary dictionary];
+    for (NSUInteger i = 0; i < parsedScripts.count; i++) {
+        NSArray<ASASTNode *> *nodes = parsedScripts[i][@"nodes"];
+        for (ASASTNode *node in nodes) {
+            if ([node isKindOfClass:[ASClassDefinitionNode class]]) {
+                NSString *className = ((ASClassDefinitionNode *)node).className;
+                classToScriptIndex[className] = @(i);
+            }
+        }
+    }
+
+    // in-degree[i] = number of scripts that script i must wait for.
+    NSMutableArray<NSNumber *> *inDegree = [NSMutableArray array];
+    // dependents[i] = list of script indices that depend on script i.
+    NSMutableArray<NSMutableArray<NSNumber *> *> *dependents = [NSMutableArray array];
+    for (NSUInteger i = 0; i < parsedScripts.count; i++) {
+        [inDegree addObject:@0];
+        [dependents addObject:[NSMutableArray array]];
+    }
+
+    for (NSUInteger i = 0; i < parsedScripts.count; i++) {
+        NSArray<ASASTNode *> *nodes = parsedScripts[i][@"nodes"];
+        for (ASASTNode *node in nodes) {
+            if (![node isKindOfClass:[ASClassDefinitionNode class]]) continue;
+            NSString *superclassName = ((ASClassDefinitionNode *)node).superclassName;
+            if (!superclassName) continue;
+            NSNumber *depIndex = classToScriptIndex[superclassName];
+            if (depIndex == nil) continue;          // superclass is in the ObjC runtime already
+            NSUInteger j = depIndex.unsignedIntegerValue;
+            if (j == i) continue;                   // class in same file as its superclass
+            [dependents[j] addObject:@(i)];
+            inDegree[i] = @(inDegree[i].unsignedIntegerValue + 1);
+        }
+    }
+
+    // Kahn's algorithm: start with all scripts that have in-degree 0.
+    NSMutableArray<NSNumber *> *queue = [NSMutableArray array];
+    for (NSUInteger i = 0; i < parsedScripts.count; i++) {
+        if (inDegree[i].unsignedIntegerValue == 0) {
+            [queue addObject:@(i)];
+        }
+    }
+
+    NSMutableArray<NSDictionary *> *sortedScripts = [NSMutableArray array];
+    while (queue.count > 0) {
+        NSNumber *idxNum = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        [sortedScripts addObject:parsedScripts[idxNum.unsignedIntegerValue]];
+        for (NSNumber *dependent in dependents[idxNum.unsignedIntegerValue]) {
+            NSUInteger newDegree = inDegree[dependent.unsignedIntegerValue].unsignedIntegerValue - 1;
+            inDegree[dependent.unsignedIntegerValue] = @(newDegree);
+            if (newDegree == 0) {
+                [queue addObject:dependent];
+            }
+        }
+    }
+
+    // If sortedScripts doesn't contain all scripts, there's a cycle — fall back
+    // to the original order so the installer can report a meaningful error.
+    if (sortedScripts.count != parsedScripts.count) {
+        sortedScripts = parsedScripts;
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Install in dependency order.
+    // -----------------------------------------------------------------------
+    for (NSDictionary *entry in sortedScripts) {
+        NSURL *url = entry[@"url"];
+        NSArray<ASASTNode *> *nodes = entry[@"nodes"];
+
         NSError *installError = nil;
         BOOL installed = [installer installNodes:nodes
                                       scriptPath:url.path
@@ -159,7 +247,7 @@ static NSString *bundleKey(NSBundle *bundle) {
     }
 
     // -----------------------------------------------------------------------
-    // 4. Mark bundle as successfully loaded.
+    // 6. Mark bundle as successfully loaded.
     // -----------------------------------------------------------------------
     dispatch_sync(_ASLoadedBundlesQueue, ^{
         [_ASLoadedBundles addObject:key];

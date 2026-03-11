@@ -1,0 +1,7 @@
+@class ASTestCase : NSObject
+
+- runTests {
+    return nil
+}
+
+@end
