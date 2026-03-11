@@ -76,6 +76,12 @@ typedef NS_ENUM(NSInteger, ASRuntimeInstallerErrorCode) {
           scriptPath:(NSString *)scriptPath
                error:(NSError **)error;
 
+/// Returns the Objective-C Class objects for every class registered by any
+/// `ASRuntimeInstaller` instance across all loaded bundles.
+///
+/// The returned array is a snapshot; it does not update if further scripts are loaded.
++ (NSArray<Class> *)registeredClasses;
+
 @end
 
 NS_ASSUME_NONNULL_END

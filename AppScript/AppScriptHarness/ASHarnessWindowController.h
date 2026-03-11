@@ -20,21 +20,28 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Window controller that presents the integration-test results in a table view.
+/// Base window controller that builds the test-runner UI programmatically.
 ///
-/// The window contains a table with four columns (status indicator, test name,
-/// expected output, actual output), a Run button to (re-)execute the test suite,
-/// and a summary label showing the pass/fail counts.
-///
-/// Create one instance at application launch and call `-showWindow:` to display it.
-/// Invoke `-runTests` to execute the test suite; the UI updates when the run completes.
-@interface ASHarnessWindowController : NSWindowController
+/// Subclasses (including the AppScript implementation ASHarnessController) override
+/// `-runTests:` to discover and run tests, then update `results`, `summaryLabel`,
+/// and `runButton` accordingly. The table view data source and delegate are also
+/// expected to be implemented by the subclass.
+@interface ASHarnessWindowController : NSWindowController <NSTableViewDataSource, NSTableViewDelegate>
 
-/// Executes all integration tests found in the app bundle and refreshes the table.
-///
-/// Loads AppScript files from the bundle (if not already loaded), discovers every
-/// `.appscript` script in the `Scripts` subdirectory, instantiates the corresponding `*Test`
-/// class, calls `-runTests`, and compares the result to the paired `.expected` file.
+/// The table view displaying test results. Set during -buildUI.
+@property (nonatomic, strong) NSTableView *tableView;
+
+/// Label showing the pass/fail summary. Set during -buildUI.
+@property (nonatomic, strong) NSTextField *summaryLabel;
+
+/// Button that triggers a test run. Set during -buildUI.
+@property (nonatomic, strong) NSButton *runButton;
+
+/// Ordered test results from the most recent run. Updated by -runTests:.
+@property (nonatomic, copy) NSArray *results;
+
+/// Executes all integration tests and refreshes the table.
+/// The base implementation does nothing; subclasses provide the behaviour.
 - (IBAction)runTests:(nullable id)sender;
 
 @end

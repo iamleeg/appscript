@@ -26,7 +26,11 @@
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-    self.windowController = [[ASHarnessWindowController alloc] init];
+    // Scripts are loaded by main.m before NSApplicationMain runs.
+    // ASHarnessController is defined in AppScript and subclasses ASHarnessWindowController.
+    // Its -init is inherited from the ObjC base class, which builds the window.
+    Class controllerClass = NSClassFromString(@"ASHarnessController") ?: [ASHarnessWindowController class];
+    self.windowController = [[controllerClass alloc] init];
     [self.windowController showWindow:nil];
     [self.windowController.window center];
     [self.windowController runTests:nil];

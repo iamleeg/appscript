@@ -56,6 +56,14 @@ static dispatch_queue_t ASPropertyKeysQueue;
 static NSMutableDictionary<NSString *, NSString *> *ASPropertyKeys;
 
 // ---------------------------------------------------------------------------
+// Global registry of AppScript-installed classes.
+// Guarded by ASRegisteredClassesQueue for all accesses.
+// ---------------------------------------------------------------------------
+
+static dispatch_queue_t ASRegisteredClassesQueue;
+static NSMutableArray<NSValue *> *ASRegisteredClassValues; // NSValue wrapping Class
+
+// ---------------------------------------------------------------------------
 // Helper: build an ObjC type encoding for a method returning id with N id params.
 // Result is like "@@:" (0 params), "@@:@" (1 param), "@@:@@" (2 params), etc.
 //
@@ -180,8 +188,36 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 
 // ---------------------------------------------------------------------------
 // methodSignatureForSelector: IMP — shared by all AppScript-installed classes.
-// Returns a signature where return and all params are `id`.
+// Prefers the real protocol/superclass signature so that primitive parameters
+// (e.g., NSInteger row in NSTableViewDelegate) are boxed correctly by ASBoxer.
+// Falls back to an all-id encoding when no real signature is available.
 // ---------------------------------------------------------------------------
+
+/// Search the protocols adopted by `cls` (and its superclasses) for a method description
+/// matching `selector`. Returns nil if not found.
+static NSMethodSignature *ASProtocolMethodSignatureForSelector(Class cls, SEL selector) {
+    while (cls != Nil) {
+        unsigned int protocolCount = 0;
+        Protocol * __unsafe_unretained *protocols = class_copyProtocolList(cls, &protocolCount);
+        for (unsigned int i = 0; i < protocolCount; i++) {
+            // Check required instance methods, then optional instance methods.
+            struct objc_method_description desc =
+                protocol_getMethodDescription(protocols[i], selector, YES, YES);
+            if (desc.name != NULL && desc.types != NULL) {
+                if (protocols) free(protocols);
+                return [NSMethodSignature signatureWithObjCTypes:desc.types];
+            }
+            desc = protocol_getMethodDescription(protocols[i], selector, NO, YES);
+            if (desc.name != NULL && desc.types != NULL) {
+                if (protocols) free(protocols);
+                return [NSMethodSignature signatureWithObjCTypes:desc.types];
+            }
+        }
+        if (protocols) free(protocols);
+        cls = class_getSuperclass(cls);
+    }
+    return nil;
+}
 
 static NSMethodSignature *ASMethodSignatureForSelectorIMP(id self, SEL _cmd, SEL selector) {
     BOOL isClassDispatch = class_isMetaClass(object_getClass(self));
@@ -202,6 +238,15 @@ static NSMethodSignature *ASMethodSignatureForSelectorIMP(id self, SEL _cmd, SEL
         return ((NSMethodSignature *(*)(struct objc_super *, SEL, SEL))objc_msgSendSuper)(&superInfo,
                                                                                             @selector(methodSignatureForSelector:),
                                                                                             selector);
+    }
+
+    // Prefer the real signature from a protocol the class conforms to (e.g.
+    // NSTableViewDelegate declares tableView:viewForTableColumn:row: with an
+    // NSInteger row parameter). Using the real signature ensures ASBoxer correctly
+    // boxes/unboxes primitive parameters rather than misreading them as object pointers.
+    NSMethodSignature *protocolSig = ASProtocolMethodSignatureForSelector(cls, selector);
+    if (protocolSig != nil) {
+        return protocolSig;
     }
 
     NSDictionary<NSString *, ASMethodNode *> *methodMap =
@@ -252,7 +297,21 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     if (self == [ASRuntimeInstaller class]) {
         ASPropertyKeysQueue = dispatch_queue_create("_ASPropertyKeysQueue", DISPATCH_QUEUE_SERIAL);
         ASPropertyKeys = [NSMutableDictionary dictionary];
+        ASRegisteredClassesQueue = dispatch_queue_create("_ASRegisteredClassesQueue", DISPATCH_QUEUE_SERIAL);
+        ASRegisteredClassValues = [NSMutableArray array];
     }
+}
+
++ (NSArray<Class> *)registeredClasses {
+    __block NSArray<NSValue *> *snapshot;
+    dispatch_sync(ASRegisteredClassesQueue, ^{
+        snapshot = [ASRegisteredClassValues copy];
+    });
+    NSMutableArray<Class> *result = [NSMutableArray arrayWithCapacity:snapshot.count];
+    for (NSValue *v in snapshot) {
+        [result addObject:v.nonretainedObjectValue];
+    }
+    return [result copy];
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +447,12 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
 
     // 9. Register the class pair.
     objc_registerClassPair(newClass);
+
+    // 10. Record in the global AppScript class registry.
+    NSValue *classValue = [NSValue valueWithNonretainedObject:newClass];
+    dispatch_sync(ASRegisteredClassesQueue, ^{
+        [ASRegisteredClassValues addObject:classValue];
+    });
 
     return YES;
 }

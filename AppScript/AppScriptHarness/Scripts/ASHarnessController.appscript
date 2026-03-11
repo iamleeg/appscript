@@ -1,0 +1,126 @@
+@class ASHarnessController : ASHarnessWindowController
+
+- runTests: sender {
+    [self setResults:@[]]
+    [[self runButton] setEnabled:NO]
+    [[self summaryLabel] setStringValue:@"Running…"]
+
+    id runner = [ASTestRunner new]
+    id unsorted = [runner runAllTests]
+
+    id sorted = [unsorted as_sortedArrayUsingBlock:^(a, b) {
+        id aPassed = [a isPassed]
+        id bPassed = [b isPassed]
+        id same = [aPassed isEqual:bPassed]
+        return [same ifTrue:^{
+            return [[a testName] compare:[b testName]]
+        } ifFalse:^{
+            return [aPassed ifTrue:^{
+                return 1
+            } ifFalse:^{
+                return [0 numberBySubtracting:1]
+            }]
+        }]
+    }]
+
+    [self setResults:sorted]
+    [[self tableView] reloadData]
+
+    id passed = 0
+    id enumerator = [sorted objectEnumerator]
+    id result = [enumerator nextObject]
+    [self do:^{
+        id wasPassed = [result isPassed]
+        [wasPassed ifTrue:^{
+            passed = [passed numberByAdding:1]
+        } ifFalse:^{
+            return nil
+        }]
+        result = [enumerator nextObject]
+    } while:^{
+        return result
+    }]
+
+    id total = [sorted count]
+    id failed = [total numberBySubtracting:passed]
+    id summary = [[[passed description] stringByAppendingString:@" passed, "] stringByAppendingString:[[failed description] stringByAppendingString:@" failed"]]
+    [[self summaryLabel] setStringValue:summary]
+    [[self runButton] setEnabled:YES]
+    return self
+}
+
+- numberOfRowsInTableView: tableView {
+    return [[self results] count]
+}
+
+- tableView: tableView viewForTableColumn: tableColumn row: row {
+    id result = [[self results] objectAtIndex:row]
+    id identifier = [tableColumn identifier]
+
+    id cell = [NSTextField labelWithString:@""]
+    [cell setIdentifier:identifier]
+    [cell setLineBreakMode:4]
+
+    id isPassed = [result isPassed]
+    id isStatus = [identifier isEqualToString:@"status"]
+    [isStatus ifTrue:^{
+        id mark = [isPassed ifTrue:^{
+            return @"✓"
+        } ifFalse:^{
+            return @"✗"
+        }]
+        [cell setStringValue:mark]
+        id color = [isPassed ifTrue:^{
+            return [NSColor systemGreenColor]
+        } ifFalse:^{
+            return [NSColor systemRedColor]
+        }]
+        [cell setTextColor:color]
+        [cell setAlignment:2]
+        return self
+    } ifFalse:^{
+        return nil
+    }]
+
+    id isTest = [identifier isEqualToString:@"test"]
+    [isTest ifTrue:^{
+        [cell setStringValue:[result testName]]
+        [cell setTextColor:[NSColor labelColor]]
+        return self
+    } ifFalse:^{
+        return nil
+    }]
+
+    id isExpected = [identifier isEqualToString:@"expected"]
+    [isExpected ifTrue:^{
+        id text = [[result expected] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]
+        [cell setStringValue:text]
+        [cell setTextColor:[NSColor labelColor]]
+        return self
+    } ifFalse:^{
+        return nil
+    }]
+
+    id isActual = [identifier isEqualToString:@"actual"]
+    [isActual ifTrue:^{
+        id text = [[result actual] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]
+        [cell setStringValue:text]
+        id color = [isPassed ifTrue:^{
+            return [NSColor labelColor]
+        } ifFalse:^{
+            return [NSColor systemRedColor]
+        }]
+        [cell setTextColor:color]
+        return self
+    } ifFalse:^{
+        return nil
+    }]
+
+    return cell
+}
+
+- tableView: tableView heightOfRow: row {
+    return 20
+}
+
+@end
