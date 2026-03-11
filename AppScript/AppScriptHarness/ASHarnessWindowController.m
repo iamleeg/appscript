@@ -277,10 +277,10 @@ static NSString * const kColumnActual   = @"actual";
         cell.stringValue = result.testName;
         cell.textColor = [NSColor labelColor];
     } else if ([identifier isEqualToString:kColumnExpected]) {
-        cell.stringValue = result.expected;
+        cell.stringValue = [result.expected stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
         cell.textColor = [NSColor labelColor];
     } else if ([identifier isEqualToString:kColumnActual]) {
-        cell.stringValue = result.actual;
+        cell.stringValue = [result.actual stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
         cell.textColor = result.isPassed
             ? [NSColor labelColor]
             : [NSColor systemRedColor];
