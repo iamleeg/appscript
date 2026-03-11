@@ -8,7 +8,7 @@ AppScript has no built-in control flow keywords or arithmetic operators. Instead
 
 ## Arithmetic
 
-``NSNumber`` gains four arithmetic methods:
+`NSNumber` gains four arithmetic methods:
 
 ```appscript
 id sum = [x numberByAdding: y]
@@ -21,7 +21,7 @@ All operations use double-precision arithmetic and return a new `NSNumber`.
 
 ## Conditionals
 
-Use ``NSNumber/ifTrue:ifFalse:`` to branch on a boolean value:
+Use `-[NSNumber ifTrue:ifFalse:]` to branch on a boolean value:
 
 ```appscript
 id flag = YES
@@ -36,7 +36,7 @@ The method executes the matching block and returns its result, or `nil` if the c
 
 ## Loops
 
-Use ``NSObject/do:while:`` or ``NSObject/do:until:`` for iteration.
+Use `-[NSObject do:while:]` or `-[NSObject do:until:]` for iteration.
 
 `do:while:` checks the condition before each iteration; the body may not run at all:
 
@@ -61,11 +61,3 @@ id album = [enumerator nextObject]
     return [self isDone]
 }]
 ```
-
-## Topics
-
-### Arithmetic
-- ``NSNumber``
-
-### Control flow
-- ``NSObject``

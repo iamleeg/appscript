@@ -64,6 +64,8 @@
 		980EBA1F2F5F36220023077B /* AppScriptHarness.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppScriptHarness.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		980EBA2F2F5F36230023077B /* AppScriptHarnessTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppScriptHarnessTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		980EBA392F5F36230023077B /* AppScriptHarnessUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppScriptHarnessUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		98F04CF22F616D3D0081BDAF /* ARCHITECTURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ARCHITECTURE.md; sourceTree = "<group>"; };
+		98F04CF32F616D3D0081BDAF /* CODING_STANDARDS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CODING_STANDARDS.md; sourceTree = "<group>"; };
 		98SCRIPTS12F5F36220023077B /* Scripts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Scripts; path = AppScriptHarness/Scripts; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -154,6 +156,7 @@
 		980EB9F72F5F35DD0023077B = {
 			isa = PBXGroup;
 			children = (
+				98F04CF12F616D250081BDAF /* Documentation */,
 				980EBA032F5F35DD0023077B /* AppScript */,
 				980EBA102F5F35DD0023077B /* AppScriptTests */,
 				980EBA202F5F36220023077B /* AppScriptHarness */,
@@ -190,6 +193,15 @@
 				98SCRIPTS12F5F36220023077B /* Scripts */,
 			);
 			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		98F04CF12F616D250081BDAF /* Documentation */ = {
+			isa = PBXGroup;
+			children = (
+				98F04CF22F616D3D0081BDAF /* ARCHITECTURE.md */,
+				98F04CF32F616D3D0081BDAF /* CODING_STANDARDS.md */,
+			);
+			path = Documentation;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

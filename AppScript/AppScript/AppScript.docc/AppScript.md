@@ -20,12 +20,4 @@ AppScript lets you embed a safe, memory-managed scripting runtime in any macOS a
 
 - <doc:ControlFlowAndArithmetic>
 
-### Core types
 
-- ``ASLexer``
-- ``ASToken``
-- ``ASParser``
-- ``ASASTNode``
-- ``ASInterpreter``
-- ``ASBoxer``
-- ``ASRuntimeInstaller``
