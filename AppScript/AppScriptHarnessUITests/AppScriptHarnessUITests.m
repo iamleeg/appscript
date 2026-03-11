@@ -25,31 +25,44 @@
 @implementation AppScriptHarnessUITests
 
 - (void)setUp {
-    // Put setup code here. This method is called before the invocation of each test method in the class.
-
-    // In UI tests it is usually best to stop immediately when a failure occurs.
     self.continueAfterFailure = NO;
-
-    // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
+    [[[XCUIApplication alloc] init] launch];
 }
 
-- (void)tearDown {
-    // Put teardown code here. This method is called after the invocation of each test method in the class.
-}
-
-- (void)testExample {
-    // UI tests must launch the application that they test.
+- (void)testAllScriptTestsPass {
     XCUIApplication *app = [[XCUIApplication alloc] init];
-    [app launch];
 
-    // Use XCTAssert and related functions to verify your tests produce the correct results.
-}
+    XCUIElement *runButton = app.buttons[@"Run Tests"];
+    XCTAssertTrue([runButton waitForExistenceWithTimeout:5], @"Run Tests button should exist");
+    [runButton click];
 
-- (void)testLaunchPerformance {
-    // This measures how long it takes to launch your application.
-    [self measureWithMetrics:@[[[XCTApplicationLaunchMetric alloc] init]] block:^{
-        [[[XCUIApplication alloc] init] launch];
-    }];
+    // Wait for the summary label to reflect a completed run (it won't contain "Running…").
+    NSPredicate *finishedPredicate = [NSPredicate predicateWithFormat:
+                                      @"value CONTAINS 'passed'"];
+    XCUIElement *summaryLabel = app.staticTexts.firstMatch;
+    [self expectationForPredicate:finishedPredicate evaluatedWithObject:summaryLabel handler:nil];
+    [self waitForExpectationsWithTimeout:30 handler:nil];
+
+    // Find the summary label that contains "passed" (the result label, not a column header).
+    XCUIElement *resultLabel = nil;
+    for (XCUIElement *label in app.staticTexts.allElementsBoundByIndex) {
+        if ([label.value isKindOfClass:[NSString class]] &&
+            [(NSString *)label.value containsString:@"passed"]) {
+            resultLabel = label;
+            break;
+        }
+    }
+    XCTAssertNotNil(resultLabel, @"A summary label showing pass/fail counts should exist");
+
+    NSString *summary = (NSString *)resultLabel.value;
+    XCTAssertTrue([summary containsString:@"0 failed"],
+                  @"Summary should report 0 failed, got: %@", summary);
+    XCTAssertFalse([summary containsString:@"0 passed"],
+                   @"Summary should not report 0 passed, got: %@", summary);
+
+    // Verify there is at least one row in the results table.
+    XCUIElement *table = app.tables.firstMatch;
+    XCTAssertTrue(table.cells.count > 0, @"Results table should contain at least one row");
 }
 
 @end
