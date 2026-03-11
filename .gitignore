@@ -2,3 +2,4 @@
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+AppScript/AppScript.xcodeproj/project.xcworkspace/xcuserdata/leeg.xcuserdatad/UserInterfaceState.xcuserstate
