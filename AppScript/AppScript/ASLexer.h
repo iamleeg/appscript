@@ -34,14 +34,14 @@ typedef NS_ENUM(NSInteger, ASLexerErrorCode) {
 
 /// Tokenizes AppScript source text into a flat array of ``ASToken`` objects.
 ///
-/// Create an instance and call ``-tokenize:error:`` to lex a source string.
+/// Create an instance and call ``tokenize:error:`` to lex a source string.
 /// The lexer is stateless between calls; the same instance may be reused.
 @interface ASLexer : NSObject
 
 /// Tokenizes the given AppScript source string.
 ///
-/// The returned array always ends with an ``ASTokenTypeEOF`` token.
-/// Newlines are emitted as ``ASTokenTypeNewline`` tokens and serve as
+/// The returned array always ends with an ``ASTokenType/ASTokenTypeEOF`` token.
+/// Newlines are emitted as ``ASTokenType/ASTokenTypeNewline`` tokens and serve as
 /// statement terminators; consecutive blank lines collapse to a single
 /// newline token. Single-line comments introduced by `//` are discarded
 /// and replaced by a single newline token for the line on which they appear.

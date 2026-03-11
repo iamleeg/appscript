@@ -35,7 +35,7 @@ typedef NS_ENUM(NSInteger, ASParserErrorCode) {
 
 /// Parses a flat token array produced by ASLexer into a list of top-level AST nodes.
 ///
-/// Create an instance and call ``-parseTokens:error:`` to parse a token stream
+/// Create an instance and call ``parseTokens:error:`` to parse a token stream
 /// previously produced by ``ASLexer``. The parser is stateless between calls;
 /// the same instance may be reused.
 @interface ASParser : NSObject

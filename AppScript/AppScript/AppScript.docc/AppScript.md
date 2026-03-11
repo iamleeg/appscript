@@ -15,9 +15,19 @@ AppScript lets you embed a safe, memory-managed scripting runtime in any macOS a
 ### Defining classes and categories
 
 - <doc:DefiningClassesAndCategories>
+- ``ASClassDefinitionNode``
+- ``ASCategoryDefinitionNode``
+- ``ASRuntimeInstaller``
 
 ### Control flow and arithmetic
 
 - <doc:ControlFlowAndArithmetic>
+
+### Runtime support
+
+- ``ASInterpreter``
+- ``ASScope``
+- ``ASBoxer``
+- ``ASNull``
 
 
