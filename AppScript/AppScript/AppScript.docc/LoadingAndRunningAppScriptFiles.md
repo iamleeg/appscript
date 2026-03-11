@@ -13,11 +13,11 @@ The AppScript runtime follows a four-phase pipeline:
 
 ## Loading scripts from a bundle
 
-Call `-[NSBundle loadAppScriptsInBundle:]` once per bundle. The method finds all `.appscript` files, lexes and parses them, and installs every class and category definition it finds:
+Call `-[NSBundle loadScriptsWithError:]` once per bundle. The method finds all `.appscript` files, lexes and parses them, and installs every class and category definition it finds:
 
 ```objc
 NSError *error = nil;
-if (![[NSBundle mainBundle] loadAppScriptsInBundle:&error]) {
+if (![[NSBundle mainBundle] loadScriptsWithError:&error]) {
     NSLog(@"Failed to load scripts: %@", error);
 }
 ```
@@ -37,4 +37,4 @@ NSLog(@"%@", [result description]);
 
 ## Error handling
 
-If the interpreter encounters a runtime error, it prints the AppScript file path and line number to `stderr` and calls `abort()`. If your app encounters an error in `-[NSBundle loadAppScriptsInBundle:]`, present it to the user and avoid calling code that you implement in AppScript.
+If the interpreter encounters a runtime error, it prints the AppScript file path and line number to `stderr` and calls `abort()`. If your app encounters an error in `-[NSBundle loadScriptsWithError:]`, present it to the user and avoid calling code that you implement in AppScript.

@@ -24,7 +24,7 @@ int main(int argc, const char * argv[]) {
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
             NSError *loadError = nil;
-            if (![[NSBundle mainBundle] loadAppScriptsInBundle:&loadError]) {
+            if (![[NSBundle mainBundle] loadScriptsWithError:&loadError]) {
                 NSLog(@"Unable to load app scripts: %@", [loadError localizedDescription]);
                 abort();
             }

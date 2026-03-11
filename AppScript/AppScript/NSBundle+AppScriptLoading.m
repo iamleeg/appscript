@@ -43,7 +43,7 @@ static NSString *bundleKey(NSBundle *bundle) {
     return identifier ? identifier : bundle.bundlePath;
 }
 
-- (BOOL)loadAppScriptsInBundle:(NSError **)error {
+- (BOOL)loadScriptsWithError:(NSError **)error {
     // -----------------------------------------------------------------------
     // 1. Duplicate-load check (synchronous on the owning queue).
     // -----------------------------------------------------------------------

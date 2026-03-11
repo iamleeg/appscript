@@ -105,7 +105,7 @@ The `AppScriptHarness` app is a macOS application that performs end-to-end integ
 
 The harness loads `.appscript` script files from a bundle. Each script file has a paired `.expected` file in the same bundle that specifies the expected output. The harness:
 
-1. Calls `loadAppScriptsInBundle:` on the bundle containing the test scripts.
+1. Calls `loadScriptsWithError:` on the bundle containing the test scripts.
 2. For each script, instantiates the class defined in that script and calls `-runTests` on it.
 3. Calls `-description` on the returned object and compares the resulting string to the content of the paired `.expected` file.
 4. Prints a pass/fail summary to stdout and exits with code 0 (all pass) or 1 (any failure).
@@ -144,7 +144,7 @@ Every `public` or `@package` method in the `AppScript` framework must have a doc
 ///
 /// - Parameter error: On failure, set to a description of the error. Pass `nil` if you don't need error information.
 /// - Returns: `YES` if all scripts loaded successfully; `NO` otherwise.
-- (BOOL)loadAppScriptsInBundle:(NSError **)error;
+- (BOOL)loadScriptsWithError:(NSError **)error;
 ```
 
 The summary line (first `///` line) must be a complete sentence that stands alone — it appears in quick-help and symbol listings. Parameter and return-value descriptions are required for any method with non-obvious parameters or a non-obvious return value. Omit them only when the method name makes them fully redundant (e.g. a trivial getter).
@@ -173,7 +173,7 @@ Describe the flow here...
 ## Topics
 
 ### Loading scripts
-- <doc:NSBundle/loadAppScriptsInBundle:>
+- <doc:NSBundle/loadScriptsWithError:>
 
 ### Defining entry points
 - <doc:ASInterpreter>

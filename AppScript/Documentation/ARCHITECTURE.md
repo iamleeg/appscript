@@ -229,7 +229,7 @@ An app embeds the AppScript runtime as a dynamic framework, and loads the script
 @interface NSBundle (AppScriptLoading)
 /// Discovers all the AppScript script files in the bundle and loads them into the host application, unless it encounters a syntax error.
 /// Returns YES if it succeeded; otherwise, returns NO and sets the error parameter to a description of the error.
-- (BOOL)loadAppScriptsInBundle:(NSError **)error;
+- (BOOL)loadScriptsWithError:(NSError **)error;
 @end
 ```
 

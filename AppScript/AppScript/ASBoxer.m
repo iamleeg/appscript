@@ -22,9 +22,23 @@
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Skips past any Objective-C type qualifier characters (const, in, out, etc.)
+/// that may prefix a type encoding string, returning a pointer to the base type character.
+static const char *ASSkipTypeQualifiers(const char *typeEncoding) {
+    // Qualifier characters defined by the ObjC runtime: r=const, n=in, N=inout, o=out, O=bycopy, R=byref, V=oneway
+    while (typeEncoding && (*typeEncoding == 'r' || *typeEncoding == 'n' ||
+                            *typeEncoding == 'N' || *typeEncoding == 'o' ||
+                            *typeEncoding == 'O' || *typeEncoding == 'R' ||
+                            *typeEncoding == 'V')) {
+        typeEncoding++;
+    }
+    return typeEncoding;
+}
+
 /// Returns a boxed id for a raw buffer `bytes` of size `size` described by `typeEncoding`.
 /// This function is shared between the argument and return-value boxing paths.
 static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
+    typeEncoding = ASSkipTypeQualifiers(typeEncoding);
     if (!typeEncoding || typeEncoding[0] == '\0') {
         return nil;
     }
@@ -116,6 +130,7 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
 /// Unboxes `object` into `outBytes` (of size `size`) according to `typeEncoding`.
 /// Returns YES if the unboxing succeeded.
 static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *typeEncoding) {
+    typeEncoding = ASSkipTypeQualifiers(typeEncoding);
     if (!typeEncoding || typeEncoding[0] == '\0') {
         return NO;
     }

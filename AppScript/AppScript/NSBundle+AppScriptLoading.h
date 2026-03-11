@@ -25,7 +25,7 @@ extern NSString * const ASBundleLoadingErrorDomain;
 
 /// Error codes used within `ASBundleLoadingErrorDomain`.
 typedef NS_ENUM(NSInteger, ASBundleLoadingErrorCode) {
-    /// The bundle has already been loaded via a previous call to -loadAppScriptsInBundle:.
+    /// The bundle has already been loaded via a previous call to -loadScriptsWithError:.
     ASBundleLoadingErrorDuplicateLoad  = 1,
     /// A lexer error occurred while processing an .appscript file.
     ASBundleLoadingErrorLexerFailure   = 2,
@@ -53,7 +53,7 @@ typedef NS_ENUM(NSInteger, ASBundleLoadingErrorCode) {
 ///
 /// - Parameter error: On failure, set to a description of the error.
 /// - Returns: `YES` if all scripts loaded successfully; `NO` otherwise.
-- (BOOL)loadAppScriptsInBundle:(NSError **)error;
+- (BOOL)loadScriptsWithError:(NSError **)error;
 
 @end
 

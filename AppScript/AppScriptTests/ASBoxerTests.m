@@ -16,8 +16,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-@import XCTest;
-@import AppScript;
+#import <XCTest/XCTest.h>
+#import <AppScript/ASBoxer.h>
 
 /// Tests for the ASBoxer utility class, covering boxing of arguments and return values as well
 /// as unboxing of Objective-C objects into NSInvocation argument and return-value slots.

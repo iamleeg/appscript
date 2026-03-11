@@ -108,6 +108,21 @@ static Class ASFindMethodMapClassForSelector(Class startClass, NSString *selecto
     return Nil;
 }
 
+/// Walk the class hierarchy from `startClass` upward to find the first class that has
+/// an AppScript method map installed (i.e., the class where our forwarding overrides live).
+/// Returns Nil if not found. Used to determine the correct super_class for objc_msgSendSuper
+/// fallbacks, so that we don't recurse back into our own override.
+static Class ASFindLowestInstalledOverrideClass(Class startClass) {
+    Class cls = startClass;
+    while (cls != Nil) {
+        if (objc_getAssociatedObject(cls, &ASMethodMapKey) != nil) {
+            return cls;
+        }
+        cls = class_getSuperclass(cls);
+    }
+    return Nil;
+}
+
 static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) {
     // When self is a class object (class-method dispatch), object_getClass(self) is the
     // metaclass — but the method map is stored on the class object itself, so use self
@@ -121,7 +136,12 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 
     if (methodClass == Nil) {
         // Not an AppScript method — call super's forwardInvocation:.
-        struct objc_super superInfo = { .receiver = self, .super_class = class_getSuperclass(cls) };
+        // Use the superclass of the class where our override is actually installed, not
+        // class_getSuperclass(cls), to avoid re-entering our own IMP when cls is a subclass
+        // of the class that has the override (e.g., a class cluster concrete class).
+        Class overrideClass = ASFindLowestInstalledOverrideClass(cls);
+        Class superClass = overrideClass ? class_getSuperclass(overrideClass) : class_getSuperclass(cls);
+        struct objc_super superInfo = { .receiver = self, .super_class = superClass };
         ((void (*)(struct objc_super *, SEL, NSInvocation *))objc_msgSendSuper)(&superInfo,
                                                                                   @selector(forwardInvocation:),
                                                                                   invocation);
@@ -173,7 +193,12 @@ static NSMethodSignature *ASMethodSignatureForSelectorIMP(id self, SEL _cmd, SEL
 
     if (methodClass == Nil) {
         // Fall back to super's methodSignatureForSelector:.
-        struct objc_super superInfo = { .receiver = self, .super_class = class_getSuperclass(cls) };
+        // Use the superclass of the class where our override is actually installed, not
+        // class_getSuperclass(cls), to avoid re-entering our own IMP when cls is a subclass
+        // of the class that has the override (e.g., a class cluster concrete class).
+        Class overrideClass = ASFindLowestInstalledOverrideClass(cls);
+        Class superClass = overrideClass ? class_getSuperclass(overrideClass) : class_getSuperclass(cls);
+        struct objc_super superInfo = { .receiver = self, .super_class = superClass };
         return ((NSMethodSignature *(*)(struct objc_super *, SEL, SEL))objc_msgSendSuper)(&superInfo,
                                                                                             @selector(methodSignatureForSelector:),
                                                                                             selector);
