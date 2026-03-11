@@ -18,7 +18,6 @@
 
 #import "ASHarnessWindowController.h"
 #import "ASTestResult.h"
-#import <AppScript/NSBundle+AppScriptLoading.h>
 
 static NSString * const kColumnStatus   = @"status";
 static NSString * const kColumnTest     = @"test";
@@ -33,9 +32,6 @@ static NSString * const kColumnActual   = @"actual";
 
 /// Ordered test results from the most recent run.
 @property (nonatomic, copy) NSArray<ASTestResult *> *results;
-
-/// YES after the bundle's AppScripts have been loaded once.
-@property (nonatomic) BOOL scriptsLoaded;
 
 @end
 
@@ -148,18 +144,6 @@ static NSString * const kColumnActual   = @"actual";
 - (IBAction)runTests:(nullable id)sender {
     self.runButton.enabled = NO;
     self.summaryLabel.stringValue = @"Running…";
-
-    if (!self.scriptsLoaded) {
-        NSError *loadError = nil;
-        if (![[NSBundle mainBundle] loadAppScriptsInBundle:&loadError]) {
-            self.summaryLabel.stringValue =
-                [NSString stringWithFormat:@"Failed to load scripts: %@",
-                 loadError.localizedDescription];
-            self.runButton.enabled = YES;
-            return;
-        }
-        self.scriptsLoaded = YES;
-    }
 
     NSArray<NSURL *> *scriptURLs =
         [[NSBundle mainBundle] URLsForResourcesWithExtension:@"appscript"

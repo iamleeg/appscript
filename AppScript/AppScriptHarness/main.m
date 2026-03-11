@@ -17,7 +17,20 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <Cocoa/Cocoa.h>
+#import <AppScript/AppScript.h>
 
 int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            NSError *loadError = nil;
+            if (![[NSBundle mainBundle] loadAppScriptsInBundle:&loadError]) {
+                NSLog(@"Unable to load app scripts: %@", [loadError localizedDescription]);
+                abort();
+            }
+        });
+    }
+
+
     return NSApplicationMain(argc, argv);
 }
