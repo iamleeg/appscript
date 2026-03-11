@@ -11,16 +11,14 @@
 
 - runTests {
     // self is the receiver; verify it is the expected class.
-    // [[self class] description] sends +description to the Class object, which returns
-    // the class name as an NSString — no C function call needed.
-    id selfClass = [[self class] description]
+    id selfClassCheck = [self isKindOfClass:[ImplicitVarsTest class]]
 
     // _cmd is the current selector string.
     id iv = [ImplicitVars new]
     id cmdResult = [iv checkCmd]
 
     id result = [NSMutableArray array]
-    [result addObject:selfClass]
+    [result addObject:selfClassCheck]
     [result addObject:cmdResult]
     return result
 }
