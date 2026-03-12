@@ -1,0 +1,43 @@
+@class LogicalOperatorsTest : ASTestCase
+
+- runTests {
+    id yes = YES
+    id no = NO
+
+    // and: — both true gives YES
+    id andBothTrue = [yes and:yes]
+
+    // and: — one false gives NO
+    id andOneFalse = [yes and:no]
+
+    // or: — both false gives NO
+    id orBothFalse = [no or:no]
+
+    // or: — one true gives YES
+    id orOneTrue = [no or:yes]
+
+    // not — negate true gives NO
+    id notTrue = [yes not]
+
+    // not — negate false gives YES
+    id notFalse = [no not]
+
+    // De Morgan: NOT (A OR B) == (NOT A) AND (NOT B)
+    id a = YES
+    id b = NO
+    id lhs = [[a or:b] not]
+    id rhs = [[a not] and:[b not]]
+    id deMorganHolds = [lhs isEqual:rhs]
+
+    id result = [NSMutableArray array]
+    [result addObject:andBothTrue]
+    [result addObject:andOneFalse]
+    [result addObject:orBothFalse]
+    [result addObject:orOneTrue]
+    [result addObject:notTrue]
+    [result addObject:notFalse]
+    [result addObject:deMorganHolds]
+    return result
+}
+
+@end

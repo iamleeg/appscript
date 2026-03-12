@@ -44,4 +44,8 @@
     return [NSNumber numberWithDouble:result];
 }
 
+- (NSNumber *)negated {
+    return [NSNumber numberWithDouble:-[self doubleValue]];
+}
+
 @end

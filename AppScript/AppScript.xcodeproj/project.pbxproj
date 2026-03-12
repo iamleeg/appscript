@@ -99,6 +99,7 @@
 				"NSBundle+AppScriptLoading.h",
 				"NSNumber+AppScriptArithmetic.h",
 				"NSNumber+AppScriptControlFlow.h",
+				"NSNumber+AppScriptLogic.h",
 				"NSObject+AppScriptControlFlow.h",
 			);
 			target = 980EBA002F5F35DD0023077B /* AppScript */;

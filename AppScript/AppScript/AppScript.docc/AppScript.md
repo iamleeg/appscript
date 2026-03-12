@@ -23,6 +23,10 @@ AppScript lets you embed a safe, memory-managed scripting runtime in any macOS a
 
 - <doc:ControlFlowAndArithmetic>
 
+### Accessing C APIs via BridgeSupport
+
+- <doc:BridgeSupportIntegration>
+
 ### Runtime support
 
 - ``ASInterpreter``

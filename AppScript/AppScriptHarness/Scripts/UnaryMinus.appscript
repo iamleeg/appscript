@@ -1,0 +1,22 @@
+@class UnaryMinusTest : ASTestCase
+
+- runTests {
+    // Negate a positive integer.
+    id positive = 7
+    id negativeResult = [positive negated]
+
+    // Double negation restores the original value.
+    id doubleNegated = [negativeResult negated]
+
+    // Negate a floating-point value.
+    id pi = 3.14159
+    id negatedPi = [pi negated]
+
+    id result = [NSMutableArray array]
+    [result addObject:negativeResult]
+    [result addObject:doubleNegated]
+    [result addObject:negatedPi]
+    return result
+}
+
+@end

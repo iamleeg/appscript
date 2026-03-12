@@ -64,4 +64,29 @@
     XCTAssertEqual([result doubleValue], INFINITY);
 }
 
+- (void)test_negated_positiveNumber_returnsNegative {
+    NSNumber *result = [@5 negated];
+    XCTAssertEqualWithAccuracy([result doubleValue], -5.0, 1e-10);
+}
+
+- (void)test_negated_negativeNumber_returnsPositive {
+    NSNumber *result = [@(-3) negated];
+    XCTAssertEqualWithAccuracy([result doubleValue], 3.0, 1e-10);
+}
+
+- (void)test_negated_zero_returnsZero {
+    NSNumber *result = [@0 negated];
+    XCTAssertEqualWithAccuracy([result doubleValue], 0.0, 1e-10);
+}
+
+- (void)test_negated_doubleValue_preservesPrecision {
+    NSNumber *result = [@3.14159 negated];
+    XCTAssertEqualWithAccuracy([result doubleValue], -3.14159, 1e-10);
+}
+
+- (void)test_negated_appliedTwice_returnsOriginalValue {
+    NSNumber *result = [[@7 negated] negated];
+    XCTAssertEqualWithAccuracy([result doubleValue], 7.0, 1e-10);
+}
+
 @end

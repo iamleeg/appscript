@@ -221,6 +221,128 @@ and this category that the AppScript runtime adds to the `NSObject` class:
 @end
 ```
 
+### Unary minus
+
+AppScript does not provide C-style unary minus. To negate a number, send the `negated` message to an `NSNumber`:
+
+```appscript
+id temperature = 37
+id belowFreezing = [temperature negated] // -37
+```
+
+The `NSNumber (AppScriptArithmetic)` category provides:
+
+```objc
+@interface NSNumber (AppScriptArithmetic)
+- (NSNumber *)negated;
+@end
+```
+
+### Logical operators
+
+AppScript does not provide the `&&`, `||`, and `!` C operators. Instead, `NSNumber (AppScriptLogic)` provides:
+
+```objc
+@interface NSNumber (AppScriptLogic)
+- (NSNumber *)and:(NSNumber *)other;
+- (NSNumber *)or:(NSNumber *)other;
+- (NSNumber *)not;
+@end
+```
+
+All three methods evaluate both operands eagerly — unlike `&&` and `||` in C, there is no short-circuit behaviour. Use `-[NSNumber ifTrue:ifFalse:]` when you need a lazy second operand. All methods return `@YES` or `@NO`. Truthiness follows the same rule used throughout the runtime: any `NSNumber` whose `-boolValue` is `YES` is true; any whose `-boolValue` is `NO` is false.
+
+```appscript
+id a = YES
+id b = NO
+id both = [a and:b]   // NO
+id either = [a or:b]  // YES
+id flipped = [a not]  // NO
+```
+
+### BridgeSupport integration
+
+AppScript provides access to C functions and constants declared in Apple's BridgeSupport metadata, while preserving the language's all-objects-are-`id` invariant.
+
+#### What BridgeSupport is
+
+BridgeSupport is an XML format Apple ships alongside its frameworks (in `<Framework.framework>/Resources/BridgeSupport/` and `/System/Library/BridgeSupport/`) that describes each framework's C-level API surface: functions, constants, enums, and structs. The AppScript runtime reads these files to generate Objective-C message-send interfaces automatically, so AppScript code never needs to call a C function directly.
+
+#### How functions are exposed
+
+Each C function described in BridgeSupport is made callable from AppScript as a class method on a generated per-framework proxy class named `AS<FrameworkName>` (e.g., `ASFoundation`, `ASAppKit`). The method name is the original C function name, converted to Objective-C keyword syntax when the function has multiple parameters. For example:
+
+```objc
+// C: double sin(double x)
+// BridgeSupport proxy:
+@interface ASFoundation (AppScriptBridgeSupport)
++ (NSNumber *)sin:(NSNumber *)x;
+@end
+```
+
+```appscript
+id angle = 1.5708
+id result = [ASFoundation sin:angle]
+```
+
+The runtime automatically unboxes `id` arguments to the required C types before calling the underlying symbol, and boxes the C return value back to `id`.
+
+Functions with no return value (`void`) return `nil`.
+
+#### How constants are exposed
+
+Each C constant described in BridgeSupport is exposed as a class method on the same per-framework proxy class:
+
+```objc
+@interface ASFoundation (AppScriptBridgeSupport)
++ (NSNumber *)NSNotFound;
++ (NSNumber *)M_PI;
+@end
+```
+
+```appscript
+id sentinel = [ASFoundation NSNotFound]
+id pi = [ASFoundation M_PI]
+```
+
+Numeric constants are boxed into `NSNumber`. String constants are boxed into `NSString`. Enum values are boxed into `NSNumber`.
+
+#### Framework loading
+
+The host application requests BridgeSupport loading by calling a category method on the proxy class for the desired framework **before** loading any AppScript scripts that depend on those symbols:
+
+```objc
+@interface NSBundle (AppScriptBridgeSupportLoading)
+/// Loads BridgeSupport metadata for the named framework and registers the AS<FrameworkName>
+/// proxy class in the Objective-C runtime.
+/// Returns YES on success; sets error and returns NO if the BridgeSupport file cannot be found or parsed.
++ (BOOL)loadBridgeSupportForFramework:(NSString *)frameworkName error:(NSError **)error;
+@end
+```
+
+An application should call this once per framework. Calling it a second time for the same framework returns `NO` with an error describing the duplicate-load attempt.
+
+#### Boxing and unboxing rules
+
+The same `ASBoxer` rules that govern AppScript method parameters apply to BridgeSupport function arguments and return values. Specifically:
+
+| C type | Boxed type |
+|---|---|
+| `int`, `long`, `NSInteger`, and unsigned variants | `NSNumber` |
+| `float`, `double`, `CGFloat` | `NSNumber` |
+| `BOOL` | `NSNumber` |
+| `char *` | `NSString` |
+| struct (registered with `NSValue`) | `NSValue` |
+| `void` | `nil` |
+
+Structs that are not registered with `NSValue` produce a runtime error.
+
+#### Limitations
+
+- Functions with variadic arguments (`...`) are not supported and are silently omitted from the generated proxy.
+- Function pointer arguments and return values are not supported.
+- BridgeSupport metadata is only loaded for frameworks explicitly requested by the host application; it is never loaded automatically.
+
 ## Runtime Implementation
 
 An app embeds the AppScript runtime as a dynamic framework, and loads the scripts for a bundle by calling a category method on `NSBundle` that the framework provides:

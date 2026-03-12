@@ -36,6 +36,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// If other is zero, returns an NSNumber wrapping positive infinity.
 - (NSNumber *)numberByDividingBy:(NSNumber *)other;
 
+/// Returns a new NSNumber whose value is the arithmetic negation of the receiver.
+- (NSNumber *)negated;
+
 @end
 
 NS_ASSUME_NONNULL_END

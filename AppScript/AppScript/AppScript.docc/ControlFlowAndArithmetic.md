@@ -8,16 +8,31 @@ AppScript has no built-in control flow keywords or arithmetic operators. Instead
 
 ## Arithmetic
 
-`NSNumber` gains four arithmetic methods:
+`NSNumber` gains four binary arithmetic methods and one unary method:
 
 ```appscript
 id sum = [x numberByAdding: y]
 id diff = [x numberBySubtracting: y]
 id product = [x numberByMultiplyingBy: y]
 id quotient = [x numberByDividingBy: y]
+id negative = [x negated]
 ```
 
-All operations use double-precision arithmetic and return a new `NSNumber`.
+All operations use double-precision arithmetic and return a new `NSNumber`. `negated` returns the arithmetic negation of the receiver.
+
+## Logical operators
+
+`NSNumber` also gains three logical operator methods that treat the receiver as a boolean:
+
+```appscript
+id both = [a and: b]    // YES iff both a and b are truthy
+id either = [a or: b]   // YES iff a, b, or both are truthy
+id flipped = [a not]    // YES iff a is falsy
+```
+
+Truthiness follows the same rule as ``-[NSNumber ifTrue:ifFalse:]``: any `NSNumber` whose `-boolValue` is `YES` is considered true. All three methods return `@YES` or `@NO`.
+
+Unlike `&&` and `||` in C, `and:` and `or:` evaluate both operands **eagerly** — the second argument is fully evaluated before the method is called. When you need the second operand to be skipped based on the first, use `ifTrue:ifFalse:` with blocks instead.
 
 ## Conditionals
 
