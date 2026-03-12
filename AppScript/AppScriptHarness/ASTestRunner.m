@@ -66,7 +66,7 @@
 
     NSURL *expectedURL = [[NSBundle mainBundle] URLForResource:testName
                                                  withExtension:@"expected"
-                                                  subdirectory:@"Scripts"];
+                                                  subdirectory:nil];
 
     id instance = [cls new];
 #pragma clang diagnostic push
