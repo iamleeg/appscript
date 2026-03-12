@@ -1,0 +1,10 @@
+<?xml version='1.0'?>
+<signatures version='1.0'>
+<function name='sin'><arg type64='d'/><retval type64='d'/></function>
+<function name='cos'><arg type64='d'/><retval type64='d'/></function>
+<function name='NSLog' variadic='true'><arg type64='@'/></function>
+<constant name='M_PI' type64='d'/>
+<constant name='NSNotFound' type64='q'/>
+<enum name='NSASCIIStringEncoding' value64='1'/>
+<enum name='NSUTFStringEncoding' value64='4' ignore='true'/>
+</signatures>

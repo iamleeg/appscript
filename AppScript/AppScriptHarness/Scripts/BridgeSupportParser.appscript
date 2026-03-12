@@ -1,0 +1,33 @@
+@class BridgeSupportParserTest : ASTestCase
+
+- runTests {
+    id parser = [ASBridgeSupportParser new]
+    id url = [[NSBundle mainBundle] URLForResource:@"TestBridgeSupport" withExtension:@"bridgesupport"]
+    id doc = [parser parseURL:url]
+
+    // 2 non-variadic functions (sin, cos) + 1 variadic (NSLog) = 3 total
+    id functionCount = [[doc functions] count]
+    // 2 constants (M_PI, NSNotFound)
+    id constantCount = [[doc constants] count]
+    // 1 enum (NSASCIIStringEncoding; NSUTFStringEncoding is ignored)
+    id enumCount = [[doc enumerations] count]
+
+    // Lookup by name
+    id sinFunc = [doc functionNamed:@"sin"]
+    id sinName = [sinFunc name]
+    id piConst = [doc constantNamed:@"M_PI"]
+    id piType = [piConst typeEncoding]
+    id asciiEnum = [doc enumerationNamed:@"NSASCIIStringEncoding"]
+    id asciiValue = [asciiEnum value]
+
+    id result = [NSMutableArray array]
+    [result addObject:functionCount]
+    [result addObject:constantCount]
+    [result addObject:enumCount]
+    [result addObject:sinName]
+    [result addObject:piType]
+    [result addObject:asciiValue]
+    return result
+}
+
+@end
