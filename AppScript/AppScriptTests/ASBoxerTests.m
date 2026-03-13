@@ -189,4 +189,25 @@
                    @"Boxed argument value should equal the original index 1");
 }
 
+// ---------------------------------------------------------------------------
+// Class ('#') return-type boxing
+// ---------------------------------------------------------------------------
+
+- (void)test_boxedReturnValue_classReturnType_returnsClassObject {
+    // -[NSObject class] has return type '#' (Class).
+    // ASBoxer must return the Class as an id, not wrap it in NSValue.
+    NSArray *array = @[];
+    NSInvocation *inv = [self invokedInvocationForSelector:@selector(class) onTarget:array];
+
+    id result = [ASBoxer boxedReturnValueFromInvocation:inv];
+
+    XCTAssertNotNil(result, @"Boxing a Class return value should not yield nil");
+    // The result must be a Class object (a subclass of NSArray), not an NSValue wrapper.
+    XCTAssertFalse([result isKindOfClass:[NSValue class]],
+                   @"Boxing a Class return value must not produce an NSValue wrapper");
+    // Sending a class-level message to the result should work: it is a real Class.
+    XCTAssertTrue([result isSubclassOfClass:[NSArray class]],
+                   @"Boxing [NSArray class] should yield a Class that is a subclass of NSArray");
+}
+
 @end

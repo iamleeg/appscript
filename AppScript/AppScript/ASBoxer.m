@@ -50,6 +50,13 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             memcpy(&obj, bytes, sizeof(id));
             return obj;
         }
+        case '#': {
+            // Class — the bytes hold a Class pointer. Return it as id so AppScript code
+            // can send messages to the class object (e.g. [cls description], [cls new]).
+            Class __unsafe_unretained cls = Nil;
+            memcpy(&cls, bytes, sizeof(Class));
+            return cls;
+        }
         case 'B': {
             // BOOL (modern ObjC: _Bool, 1 byte)
             BOOL value = NO;

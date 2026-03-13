@@ -87,7 +87,6 @@
 				ASClassDefinitionNode.h,
 				ASDictionaryLiteralNode.h,
 				ASIdentifierNode.h,
-				ASSuperNode.h,
 				ASInterpreter.h,
 				ASLexer.h,
 				ASMessageSendNode.h,
@@ -100,6 +99,7 @@
 				ASRuntimeInstaller.h,
 				ASScope.h,
 				ASStringLiteralNode.h,
+				ASSuperNode.h,
 				ASToken.h,
 				ASVariableDeclarationNode.h,
 				"NSArray+AppScriptBlocks.h",
@@ -109,6 +109,8 @@
 				"NSNumber+AppScriptControlFlow.h",
 				"NSNumber+AppScriptLogic.h",
 				"NSObject+AppScriptControlFlow.h",
+				"NSString+AppScriptRuntime.h",
+				"NSURL+AppScriptFileReading.h",
 			);
 			target = 980EBA002F5F35DD0023077B /* AppScript */;
 		};
