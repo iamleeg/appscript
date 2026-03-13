@@ -56,6 +56,23 @@ BridgeSupport distinguishes two kinds of named values:
 | Struct (registered with `NSValue`) | `NSValue` |
 | `void` | `nil` |
 
+## Built-in Foundation bridges
+
+For a small set of commonly needed C functions that cannot easily be covered by BridgeSupport (e.g. functions that take `NSError **` out-parameters, or functions that return a `Class`), AppScript ships thin category methods on the relevant Foundation class. No BridgeSupport loading is required to use these.
+
+| Category | Method | Replaces |
+|---|---|---|
+| `NSString (AppScriptRuntime)` | `-as_class` | `NSClassFromString()` — returns the named `Class` as `id`, or `nil`. |
+| `NSURL (AppScriptFileReading)` | `-as_stringContents` | `+[NSString stringWithContentsOfURL:encoding:error:]` — reads UTF-8, returns `nil` on error. |
+
+```appscript
+id cls = [@"NSMutableArray" as_class]
+id array = [cls new]
+
+id url = [NSURL fileURLWithPath: @"/path/to/notes.txt"]
+id text = [url as_stringContents]
+```
+
 ## Limitations
 
 - Variadic functions (`...`) are not supported and are omitted from the generated proxy.

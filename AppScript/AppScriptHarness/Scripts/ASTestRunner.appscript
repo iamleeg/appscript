@@ -1,0 +1,64 @@
+@class ASTestRunner : NSObject
+
+- runAllTests {
+    id testCaseClass = [@"ASTestCase" as_class]
+    id results = [NSMutableArray array]
+
+    id allClasses = [ASRuntimeInstaller registeredClasses]
+    id enumerator = [allClasses objectEnumerator]
+    id cls = [enumerator nextObject]
+    [self do:^{
+        id isSubclass = [cls isSubclassOfClass:testCaseClass]
+        id isSame = [cls isEqual:testCaseClass]
+        [isSubclass ifTrue:^{
+            [isSame ifTrue:^{
+                return nil
+            } ifFalse:^{
+                id result = [self runTestClass:cls]
+                [results addObject:result]
+            }]
+        } ifFalse:^{
+            return nil
+        }]
+        cls = [enumerator nextObject]
+    } while:^{
+        return cls
+    }]
+
+    return results
+}
+
+- runTestClass: cls {
+    id className = [cls description]
+    id hasSuffix = [className hasSuffix:@"Test"]
+    id testName = [hasSuffix ifTrue:^{
+        return [className substringToIndex:[[className length] numberBySubtracting:4]]
+    } ifFalse:^{
+        return className
+    }]
+
+    id instance = [cls new]
+    id resultObj = [instance runTests]
+    id actualRaw = [resultObj description]
+    id actual = [actualRaw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
+
+    id expectedURL = [[NSBundle mainBundle] URLForResource:testName withExtension:@"expected"]
+    id rawContents = [expectedURL as_stringContents]
+    id hasContents = [rawContents isKindOfClass:[NSString class]]
+
+    id expected = [hasContents ifTrue:^{
+        return [rawContents stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
+    } ifFalse:^{
+        return [@"no .expected file for " stringByAppendingString:testName]
+    }]
+
+    id passed = [hasContents ifTrue:^{
+        return [actual isEqualToString:expected]
+    } ifFalse:^{
+        return 0
+    }]
+
+    return [[ASTestResult alloc] initWithTestName:testName passed:passed expected:expected actual:actual]
+}
+
+@end

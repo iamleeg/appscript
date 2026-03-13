@@ -193,6 +193,24 @@
 // Class ('#') return-type boxing
 // ---------------------------------------------------------------------------
 
+- (void)test_unboxObject_ClassArgument_setsCorrectValue {
+    // +[NSArray isSubclassOfClass:] takes a Class argument ('#' encoding).
+    // Unboxing a Class id into a '#' argument should work correctly.
+    NSMethodSignature *sig = [NSArray methodSignatureForSelector:@selector(isSubclassOfClass:)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = [NSMutableArray class];
+    inv.selector = @selector(isSubclassOfClass:);
+
+    [ASBoxer unboxObject:[NSArray class] intoArgumentAtIndex:0 ofInvocation:inv];
+    [inv invoke];
+
+    BOOL result = NO;
+    [inv getReturnValue:&result];
+
+    XCTAssertTrue(result,
+                  @"[NSMutableArray isSubclassOfClass:[NSArray class]] should return YES");
+}
+
 - (void)test_boxedReturnValue_classReturnType_returnsClassObject {
     // -[NSObject class] has return type '#' (Class).
     // ASBoxer must return the Class as an id, not wrap it in NSValue.

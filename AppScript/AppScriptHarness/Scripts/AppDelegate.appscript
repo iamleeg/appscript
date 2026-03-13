@@ -1,0 +1,12 @@
+@category AppDelegate (AppScriptDelegate)
+
+- applicationDidFinishLaunching: notification {
+    id controllerClass = [@"ASHarnessController" as_class]
+    id controller = [controllerClass new]
+    [self setWindowController:controller]
+    [[self windowController] showWindow:nil]
+    [[[self windowController] window] center]
+    [[self windowController] runTests:nil]
+}
+
+@end

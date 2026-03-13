@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// AppDelegate.m — AppScriptHarness application delegate implementation
+// AppDelegate.m — Minimal ObjC stub for AppScriptHarness application delegate.
 // Copyright (C) 2026 Graham Lee
 //
 // This program is free software: you can redistribute it and/or modify
@@ -16,25 +16,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// The application startup logic lives in Scripts/AppDelegate.appscript.
+// This stub retains only applicationShouldTerminateAfterLastWindowClosed: in
+// Objective-C because NSApplicationDelegate declares it as returning BOOL, a
+// primitive type that AppScript cannot guarantee to return with the correct
+// type encoding.
+
 #import "AppDelegate.h"
-#import "ASHarnessWindowController.h"
 
 @interface AppDelegate ()
-@property (nonatomic, strong) ASHarnessWindowController *windowController;
+@property (nonatomic, strong) id windowController;
 @end
 
 @implementation AppDelegate
-
-- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-    // Scripts are loaded by main.m before NSApplicationMain runs.
-    // ASHarnessController is defined in AppScript and subclasses ASHarnessWindowController.
-    // Its -init is inherited from the ObjC base class, which builds the window.
-    Class controllerClass = NSClassFromString(@"ASHarnessController") ?: [ASHarnessWindowController class];
-    self.windowController = [[controllerClass alloc] init];
-    [self.windowController showWindow:nil];
-    [self.windowController.window center];
-    [self.windowController runTests:nil];
-}
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
     return YES;

@@ -149,6 +149,12 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
             memcpy(outBytes, &obj, sizeof(id));
             return YES;
         }
+        case '#': {
+            // Class pointer — same layout as id, pass through directly.
+            Class __unsafe_unretained cls = object;
+            memcpy(outBytes, &cls, sizeof(Class));
+            return YES;
+        }
         case 'B': {
             BOOL value = [object boolValue];
             memcpy(outBytes, &value, sizeof(BOOL));
