@@ -25,10 +25,31 @@
 #import <AppScript/ASAssignmentNode.h>
 #import <AppScript/ASMessageSendNode.h>
 #import <AppScript/ASIdentifierNode.h>
+#import <AppScript/ASSuperNode.h>
 #import <AppScript/ASStringLiteralNode.h>
 #import <AppScript/ASNumberLiteralNode.h>
 #import <AppScript/ASArrayLiteralNode.h>
 #import <AppScript/ASDictionaryLiteralNode.h>
+
+// ---------------------------------------------------------------------------
+// Concrete Objective-C class hierarchy used by super-dispatch tests.
+// These must not be class clusters so that class_getInstanceMethod finds a
+// real, callable IMP (not an abstract stub).
+// ---------------------------------------------------------------------------
+
+@interface ASSuperTestBase : NSObject
+- (NSString *)testKind;
+@end
+
+@implementation ASSuperTestBase
+- (NSString *)testKind { return @"base"; }
+@end
+
+@interface ASSuperTestSub : ASSuperTestBase
+@end
+
+@implementation ASSuperTestSub
+@end
 
 // ---------------------------------------------------------------------------
 // Convenience node-construction helpers
@@ -44,6 +65,10 @@ static ASNumberLiteralNode *numberNode(NSNumber *value) {
 
 static ASIdentifierNode *identNode(NSString *name) {
     return [[ASIdentifierNode alloc] initWithName:name line:1 column:1];
+}
+
+static ASSuperNode *superNode(void) {
+    return [[ASSuperNode alloc] initWithLine:1 column:1];
 }
 
 static ASReturnNode *returnNode(ASASTNode * _Nullable value) {
@@ -105,6 +130,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 - (void)test_evaluateMethodBody_emptyBody_returnsNil {
     id result = [self.interpreter evaluateMethodBody:@[]
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -122,6 +148,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -143,6 +170,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -164,6 +192,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -186,6 +215,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
     id receiver = [NSObject new];
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:receiver
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -204,6 +234,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test:"
                                           arguments:@[ @"bound-value" ]
                                      parameterNames:@[ @"param" ]
@@ -226,6 +257,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -248,6 +280,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -275,6 +308,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -302,6 +336,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -323,6 +358,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -346,6 +382,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -370,6 +407,7 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 
     id result = [self.interpreter evaluateMethodBody:body
                                         withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
                                            selector:@"test"
                                           arguments:@[]
                                      parameterNames:@[]
@@ -378,6 +416,120 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                    @"[NSNull null] from a native message send should be returned as-is");
     XCTAssertNotEqual(result, [ASNull null],
                       @"[NSNull null] from a native call must not be conflated with ASNull");
+}
+
+// ---------------------------------------------------------------------------
+// 14. super send dispatches to the superclass implementation
+//
+// Strategy: ASSuperTestSub is a concrete subclass of ASSuperTestBase (defined
+// above). We construct a body of:
+//   return [super testKind]
+// with definingClass = ASSuperTestSub and receiver = an ASSuperTestSub
+// instance. The dispatch must start from ASSuperTestBase's -testKind
+// implementation, which returns @"base".
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateMethodBody_superSend_dispatchesToSuperclassMethod {
+    // body: return [super testKind]
+    ASMessageSendNode *send = messageSendNode(superNode(), @[@"testKind"], @[]);
+    NSArray<ASASTNode *> *body = @[ returnNode(send) ];
+
+    ASSuperTestSub *receiver = [ASSuperTestSub new];
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:receiver
+                                       definingClass:[ASSuperTestSub class]
+                                           selector:@"test"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    XCTAssertEqualObjects(result, @"base",
+                          @"[super testKind] should dispatch to ASSuperTestBase's implementation");
+}
+
+// ---------------------------------------------------------------------------
+// 15. super send uses `self` as the receiver object
+//
+// Verify that the actual object receiving the super-dispatched call is still
+// `self` (not some proxy).  We do this by calling [super description] on an
+// NSMutableString and checking that the result is a string (NSObject's
+// -description returns the object's class and address, both of which are
+// strings).
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateMethodBody_superSend_receiverIsStillSelf {
+    // body: return [super description]
+    ASMessageSendNode *send = messageSendNode(superNode(), @[@"description"], @[]);
+    NSArray<ASASTNode *> *body = @[ returnNode(send) ];
+
+    NSMutableString *receiver = [NSMutableString stringWithString:@"hello"];
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:receiver
+                                       definingClass:[NSMutableString class]
+                                           selector:@"test"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    XCTAssertTrue([result isKindOfClass:[NSString class]],
+                  @"-description should return a string");
+}
+
+// ---------------------------------------------------------------------------
+// 16. super send with an argument dispatches correctly
+//
+// Use [super isEqual: self] on an ASSuperTestSub instance to verify that
+// argument passing works through the super dispatch path. The super dispatch
+// starts from ASSuperTestBase, which inherits isEqual: from NSObject.
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateMethodBody_superSendWithArgument_passesArgumentCorrectly {
+    // body: return [super isEqual: self]
+    // Dispatches via ASSuperTestBase → NSObject's isEqual:, with receiver == self → YES.
+    ASMessageSendNode *send = messageSendNode(superNode(),
+                                              @[@"isEqual"],
+                                              @[ identNode(@"self") ]);
+    NSArray<ASASTNode *> *body = @[ returnNode(send) ];
+
+    ASSuperTestSub *receiver = [ASSuperTestSub new];
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:receiver
+                                       definingClass:[ASSuperTestSub class]
+                                           selector:@"test:"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    XCTAssertEqualObjects(result, @YES,
+                          @"[super isEqual: self] should return YES when compared to itself");
+}
+
+// ---------------------------------------------------------------------------
+// 17. self = [super init] pattern: reassigning self works
+//
+// Construct a body that reassigns self from the result of [super init].
+// definingClass = ASSuperTestSub so super dispatches to ASSuperTestBase,
+// which inherits -init from NSObject; NSObject -init returns the same object.
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateMethodBody_reassignSelfFromSuperInit_selfUpdated {
+    // body:
+    //   self = [super init]
+    //   return self
+    ASMessageSendNode *initSend = messageSendNode(superNode(), @[@"init"], @[]);
+    NSArray<ASASTNode *> *body = @[
+        assignNode(@"self", initSend),
+        returnNode(identNode(@"self")),
+    ];
+
+    ASSuperTestSub *receiver = [ASSuperTestSub alloc];
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:receiver
+                                       definingClass:[ASSuperTestSub class]
+                                           selector:@"init"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    // ASSuperTestBase (and thus NSObject) -init returns the same object.
+    XCTAssertEqual(result, receiver,
+                   @"After self = [super init], returning self should yield the same object");
 }
 
 @end

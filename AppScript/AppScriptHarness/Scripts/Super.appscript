@@ -1,0 +1,50 @@
+@class Animal : NSObject
+
+- init {
+    self = [super init]
+    return self
+}
+
+- kind {
+    return @"animal"
+}
+
+- greet: aName {
+    return [@"Hello " stringByAppendingString: aName]
+}
+
+@end
+
+@class Dog : Animal
+
+- kind {
+    id base = [super kind]
+    return [base stringByAppendingString: @" dog"]
+}
+
+- greet: aName {
+    id base = [super greet: aName]
+    return [base stringByAppendingString: @" woof"]
+}
+
+@end
+
+@class SuperTest : ASTestCase
+
+- runTests {
+    id results = [NSMutableArray array]
+
+    // self = [super init] works: Dog allocates successfully
+    id dog = [Dog new]
+    [results addObject: [dog className]]
+
+    // [super kind] chains the superclass string value
+    [results addObject: [dog kind]]
+
+    // [super greet:] passes an argument through the super dispatch path
+    [results addObject: [dog greet: @"world"]]
+
+    return results
+}
+
+@end

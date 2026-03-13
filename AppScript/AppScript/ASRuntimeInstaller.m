@@ -172,8 +172,11 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
     }
 
     // Evaluate the method body via the interpreter.
+    // Pass methodClass as the defining class so that [super ...] sends dispatch
+    // starting from [methodClass superclass], matching objc_msgSendSuper semantics.
     id result = [interpreter evaluateMethodBody:methodNode.body
                                    withReceiver:self
+                                  definingClass:methodClass
                                        selector:selectorString
                                       arguments:arguments
                                  parameterNames:methodNode.parameterNames
@@ -300,6 +303,21 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
         ASRegisteredClassesQueue = dispatch_queue_create("_ASRegisteredClassesQueue", DISPATCH_QUEUE_SERIAL);
         ASRegisteredClassValues = [NSMutableArray array];
     }
+}
+
++ (nullable ASMethodNode *)appScriptMethodNodeForSuperDispatch:(Class)startClass
+                                                      selector:(NSString *)selectorString
+                                                 definingClass:(Class _Nullable * _Nullable)outDefiningClass {
+    Class methodClass = ASFindMethodMapClassForSelector(startClass, selectorString);
+    if (methodClass == Nil) {
+        return nil;
+    }
+    NSDictionary<NSString *, ASMethodNode *> *map = objc_getAssociatedObject(methodClass, &ASMethodMapKey);
+    ASMethodNode *methodNode = map[selectorString];
+    if (outDefiningClass != NULL) {
+        *outDefiningClass = methodClass;
+    }
+    return methodNode;
 }
 
 + (NSArray<Class> *)registeredClasses {

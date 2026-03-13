@@ -373,4 +373,23 @@
     XCTAssertEqual(tokens[1].type, ASTokenTypeEOF);
 }
 
+// ---------------------------------------------------------------------------
+// 24. super keyword
+// ---------------------------------------------------------------------------
+
+- (void)test_tokenize_super_producesKwSuperToken {
+    NSArray<ASToken *> *tokens = [self tokensForSource:@"super"];
+    XCTAssertEqual(tokens.count, 2U);
+    XCTAssertEqual(tokens[0].type, ASTokenTypeKwSuper);
+    XCTAssertEqualObjects(tokens[0].text, @"super");
+}
+
+- (void)test_tokenize_superIdentifier_isNotKeyword {
+    // "superman" must tokenize as a plain identifier, not as the super keyword.
+    NSArray<ASToken *> *tokens = [self tokensForSource:@"superman"];
+    XCTAssertEqual(tokens.count, 2U);
+    XCTAssertEqual(tokens[0].type, ASTokenTypeIdentifier);
+    XCTAssertEqualObjects(tokens[0].text, @"superman");
+}
+
 @end

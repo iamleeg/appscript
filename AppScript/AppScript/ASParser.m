@@ -31,6 +31,7 @@
 #import "ASNumberLiteralNode.h"
 #import "ASArrayLiteralNode.h"
 #import "ASDictionaryLiteralNode.h"
+#import "ASSuperNode.h"
 
 NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
 
@@ -42,6 +43,8 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
 
 @property (nonatomic, readonly) NSArray<ASToken *> *tokens;
 @property (nonatomic) NSUInteger position;
+/// Number of block literals currently being parsed. Used to reject `super` inside blocks.
+@property (nonatomic) NSUInteger blockDepth;
 
 - (instancetype)initWithTokens:(NSArray<ASToken *> *)tokens NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
@@ -622,6 +625,15 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
         return [self parseVariableDeclaration:state error:error];
     }
 
+    // self = expr — reassigning self (e.g. self = [super init])
+    if ([state currentIs:ASTokenTypeKwSelf]) {
+        ASToken *next = [state peekAhead:1];
+        if (next.type == ASTokenTypeEquals) {
+            return [self parseAssignment:state error:error];
+        }
+        // Otherwise fall through to expression statement (e.g. bare `self`)
+    }
+
     // Assignment or expression statement: starts with identifier
     // Look ahead to distinguish: identifier = expr  vs  expression-statement
     if ([state currentIs:ASTokenTypeIdentifier]) {
@@ -739,7 +751,8 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
 
 - (nullable ASAssignmentNode *)parseAssignment:(ASParseState *)state
                                          error:(NSError **)error {
-    ASToken *nameToken = [state consume]; // identifier
+    // Accepts either a plain identifier or the 'self' keyword as the assignment target.
+    ASToken *nameToken = [state consume]; // identifier or 'self'
     NSUInteger line = nameToken.line;
     NSUInteger column = nameToken.column;
     NSString *varName = nameToken.text;
@@ -840,6 +853,21 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
         return [[ASIdentifierNode alloc] initWithName:cmdTok.text
                                                  line:cmdTok.line
                                                column:cmdTok.column];
+    }
+
+    // super — only valid as a message receiver outside a block literal
+    if ([state currentIs:ASTokenTypeKwSuper]) {
+        ASToken *superTok = [state consume];
+        if (state.blockDepth > 0) {
+            if (error) {
+                *error = [self errorForToken:superTok
+                                        code:ASParserErrorUnexpectedToken
+                                     message:@"'super' is not valid inside a block literal"];
+            }
+            return nil;
+        }
+        return [[ASSuperNode alloc] initWithLine:superTok.line
+                                          column:superTok.column];
     }
 
     // Plain identifier (variable, class name)
@@ -1105,7 +1133,9 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
         [state consume];
     }
 
+    state.blockDepth++;
     NSArray<ASASTNode *> *body = [self parseBody:state error:error];
+    state.blockDepth--;
     if (!body) return nil;
 
     return [[ASBlockLiteralNode alloc] initWithParameterNames:[params copy]

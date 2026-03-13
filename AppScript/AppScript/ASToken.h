@@ -53,6 +53,8 @@ typedef NS_ENUM(NSInteger, ASTokenType) {
     ASTokenTypeKwSelf,
     /// The _cmd keyword.
     ASTokenTypeKwCmd,
+    /// The super keyword.
+    ASTokenTypeKwSuper,
 
     // Identifiers
     /// A non-keyword identifier, e.g. a variable or method name.

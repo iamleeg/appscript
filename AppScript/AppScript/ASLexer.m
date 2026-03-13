@@ -367,6 +367,8 @@ NSString * const ASLexerErrorDomain = @"ASLexerErrorDomain";
                 identType = ASTokenTypeKwSelf;
             } else if ([ident isEqualToString:@"_cmd"]) {
                 identType = ASTokenTypeKwCmd;
+            } else if ([ident isEqualToString:@"super"]) {
+                identType = ASTokenTypeKwSuper;
             } else {
                 identType = ASTokenTypeIdentifier;
             }

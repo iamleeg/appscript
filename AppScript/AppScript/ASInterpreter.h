@@ -35,6 +35,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// - Parameters:
 ///   - body: The array of ASASTNode statement nodes making up the method body.
 ///   - receiver: The object receiving the method call (`self` inside the method).
+///   - definingClass: The Objective-C class that statically defines this method. Used to
+///     resolve `super` sends: the message is dispatched starting from `[definingClass superclass]`
+///     while `self` remains the actual receiver.
 ///   - selector: The selector being invoked (available as `_cmd` inside the method).
 ///   - arguments: The (already-boxed) argument objects, parallel to the method's parameter names.
 ///   - parameterNames: The parameter variable names declared in the method signature.
@@ -42,6 +45,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// - Returns: The value returned by a `return` statement, or `nil` if the body completes without returning.
 - (nullable id)evaluateMethodBody:(NSArray<ASASTNode *> *)body
                      withReceiver:(id)receiver
+                     definingClass:(Class)definingClass
                          selector:(NSString *)selector
                         arguments:(NSArray *)arguments
                    parameterNames:(NSArray<NSString *> *)parameterNames

@@ -21,6 +21,8 @@
 #import "ASNull.h"
 #import <objc/runtime.h>
 #import "ASBoxer.h"
+#import "ASRuntimeInstaller.h"
+#import "ASMethodNode.h"
 
 // AST node types
 #import "ASReturnNode.h"
@@ -33,6 +35,7 @@
 #import "ASNumberLiteralNode.h"
 #import "ASArrayLiteralNode.h"
 #import "ASDictionaryLiteralNode.h"
+#import "ASSuperNode.h"
 
 // ---------------------------------------------------------------------------
 // Internal execution context
@@ -47,6 +50,10 @@
 @property (nonatomic, strong) NSMutableSet<NSString *> *constantNames;
 @property (nonatomic, strong, nullable) NSString *scriptPath;
 
+/// The Objective-C class that statically defines the currently-executing method.
+/// Used to resolve `super` sends: dispatch starts from [definingClass superclass].
+@property (nonatomic, strong, nullable) Class definingClass;
+
 /// YES once a return statement has been executed.
 @property (nonatomic) BOOL didReturn;
 
@@ -54,6 +61,7 @@
 @property (nonatomic, strong, nullable) id returnValue;
 
 - (instancetype)initWithScope:(ASScope *)scope
+                 definingClass:(Class)definingClass
                    scriptPath:(NSString *)scriptPath NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
@@ -61,10 +69,13 @@
 
 @implementation ASExecutionContext
 
-- (instancetype)initWithScope:(ASScope *)scope scriptPath:(NSString *)scriptPath {
+- (instancetype)initWithScope:(ASScope *)scope
+                 definingClass:(Class)definingClass
+                   scriptPath:(NSString *)scriptPath {
     self = [super init];
     if (self) {
         _currentScope = scope;
+        _definingClass = definingClass;
         _scriptPath = scriptPath;
         _weakNames = [NSMutableSet set];
         _constantNames = [NSMutableSet set];
@@ -93,6 +104,7 @@
 /// Returns the block's return value (nil if no return statement was reached).
 - (nullable id)executeBlockBody:(NSArray<ASASTNode *> *)body
                     parentScope:(ASScope *)parentScope
+                   definingClass:(nullable Class)definingClass
                      scriptPath:(NSString *)scriptPath
                       weakNames:(NSMutableSet<NSString *> *)weakNames
                   constantNames:(NSMutableSet<NSString *> *)constantNames
@@ -114,6 +126,7 @@
 
 - (nullable id)evaluateMethodBody:(NSArray<ASASTNode *> *)body
                      withReceiver:(id)receiver
+                     definingClass:(Class)definingClass
                          selector:(NSString *)selector
                         arguments:(NSArray *)arguments
                    parameterNames:(NSArray<NSString *> *)parameterNames
@@ -133,6 +146,7 @@
 
     // Build execution context.
     ASExecutionContext *ctx = [[ASExecutionContext alloc] initWithScope:rootScope
+                                                          definingClass:definingClass
                                                             scriptPath:scriptPath];
 
     // Execute body statements in order.
@@ -290,7 +304,17 @@
 // ---------------------------------------------------------------------------
 
 - (nullable id)evaluateMessageSend:(ASMessageSendNode *)node context:(ASExecutionContext *)ctx {
-    id receiver = [self evaluateExpression:node.receiver context:ctx];
+    // Detect super sends before evaluating the receiver as an expression.
+    // For super: the actual receiver is self; method lookup starts from
+    // [definingClass superclass], matching objc_msgSendSuper semantics.
+    BOOL isSuperSend = [node.receiver isKindOfClass:[ASSuperNode class]];
+
+    id receiver;
+    if (isSuperSend) {
+        receiver = [ctx.currentScope valueForName:@"self"];
+    } else {
+        receiver = [self evaluateExpression:node.receiver context:ctx];
+    }
 
     // Build selector from parts.
     SEL sel = NSSelectorFromString(node.selector);
@@ -303,7 +327,10 @@
         [argValues addObject:argValue ?: [ASNull null]];
     }
 
-    // Obtain the method signature by querying the runtime directly.
+    // Obtain the method and its signature by querying the runtime directly.
+    //
+    // For super sends, start lookup from [definingClass superclass].
+    // For normal sends, use the receiver's dynamic class.
     //
     // Using -methodSignatureForSelector: would route through our own
     // ASMethodSignatureForSelectorIMP trampoline (installed on every AppScript
@@ -312,18 +339,28 @@
     // unambiguous: class_getClassMethod for class-object receivers,
     // class_getInstanceMethod for instance receivers.
     NSMethodSignature *sig = nil;
+    Method foundMethod = nil;
     if (receiver != nil) {
+        Class lookupClass;
         BOOL receiverIsClass = class_isMetaClass(object_getClass(receiver));
-        if (receiverIsClass) {
-            Method m = class_getClassMethod((Class)receiver, sel);
-            if (m) {
-                sig = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(m)];
+        if (isSuperSend) {
+            // Super dispatch: start from the superclass of the defining class.
+            Class superClass = [ctx.definingClass superclass];
+            if (receiverIsClass) {
+                foundMethod = class_getClassMethod(superClass, sel);
+            } else {
+                foundMethod = class_getInstanceMethod(superClass, sel);
             }
+            (void)lookupClass; // suppress unused-variable warning
         } else {
-            Method m = class_getInstanceMethod(object_getClass(receiver), sel);
-            if (m) {
-                sig = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(m)];
+            if (receiverIsClass) {
+                foundMethod = class_getClassMethod((Class)receiver, sel);
+            } else {
+                foundMethod = class_getInstanceMethod(object_getClass(receiver), sel);
             }
+        }
+        if (foundMethod) {
+            sig = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(foundMethod)];
         }
     }
 
@@ -349,7 +386,41 @@
         [ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv];
     }
 
-    [inv invoke];
+    if (isSuperSend) {
+        // For super sends, we must bypass dynamic dispatch to avoid infinite recursion.
+        //
+        // When the target method is defined in an AppScript class, the ObjC runtime has
+        // only a forwarding-stub IMP installed (via _objc_msgForward). Calling that stub
+        // via invokeUsingIMP: would re-enter ASForwardInvocationIMP, which searches from
+        // the receiver's class (not the superclass), finds the same override, and recurses
+        // infinitely.
+        //
+        // Fix: if the super method is an AppScript method, invoke evaluateMethodBody:
+        // directly with the superclass's AST body.  Only fall back to invokeUsingIMP:
+        // for genuine native ObjC methods (where no AppScript method map entry exists).
+        Class superClass = [ctx.definingClass superclass];
+        Class appScriptDefiningClass = Nil;
+        ASMethodNode *appScriptMethod =
+            [ASRuntimeInstaller appScriptMethodNodeForSuperDispatch:superClass
+                                                           selector:node.selector
+                                                      definingClass:&appScriptDefiningClass];
+        if (appScriptMethod != nil) {
+            // Direct AST dispatch: bypasses ObjC forwarding entirely.
+            return [self evaluateMethodBody:appScriptMethod.body
+                               withReceiver:receiver
+                              definingClass:appScriptDefiningClass
+                                   selector:node.selector
+                                  arguments:argValues
+                             parameterNames:appScriptMethod.parameterNames
+                                 scriptPath:ctx.scriptPath ?: @"<unknown>"];
+        }
+        // Native ObjC super method: safe to invoke via IMP since there is no
+        // AppScript forwarding stub in the superclass chain.
+        IMP imp = method_getImplementation(foundMethod);
+        [inv invokeUsingIMP:imp];
+    } else {
+        [inv invoke];
+    }
 
     return [ASBoxer boxedReturnValueFromInvocation:inv];
 }
@@ -360,6 +431,7 @@
 
 - (nullable id)executeBlockBody:(NSArray<ASASTNode *> *)body
                     parentScope:(ASScope *)parentScope
+                   definingClass:(nullable Class)definingClass
                      scriptPath:(NSString *)scriptPath
                       weakNames:(NSMutableSet<NSString *> *)weakNames
                   constantNames:(NSMutableSet<NSString *> *)constantNames
@@ -374,6 +446,7 @@
         [blockScope setValue:val forName:paramNames[i]];
     }
     ASExecutionContext *blockCtx = [[ASExecutionContext alloc] initWithScope:blockScope
+                                                               definingClass:definingClass
                                                                   scriptPath:scriptPath];
     blockCtx.weakNames = weakNames;
     blockCtx.constantNames = constantNames;
@@ -391,6 +464,7 @@
     NSArray<NSString *> *paramNames = node.parameterNames;
     NSArray<ASASTNode *> *body = node.body;
     ASScope *capturedScope = ctx.currentScope;
+    Class capturedDefiningClass = ctx.definingClass;
     NSString *scriptPath = ctx.scriptPath;
     NSMutableSet<NSString *> *capturedWeakNames = [ctx.weakNames mutableCopy];
     NSMutableSet<NSString *> *capturedConstantNames = [ctx.constantNames mutableCopy];
@@ -404,6 +478,7 @@
     if (paramCount == 0) {
         id (^block)(void) = ^id {
             return [interpreter executeBlockBody:body parentScope:capturedScope
+                                   definingClass:capturedDefiningClass
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
                                       arguments:@[] paramNames:paramNames];
@@ -415,6 +490,7 @@
         NSString *p0 = paramNames[0];
         id (^block)(id) = ^id(id a0) {
             return [interpreter executeBlockBody:body parentScope:capturedScope
+                                   definingClass:capturedDefiningClass
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
                                       arguments:@[a0 ?: [ASNull null]]
@@ -427,6 +503,7 @@
         NSString *p0 = paramNames[0], *p1 = paramNames[1];
         id (^block)(id, id) = ^id(id a0, id a1) {
             return [interpreter executeBlockBody:body parentScope:capturedScope
+                                   definingClass:capturedDefiningClass
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
                                       arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null]]
@@ -439,6 +516,7 @@
         NSString *p0 = paramNames[0], *p1 = paramNames[1], *p2 = paramNames[2];
         id (^block)(id, id, id) = ^id(id a0, id a1, id a2) {
             return [interpreter executeBlockBody:body parentScope:capturedScope
+                                   definingClass:capturedDefiningClass
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
                                       arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null],
@@ -453,6 +531,7 @@
     NSString *p2 = paramNames[2], *p3 = paramNames[3];
     id (^block)(id, id, id, id) = ^id(id a0, id a1, id a2, id a3) {
         return [interpreter executeBlockBody:body parentScope:capturedScope
+                               definingClass:capturedDefiningClass
                                   scriptPath:scriptPath weakNames:capturedWeakNames
                               constantNames:capturedConstantNames
                                   arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null],

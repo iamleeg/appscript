@@ -28,6 +28,7 @@
 #import <AppScript/ASVariableDeclarationNode.h>
 #import <AppScript/ASAssignmentNode.h>
 #import <AppScript/ASReturnNode.h>
+#import <AppScript/ASSuperNode.h>
 #import <AppScript/ASMessageSendNode.h>
 #import <AppScript/ASBlockLiteralNode.h>
 #import <AppScript/ASIdentifierNode.h>
@@ -399,6 +400,90 @@
     XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
     XCTAssertEqual(parseError.code, ASParserErrorUnexpectedEOF);
     XCTAssertNotNil(parseError.userInfo[NSLocalizedDescriptionKey]);
+}
+
+// ---------------------------------------------------------------------------
+// 19. super as receiver produces ASSuperNode
+// ---------------------------------------------------------------------------
+
+- (void)test_parseTokens_superAsReceiver_producesASSuperNode {
+    NSString *source = @"@class Foo : NSObject\n- run {\n[super init]\n}\n@end";
+    NSArray<ASASTNode *> *nodes = [self parseSource:source];
+
+    ASClassDefinitionNode *classNode = (ASClassDefinitionNode *)nodes[0];
+    ASMethodNode *method = classNode.methods[0];
+    XCTAssertEqual(method.body.count, 1U);
+
+    XCTAssertTrue([method.body[0] isKindOfClass:[ASMessageSendNode class]]);
+    ASMessageSendNode *msg = (ASMessageSendNode *)method.body[0];
+    XCTAssertTrue([msg.receiver isKindOfClass:[ASSuperNode class]],
+                  @"Receiver of [super init] should be an ASSuperNode");
+    XCTAssertEqualObjects(msg.selectorParts[0], @"init");
+}
+
+// ---------------------------------------------------------------------------
+// 20. super send with an argument parses correctly
+// ---------------------------------------------------------------------------
+
+- (void)test_parseTokens_superSendWithArgument_parsesCorrectly {
+    NSString *source = @"@class Foo : NSObject\n- run {\n[super initWithValue: x]\n}\n@end";
+    NSArray<ASASTNode *> *nodes = [self parseSource:source];
+
+    ASClassDefinitionNode *classNode = (ASClassDefinitionNode *)nodes[0];
+    ASMethodNode *method = classNode.methods[0];
+    XCTAssertEqual(method.body.count, 1U);
+
+    ASMessageSendNode *msg = (ASMessageSendNode *)method.body[0];
+    XCTAssertTrue([msg.receiver isKindOfClass:[ASSuperNode class]],
+                  @"Receiver should be ASSuperNode");
+    XCTAssertEqual(msg.arguments.count, 1U);
+}
+
+// ---------------------------------------------------------------------------
+// 21. self = [super init] parses as assignment to 'self'
+// ---------------------------------------------------------------------------
+
+- (void)test_parseTokens_selfEqualsSuper_parsesAsSelfAssignment {
+    NSString *source = @"@class Foo : NSObject\n- init {\nself = [super init]\nreturn self\n}\n@end";
+    NSArray<ASASTNode *> *nodes = [self parseSource:source];
+
+    ASClassDefinitionNode *classNode = (ASClassDefinitionNode *)nodes[0];
+    ASMethodNode *method = classNode.methods[0];
+    XCTAssertEqual(method.body.count, 2U,
+                   @"Method body should have two statements: assignment and return");
+
+    XCTAssertTrue([method.body[0] isKindOfClass:[ASAssignmentNode class]],
+                  @"First statement should be an assignment");
+    ASAssignmentNode *assign = (ASAssignmentNode *)method.body[0];
+    XCTAssertEqualObjects(assign.variableName, @"self",
+                          @"Assignment target should be 'self'");
+    XCTAssertTrue([assign.value isKindOfClass:[ASMessageSendNode class]],
+                  @"Assignment value should be a message send");
+    ASMessageSendNode *send = (ASMessageSendNode *)assign.value;
+    XCTAssertTrue([send.receiver isKindOfClass:[ASSuperNode class]],
+                  @"The message send receiver should be ASSuperNode");
+}
+
+// ---------------------------------------------------------------------------
+// 22. super inside a block literal is a parse error
+// ---------------------------------------------------------------------------
+
+- (void)test_parseTokens_superInsideBlock_returnsError {
+    // Attempt to use super inside a block — should produce a parse error.
+    NSString *source = @"@class Foo : NSObject\n- run {\nid b = ^{\n[super init]\n}\n}\n@end";
+    NSError *lexError = nil;
+    NSArray<ASToken *> *tokens = [self.lexer tokenize:source error:&lexError];
+    XCTAssertNil(lexError);
+    XCTAssertNotNil(tokens);
+
+    NSError *parseError = nil;
+    NSArray<ASASTNode *> *result = [self.parser parseTokens:tokens error:&parseError];
+    XCTAssertNil(result,
+                 @"Parsing should fail when 'super' appears inside a block literal");
+    XCTAssertNotNil(parseError,
+                    @"An error should be returned when 'super' is inside a block literal");
+    XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
+    XCTAssertEqual(parseError.code, ASParserErrorUnexpectedToken);
 }
 
 @end

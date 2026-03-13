@@ -18,6 +18,7 @@
 
 #import <Foundation/Foundation.h>
 #import "ASASTNode.h"
+#import "ASMethodNode.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -81,6 +82,23 @@ typedef NS_ENUM(NSInteger, ASRuntimeInstallerErrorCode) {
 ///
 /// The returned array is a snapshot; it does not update if further scripts are loaded.
 + (NSArray<Class> *)registeredClasses;
+
+/// Looks up the `ASMethodNode` for a given selector in the AppScript method maps
+/// installed on `startClass` and its superclasses.
+///
+/// Used by `ASInterpreter` to detect super sends targeting AppScript-defined methods
+/// so that it can dispatch directly via `evaluateMethodBody:` rather than through the
+/// ObjC forwarding machinery (which would cause infinite recursion).
+///
+/// - Parameters:
+///   - startClass: The class at which to begin the search (typically `[definingClass superclass]`).
+///   - selectorString: The selector string to look up.
+///   - outDefiningClass: If non-NULL and a method node is found, set to the class that owns
+///     the method map entry. This is the `definingClass` to pass to `evaluateMethodBody:`.
+/// - Returns: The `ASMethodNode` for the selector, or `nil` if no AppScript method was found.
++ (nullable ASMethodNode *)appScriptMethodNodeForSuperDispatch:(Class)startClass
+                                                      selector:(NSString *)selectorString
+                                                 definingClass:(Class _Nullable * _Nullable)outDefiningClass;
 
 @end
 
