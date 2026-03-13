@@ -153,6 +153,49 @@ Here's a complete example of a class:
 
 If the class defines a subclass of an Objective-C class, and overrides an existing method, the appscript runtime uses automatic boxing and unboxing to convert parameters between the types defined in the method signature and Objective-C objects.
 
+### Sending messages to the superclass
+
+Inside a method body, `super` is a reserved keyword that can be used as the receiver of a message-send expression. It dispatches the message to the **superclass of the class that statically defines the current method**, not the dynamic type of `self`. The actual receiver (the object that `self` refers to) is unchanged — only the method lookup starting point shifts up the class hierarchy. This matches the semantics of `objc_msgSendSuper` in Objective-C.
+
+```appscript
+@class Animal : NSObject
+
+- describe {
+    return @"I am an animal"
+}
+
+@end
+
+@class Dog : Animal
+
+- describe {
+    id base = [super describe]
+    return [base stringByAppendingString:@" (specifically, a dog)"]
+}
+
+@end
+```
+
+`super` is valid as a receiver in both instance methods and class methods. In a class method, the message is dispatched to the superclass's class method, with `self` remaining the class object.
+
+`super` is a reserved keyword and not a variable. It cannot appear on the left-hand side of an assignment, and it cannot be passed as an argument or stored in a variable.
+
+`self` may be reassigned inside a method body, matching Objective-C. The canonical initialiser pattern is therefore valid in AppScript:
+
+```appscript
+- init {
+    self = [super init]
+    // self may now be a different object, or nil
+    return self
+}
+```
+
+`super` is not valid inside a block literal — it is a parse error, matching Objective-C. AppScript blocks capture `self` from the enclosing method (see Blocks above); if access to a superclass method is needed from within a block, call it before the block and capture the result.
+
+It is a parse error to use `super` as a receiver anywhere outside a method body (including at top-level variable declarations and free-standing block literals not enclosed by a method).
+
+In a category method, `super` refers to the superclass of the class on which the category is defined, matching Objective-C category semantics.
+
 ### Categories
 
 To add AppScript methods to an existing Objective-C or AppScript class (rather than defining a new subclass), use the `@category` keyword, followed by the class name, and then the name of a category in parentheses:
