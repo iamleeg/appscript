@@ -45,6 +45,32 @@ For each method defined in an AppScript class, `ASRuntimeInstaller`:
 3. Unboxes the return value using `ASBoxer`.
 4. Uses `class_addMethod` for new methods, or `method_setImplementation` to replace inherited ones.
 
+## Sending messages to the superclass
+
+Inside a method body, `super` is a keyword that can be used as the message receiver. It dispatches the message to the **superclass of the class that statically defines the current method**, while keeping `self` as the actual receiver — matching `objc_msgSendSuper` semantics.
+
+```appscript
+@class Dog : Animal
+
+- describe {
+    id base = [super describe]
+    return [base stringByAppendingString:@" (specifically, a dog)"]
+}
+
+@end
+```
+
+`self` may be reassigned inside a method body. The canonical initialiser pattern works as in Objective-C:
+
+```appscript
+- init {
+    self = [super init]
+    return self
+}
+```
+
+`super` is a parse error inside a block literal.
+
 ## Defining a category
 
 Use `@category` to add methods to an existing Objective-C or AppScript class without subclassing:
@@ -84,6 +110,7 @@ The category name is required but unused at runtime.
 - ``ASNumberLiteralNode``
 - ``ASReturnNode``
 - ``ASStringLiteralNode``
+- ``ASSuperNode``
 - ``ASVariableDeclarationNode``
 
 ### Runtime installation
