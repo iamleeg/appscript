@@ -19,6 +19,8 @@
 #import "ASBridgeSupportInstaller.h"
 #import "ASBridgeSupportDocument.h"
 #import "ASBridgeSupportFunction.h"
+#import "ASBridgeSupportConstant.h"
+#import "ASBridgeSupportEnumeration.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -90,6 +92,36 @@ static long long ASUnboxLongLong(id obj){ return [(NSNumber *)obj longLongValue]
 static BOOL      ASUnboxBool(id obj)    { return [(NSNumber *)obj boolValue]; }
 static const char *ASUnboxCString(id obj) {
     return (obj == nil || obj == [NSNull null]) ? NULL : [(NSString *)obj UTF8String];
+}
+
+// ---------------------------------------------------------------------------
+// Helper: read a C constant from a dlsym pointer and box it to an ObjC object.
+// Returns nil for unsupported type encodings or NULL pointers.
+// ---------------------------------------------------------------------------
+
+static id ASBoxConstantSymbol(void *symPtr, NSString *typeEncoding) {
+    if (symPtr == NULL || typeEncoding.length == 0) return nil;
+    char enc = (char)[typeEncoding characterAtIndex:0];
+    switch (enc) {
+        case 'd': return @(*(double *)symPtr);
+        case 'f': return @(*(float *)symPtr);
+        case 'i': return @(*(int *)symPtr);
+        case 'I': return @(*(unsigned int *)symPtr);
+        case 'l': return @(*(long *)symPtr);
+        case 'L': return @(*(unsigned long *)symPtr);
+        case 'q': return @(*(long long *)symPtr);
+        case 'Q': return @(*(unsigned long long *)symPtr);
+        case 's': return @(*(short *)symPtr);
+        case 'S': return @(*(unsigned short *)symPtr);
+        case 'c':
+        case 'B': return @((BOOL)(*(char *)symPtr));
+        case '@': return *((__unsafe_unretained id *)symPtr);
+        case '*': {
+            const char *s = *(const char **)symPtr;
+            return s ? @(s) : nil;
+        }
+        default: return nil;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +399,36 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
         SEL sel = NSSelectorFromString(selectorString);
         const char *encoding = ASBridgeSupportTypeEncodings[argCount];
         class_addMethod(metaclass, sel, (IMP)_objc_msgForward, encoding);
+    }
+
+    // Install constants as direct IMP blocks: the value is boxed once at install time
+    // and captured in the block, so there is no per-call overhead.
+    for (ASBridgeSupportConstant *constant in document.constants) {
+        void *symPtr = dlsym(RTLD_DEFAULT, constant.name.UTF8String);
+        if (symPtr == NULL) {
+            // Symbol not available in the current process — skip silently.
+            continue;
+        }
+        id boxedValue = ASBoxConstantSymbol(symPtr, constant.typeEncoding);
+        if (boxedValue == nil) {
+            continue;
+        }
+        SEL sel = NSSelectorFromString(constant.name);
+        IMP imp = imp_implementationWithBlock(^id(id blockSelf) {
+            return boxedValue;
+        });
+        class_addMethod(metaclass, sel, imp, "@@:");
+    }
+
+    // Install enumerations as direct IMP blocks: the integer value is available
+    // directly from the parsed document (no dlsym needed).
+    for (ASBridgeSupportEnumeration *enumeration in document.enumerations) {
+        NSNumber *boxedValue = @(enumeration.value);
+        SEL sel = NSSelectorFromString(enumeration.name);
+        IMP imp = imp_implementationWithBlock(^id(id blockSelf) {
+            return boxedValue;
+        });
+        class_addMethod(metaclass, sel, imp, "@@:");
     }
 
     // Store the method map on the class object itself.

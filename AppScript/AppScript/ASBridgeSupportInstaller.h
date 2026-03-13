@@ -33,8 +33,8 @@ typedef NS_ENUM(NSInteger, ASBridgeSupportInstallerError) {
     ASBridgeSupportInstallerErrorAllocationFailure  = 2,
 };
 
-/// Installs C functions from a parsed `ASBridgeSupportDocument` as Objective-C class methods on a
-/// dynamically-created proxy class named `AS<FrameworkName>`.
+/// Installs C functions, constants, and enumeration values from a parsed `ASBridgeSupportDocument`
+/// as Objective-C class methods on a dynamically-created proxy class named `AS<FrameworkName>`.
 ///
 /// ## How it works
 ///
@@ -45,6 +45,8 @@ typedef NS_ENUM(NSInteger, ASBridgeSupportInstallerError) {
 ///
 /// Functions whose symbols cannot be resolved (e.g. from an unloaded framework) are silently skipped.
 /// Variadic functions and functions with function-pointer arguments are always skipped.
+/// Constants whose symbols cannot be resolved are also silently skipped.
+/// Enumeration values are embedded directly in BridgeSupport and never require a runtime symbol.
 ///
 /// ## Proxy class naming
 ///

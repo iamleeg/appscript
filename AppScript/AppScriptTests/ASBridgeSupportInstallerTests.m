@@ -290,6 +290,114 @@ static NSInteger _ASTestCounter = 0;
 }
 
 // ---------------------------------------------------------------------------
+// Constant installation — numeric types
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_doubleConstant_returnsValue {
+    // NSFoundationVersionNumber is a double constant available in all processes.
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<constant name='NSFoundationVersionNumber' type64='d'/>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"NSFoundationVersionNumber") onClass:cls];
+
+    XCTAssertGreaterThan(result.doubleValue, 0.0, @"NSFoundationVersionNumber must be positive");
+}
+
+- (void)test_installDocument_enumNSNotFound_returnsNegativeOne {
+    // In real Foundation BridgeSupport, NSNotFound is an <enum> with value64='-1'
+    // (the BridgeSupport generator represents NSUIntegerMax as -1 in a signed field).
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<enum name='NSNotFound' value64='-1'/>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"NSNotFound") onClass:cls];
+
+    XCTAssertEqual(result.longLongValue, -1LL);
+}
+
+- (void)test_installDocument_idConstant_returnsValue {
+    // NSBundleDidLoadNotification is a well-known NSString * constant in Foundation.
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<constant name='NSBundleDidLoadNotification' type64='@'/>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    id result = [self callClassMethod:NSSelectorFromString(@"NSBundleDidLoadNotification") onClass:cls];
+
+    XCTAssertEqualObjects(result, NSBundleDidLoadNotification);
+}
+
+- (void)test_installDocument_unresolvedConstant_skippedSilently {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<constant name='_NonexistentConst_xyz_12345' type64='d'/>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+
+    NSError *error = nil;
+    BOOL ok = [installer installDocument:doc frameworkName:frameworkName error:&error];
+
+    XCTAssertTrue(ok, @"Install should succeed even when a constant symbol is missing");
+    XCTAssertNil(error);
+}
+
+// ---------------------------------------------------------------------------
+// Enumeration installation
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_enumeration_returnsValue {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<enum name='NSASCIIStringEncoding' value64='1'/>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"NSASCIIStringEncoding") onClass:cls];
+
+    XCTAssertEqual(result.longLongValue, 1LL);
+}
+
+- (void)test_installDocument_negativeEnumeration_returnsValue {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<enum name='NSNotAnIndexPath' value64='-1'/>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"NSNotAnIndexPath") onClass:cls];
+
+    XCTAssertEqual(result.longLongValue, -1LL);
+}
+
+// ---------------------------------------------------------------------------
 // Convenience method
 // ---------------------------------------------------------------------------
 

@@ -30,16 +30,20 @@ id result = [ASFoundation sin: 1.5708]
 
 Arguments are unboxed from `id` to the required C type before the call; the return value is boxed back to `id`.
 
-## Accessing constants
+## Accessing constants and enumerations
 
-C constants and enum values become no-argument class methods on the same proxy class:
+C constants and BridgeSupport enumeration values become no-argument class methods on the same proxy class:
 
 ```appscript
-id notFound = [ASFoundation NSNotFound]
-id pi       = [ASFoundation M_PI]
+id notFound    = [ASFoundation NSNotFound]
+id notification = [ASFoundation NSBundleDidLoadNotification]
 ```
 
 Numeric values are returned as `NSNumber`; string values as `NSString`.
+
+BridgeSupport distinguishes two kinds of named values:
+- **`<constant>`** elements represent genuine C global variables. Their values are read at install time via `dlsym` and cached in the method's block IMP. Symbols that cannot be resolved are silently skipped.
+- **`<enum>`** elements represent compile-time constants (macros, `enum` cases). Their values are embedded directly in the BridgeSupport XML and require no runtime symbol lookup. For example, `NSNotFound` is an `<enum>` in Foundation's BridgeSupport with `value64='-1'` (the signed representation of `NSUIntegerMax`).
 
 ## Boxing rules
 
@@ -86,6 +90,10 @@ Each framework can only be loaded once per process. A second call returns `NO` w
 When a message is sent to the proxy class at runtime, the custom `forwardInvocation:` IMP
 unboxes the `id` arguments to the C types required by the function, calls the C function
 pointer, then boxes the return value back to `id`.
+
+For constants, the value is read from the symbol at install time and captured in a direct
+`imp_implementationWithBlock` IMP — there is no forwarding overhead on access. Enumerations
+are handled identically: their values come from the XML rather than from `dlsym`.
 
 ## Topics
 
