@@ -289,23 +289,29 @@ The runtime automatically unboxes `id` arguments to the required C types before 
 
 Functions with no return value (`void`) return `nil`.
 
-#### How constants are exposed
+#### How constants and enumerations are exposed
 
-Each C constant described in BridgeSupport is exposed as a class method on the same per-framework proxy class:
+BridgeSupport distinguishes two kinds of named values, both exposed as no-argument class methods on the same per-framework proxy class:
+
+**`<constant>` elements** represent genuine C global variables (e.g. notification-name strings, version numbers). Their values are read from the process image at install time via `dlsym` and cached in the method IMP. Symbols that cannot be resolved are silently skipped.
+
+**`<enum>` elements** represent compile-time constants — preprocessor macros and C enum cases whose values are embedded directly in the BridgeSupport XML. They require no runtime symbol lookup. For example, `NSNotFound` is declared in Foundation headers as a macro but is exposed in Foundation's BridgeSupport as `<enum name='NSNotFound' value64='-1'/>` (the BridgeSupport generator uses `-1` as the signed representation of `NSUIntegerMax`).
 
 ```objc
 @interface ASFoundation (AppScriptBridgeSupport)
-+ (NSNumber *)NSNotFound;
-+ (NSNumber *)M_PI;
++ (NSNumber *)NSNotFound;                   // enum, value -1
++ (NSString *)NSBundleDidLoadNotification;  // constant, resolved via dlsym
++ (NSNumber *)NSFoundationVersionNumber;    // constant, resolved via dlsym
 @end
 ```
 
 ```appscript
-id sentinel = [ASFoundation NSNotFound]
-id pi = [ASFoundation M_PI]
+id sentinel      = [ASFoundation NSNotFound]
+id notification  = [ASFoundation NSBundleDidLoadNotification]
+id version       = [ASFoundation NSFoundationVersionNumber]
 ```
 
-Numeric constants are boxed into `NSNumber`. String constants are boxed into `NSString`. Enum values are boxed into `NSNumber`.
+Numeric values are boxed into `NSNumber`. String (`@`-typed) constants are returned as-is (typically `NSString`). Enum values are always boxed into `NSNumber`.
 
 #### Framework loading
 
