@@ -58,6 +58,35 @@ Numeric values are returned as `NSNumber`; string values as `NSString`.
 - Function pointer arguments and return values are not supported.
 - BridgeSupport is only loaded for frameworks explicitly requested by the host application.
 
+## How `NSBundle+AppScriptBridgeSupportLoading` works
+
+`+loadBridgeSupportForFramework:error:` is the single entry point for host applications. It:
+
+1. Locates the framework's `.bridgesupport` file — first inside the system framework bundle at
+   `/System/Library/Frameworks/<Name>.framework/Resources/BridgeSupport/`, then at the
+   system-wide fallback `/System/Library/BridgeSupport/<Name>.bridgesupport`.
+2. Parses it with `ASBridgeSupportParser` to produce an `ASBridgeSupportDocument`.
+3. Delegates to `ASBridgeSupportInstaller` to register the `AS<FrameworkName>` proxy class.
+
+Each framework can only be loaded once per process. A second call returns `NO` with
+`ASBridgeSupportLoadingErrorDuplicateLoad`.
+
+## How `ASBridgeSupportInstaller` works
+
+`ASBridgeSupportInstaller` dynamically allocates an `NSObject` subclass named
+`AS<FrameworkName>` using `objc_allocateClassPair`. For each eligible function in the
+`ASBridgeSupportDocument` it:
+
+- Resolves the C symbol with `dlsym(RTLD_DEFAULT, ...)`.
+- Registers a sentinel method on the proxy metaclass so ObjC message sends flow through the
+  forwarding machinery (`forwardInvocation:` / `methodSignatureForSelector:`).
+- Stores a `_ASFunctionInfo` record (function pointer + type encodings) in an associated-object
+  dictionary keyed to the class object.
+
+When a message is sent to the proxy class at runtime, the custom `forwardInvocation:` IMP
+unboxes the `id` arguments to the C types required by the function, calls the C function
+pointer, then boxes the return value back to `id`.
+
 ## Topics
 
 ### Loading BridgeSupport
@@ -65,3 +94,6 @@ Numeric values are returned as `NSNumber`; string values as `NSString`.
 
 ### Generated proxy interface
 - ``ASBridgeSupportProxy``
+
+### Internal installer
+- ``ASBridgeSupportInstaller``

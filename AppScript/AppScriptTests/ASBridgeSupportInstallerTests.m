@@ -1,0 +1,311 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// ASBridgeSupportInstallerTests.m — Tests for ASBridgeSupportInstaller
+// Copyright (C) 2026 Graham Lee
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+#import <XCTest/XCTest.h>
+#import "ASBridgeSupportInstaller.h"
+#import "ASBridgeSupportParser.h"
+#import "ASBridgeSupportDocument.h"
+#import "ASBridgeSupportFunction.h"
+
+@interface ASBridgeSupportInstallerTests : XCTestCase
+@end
+
+@implementation ASBridgeSupportInstallerTests
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+static NSInteger _ASTestCounter = 0;
+
+/// Returns a unique framework name for each call to avoid class-name collisions
+/// across test cases within the same process.
+- (NSString *)uniqueFrameworkName {
+    return [NSString stringWithFormat:@"TestFW%ld", (long)++_ASTestCounter];
+}
+
+- (ASBridgeSupportDocument *)parseXML:(NSString *)xml {
+    ASBridgeSupportParser *parser = [[ASBridgeSupportParser alloc] init];
+    NSData *data = [xml dataUsingEncoding:NSUTF8StringEncoding];
+    NSError *error = nil;
+    ASBridgeSupportDocument *doc = [parser parseData:data error:&error];
+    XCTAssertNotNil(doc, @"Parse failed: %@", error);
+    return doc;
+}
+
+/// Calls a zero-argument class method on `cls` and returns the result.
+- (id)callClassMethod:(SEL)sel onClass:(Class)cls {
+    NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
+    XCTAssertNotNil(sig);
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.selector = sel;
+    inv.target = cls;
+    [inv invoke];
+    __unsafe_unretained id result = nil;
+    [inv getReturnValue:&result];
+    return result;
+}
+
+/// Calls a one-argument class method on `cls` and returns the result.
+- (id)callClassMethod:(SEL)sel onClass:(Class)cls withArg:(id)arg {
+    NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
+    XCTAssertNotNil(sig);
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.selector = sel;
+    inv.target = cls;
+    [inv setArgument:&arg atIndex:2];
+    [inv invoke];
+    __unsafe_unretained id result = nil;
+    [inv getReturnValue:&result];
+    return result;
+}
+
+/// Calls a two-argument class method on `cls` and returns the result.
+- (id)callClassMethod:(SEL)sel onClass:(Class)cls withArg:(id)arg1 arg:(id)arg2 {
+    NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
+    XCTAssertNotNil(sig);
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.selector = sel;
+    inv.target = cls;
+    [inv setArgument:&arg1 atIndex:2];
+    [inv setArgument:&arg2 atIndex:3];
+    [inv invoke];
+    __unsafe_unretained id result = nil;
+    [inv getReturnValue:&result];
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Proxy class creation
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_singleFunction_proxyClassCreated {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='sin'><arg type64='d'/><retval type64='d'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+
+    NSError *error = nil;
+    BOOL ok = [installer installDocument:doc frameworkName:frameworkName error:&error];
+
+    XCTAssertTrue(ok);
+    XCTAssertNil(error);
+    NSString *className = [@"AS" stringByAppendingString:frameworkName];
+    XCTAssertNotNil(NSClassFromString(className));
+}
+
+- (void)test_installDocument_duplicateFramework_returnsError {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+
+    NSError *error = nil;
+    BOOL first = [installer installDocument:doc frameworkName:frameworkName error:&error];
+    XCTAssertTrue(first);
+    XCTAssertNil(error);
+
+    BOOL second = [installer installDocument:doc frameworkName:frameworkName error:&error];
+    XCTAssertFalse(second);
+    XCTAssertNotNil(error);
+    XCTAssertEqualObjects(error.domain, ASBridgeSupportInstallerErrorDomain);
+    XCTAssertEqual(error.code, ASBridgeSupportInstallerErrorDuplicateFramework);
+}
+
+// ---------------------------------------------------------------------------
+// Function skipping
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_variadicFunction_notInstalled {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='NSLog' variadic='true'><arg type64='@'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+
+    NSString *className = [@"AS" stringByAppendingString:frameworkName];
+    Class proxyClass = NSClassFromString(className);
+    XCTAssertNotNil(proxyClass); // class created
+    XCTAssertFalse([proxyClass respondsToSelector:NSSelectorFromString(@"NSLog:")]);
+}
+
+- (void)test_installDocument_functionPointerFunction_notInstalled {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='atexit'>"
+                    @"<arg function_pointer='true'/>"
+                    @"<retval type64='i'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+
+    NSString *className = [@"AS" stringByAppendingString:frameworkName];
+    Class proxyClass = NSClassFromString(className);
+    XCTAssertNotNil(proxyClass);
+    XCTAssertFalse([proxyClass respondsToSelector:NSSelectorFromString(@"atexit:")]);
+}
+
+- (void)test_installDocument_unresolvedSymbol_skippedSilently {
+    // Use a function name that definitely doesn't exist
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='_nonexistent_function_xyz_12345'>"
+                    @"<retval type64='i'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+
+    NSError *error = nil;
+    BOOL ok = [installer installDocument:doc frameworkName:frameworkName error:&error];
+    XCTAssertTrue(ok, @"Install should succeed even when a symbol is missing");
+    XCTAssertNil(error);
+}
+
+// ---------------------------------------------------------------------------
+// Function calls — double return type
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_sinDouble_callsCorrectly {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='sin'><arg type64='d'/><retval type64='d'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"sin:") onClass:cls withArg:@(0.0)];
+
+    XCTAssertEqualWithAccuracy(result.doubleValue, 0.0, 1e-15);
+}
+
+- (void)test_installDocument_cosDouble_callsCorrectly {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='cos'><arg type64='d'/><retval type64='d'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"cos:") onClass:cls withArg:@(0.0)];
+
+    XCTAssertEqualWithAccuracy(result.doubleValue, 1.0, 1e-15);
+}
+
+- (void)test_installDocument_twoDoubleArgs_callsCorrectly {
+    // atan2(0, 1) = 0.0 (angle of point (1,0) from origin)
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='atan2'>"
+                    @"<arg type64='d'/>"
+                    @"<arg type64='d'/>"
+                    @"<retval type64='d'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"atan2::") onClass:cls withArg:@(0.0) arg:@(1.0)];
+
+    XCTAssertEqualWithAccuracy(result.doubleValue, 0.0, 1e-15);
+}
+
+// ---------------------------------------------------------------------------
+// Function calls — integer return type
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_absInt_callsCorrectly {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='abs'><arg type64='i'/><retval type64='i'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"abs:") onClass:cls withArg:@(-42)];
+
+    XCTAssertEqual(result.intValue, 42);
+}
+
+// ---------------------------------------------------------------------------
+// Function calls — void return type
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_voidFunction_returnsNil {
+    // Use a real no-op void function: free(NULL) is well-defined and does nothing
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='free'><arg type64='^v'/><retval type64='v'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSNumber *result = [self callClassMethod:NSSelectorFromString(@"free:") onClass:cls withArg:[NSNull null]];
+
+    XCTAssertNil(result, @"void functions must return nil");
+}
+
+// ---------------------------------------------------------------------------
+// Convenience method
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_convenienceNoError_succeeds {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='sin'><arg type64='d'/><retval type64='d'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+
+    BOOL ok = [installer installDocument:doc frameworkName:frameworkName];
+
+    XCTAssertTrue(ok);
+    XCTAssertNotNil(NSClassFromString([@"AS" stringByAppendingString:frameworkName]));
+}
+
+@end

@@ -1,0 +1,20 @@
+@class FunctionWrappingTest : ASTestCase
+
+- runTests {
+    id url = [[NSBundle mainBundle] URLForResource:@"TestBridgeSupport" withExtension:@"bridgesupport"]
+    id parser = [ASBridgeSupportParser new]
+    id doc = [parser parseURL:url]
+
+    id installer = [ASBridgeSupportInstaller new]
+    [installer installDocument:doc frameworkName:@"HarnessTest"]
+
+    id sinResult = [ASHarnessTest sin:[NSNumber numberWithDouble:0.0]]
+    id cosResult = [ASHarnessTest cos:[NSNumber numberWithDouble:0.0]]
+
+    id result = [NSMutableArray array]
+    [result addObject:sinResult]
+    [result addObject:cosResult]
+    return result
+}
+
+@end
