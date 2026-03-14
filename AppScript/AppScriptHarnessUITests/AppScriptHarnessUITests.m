@@ -63,6 +63,11 @@
     // Verify there is at least one row in the results table.
     XCUIElement *table = app.tables.firstMatch;
     XCTAssertTrue(table.cells.count > 0, @"Results table should contain at least one row");
+
+    XCTAttachment *attachment = [XCTAttachment attachmentWithScreenshot:app.windows.firstMatch.screenshot];
+    attachment.name = @"Test Results Table";
+    attachment.lifetime = XCTAttachmentLifetimeKeepAlways;
+    [self addAttachment:attachment];
 }
 
 @end

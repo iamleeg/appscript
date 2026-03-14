@@ -93,9 +93,8 @@
 
     id isExpected = [identifier isEqualToString:@"expected"]
     [isExpected ifTrue:^{
-        [cell setLineBreakMode:0]
-        [cell setMaximumNumberOfLines:0]
-        [cell setStringValue:[result expected]]
+        id expParts = [[result expected] componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]
+        [cell setStringValue:[expParts componentsJoinedByString:@" "]]
         [cell setTextColor:[NSColor labelColor]]
         return self
     } ifFalse:^{
@@ -104,9 +103,8 @@
 
     id isActual = [identifier isEqualToString:@"actual"]
     [isActual ifTrue:^{
-        [cell setLineBreakMode:0]
-        [cell setMaximumNumberOfLines:0]
-        [cell setStringValue:[result actual]]
+        id actParts = [[result actual] componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]
+        [cell setStringValue:[actParts componentsJoinedByString:@" "]]
         id color = [isPassed ifTrue:^{
             return [NSColor labelColor]
         } ifFalse:^{
@@ -119,19 +117,6 @@
     }]
 
     return cell
-}
-
-- tableView: tableView heightOfRow: row {
-    id result = [[self results] objectAtIndex:row]
-    id expLines = [[[result expected] componentsSeparatedByString:@"\n"] count]
-    id actLines = [[[result actual] componentsSeparatedByString:@"\n"] count]
-    id expIsMore = [[expLines compare:actLines] isEqual:1]
-    id maxLines = [expIsMore ifTrue:^{
-        return expLines
-    } ifFalse:^{
-        return actLines
-    }]
-    return [[maxLines numberByMultiplyingBy:17] numberByAdding:8]
 }
 
 @end
