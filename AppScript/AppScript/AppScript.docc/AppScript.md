@@ -34,6 +34,7 @@ AppScript lets you embed a safe, memory-managed scripting runtime in any macOS a
 
 ### Runtime support
 
+- <doc:RuntimeImplementation>
 - ``ASInterpreter``
 - ``ASScope``
 - ``ASBoxer``
