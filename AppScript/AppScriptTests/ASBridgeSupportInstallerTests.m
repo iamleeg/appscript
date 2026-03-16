@@ -17,6 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
+#import <dlfcn.h>
 #import "ASBridgeSupportInstaller.h"
 #import "ASBridgeSupportParser.h"
 #import "ASBridgeSupportDocument.h"
@@ -395,6 +396,150 @@ static NSInteger _ASTestCounter = 0;
     NSNumber *result = [self callClassMethod:NSSelectorFromString(@"NSNotAnIndexPath") onClass:cls];
 
     XCTAssertEqual(result.longLongValue, -1LL);
+}
+
+// ---------------------------------------------------------------------------
+// Struct constant installation
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_structConstant_NSZeroRect_returnsNSValue {
+    // Load Foundation's companion dylib so NSZeroRect is dlsym-able.
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<constant name='NSZeroRect' type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSValue *result = [self callClassMethod:NSSelectorFromString(@"NSZeroRect") onClass:cls];
+
+    XCTAssertNotNil(result, @"NSZeroRect constant should be returned as NSValue");
+    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
+    NSRect rect = [result rectValue];
+    XCTAssertEqual(rect.origin.x, 0.0);
+    XCTAssertEqual(rect.origin.y, 0.0);
+    XCTAssertEqual(rect.size.width, 0.0);
+    XCTAssertEqual(rect.size.height, 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// Geometry struct return functions
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_NSMakeRect_returnsNSValue {
+    // Load Foundation's companion dylib so NSMakeRect is dlsym-able.
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='NSMakeRect'>"
+                    @"<arg type64='d'/>"
+                    @"<arg type64='d'/>"
+                    @"<arg type64='d'/>"
+                    @"<arg type64='d'/>"
+                    @"<retval type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSMethodSignature *sig = [cls methodSignatureForSelector:NSSelectorFromString(@"NSMakeRect::::")];
+    XCTAssertNotNil(sig);
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.selector = NSSelectorFromString(@"NSMakeRect::::");
+    inv.target = cls;
+    id a0 = @(10.0), a1 = @(20.0), a2 = @(300.0), a3 = @(400.0);
+    [inv setArgument:&a0 atIndex:2];
+    [inv setArgument:&a1 atIndex:3];
+    [inv setArgument:&a2 atIndex:4];
+    [inv setArgument:&a3 atIndex:5];
+    [inv invoke];
+    __unsafe_unretained id result = nil;
+    [inv getReturnValue:&result];
+
+    XCTAssertNotNil(result);
+    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
+    NSRect rect = [(NSValue *)result rectValue];
+    XCTAssertEqual(rect.origin.x, 10.0);
+    XCTAssertEqual(rect.origin.y, 20.0);
+    XCTAssertEqual(rect.size.width, 300.0);
+    XCTAssertEqual(rect.size.height, 400.0);
+}
+
+- (void)test_installDocument_NSMakeSize_returnsNSValue {
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='NSMakeSize'>"
+                    @"<arg type64='d'/>"
+                    @"<arg type64='d'/>"
+                    @"<retval type64='{CGSize=dd}'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSValue *result = [self callClassMethod:NSSelectorFromString(@"NSMakeSize::") onClass:cls withArg:@(50.0) arg:@(75.0)];
+
+    XCTAssertNotNil(result);
+    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
+    NSSize size = [result sizeValue];
+    XCTAssertEqual(size.width, 50.0);
+    XCTAssertEqual(size.height, 75.0);
+}
+
+- (void)test_installDocument_NSMakePoint_returnsNSValue {
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='NSMakePoint'>"
+                    @"<arg type64='d'/>"
+                    @"<arg type64='d'/>"
+                    @"<retval type64='{CGPoint=dd}'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSValue *result = [self callClassMethod:NSSelectorFromString(@"NSMakePoint::") onClass:cls withArg:@(15.0) arg:@(25.0)];
+
+    XCTAssertNotNil(result);
+    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
+    NSPoint point = [result pointValue];
+    XCTAssertEqual(point.x, 15.0);
+    XCTAssertEqual(point.y, 25.0);
 }
 
 // ---------------------------------------------------------------------------

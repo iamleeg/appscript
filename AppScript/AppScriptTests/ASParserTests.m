@@ -468,6 +468,23 @@
 // 22. super inside a block literal is a parse error
 // ---------------------------------------------------------------------------
 
+- (void)test_parseTokens_unnamedKeywordMessageSend_storesEmptySelectorParts {
+    // [ASFoundation NSMakeRect:10 :20 :300 :400] — Objective-C unnamed keyword parts
+    NSString *source = @"@class Foo : NSObject\n- run {\n[ASFoundation NSMakeRect:10 :20 :300 :400]\n}\n@end";
+    NSArray<ASASTNode *> *nodes = [self parseSource:source];
+
+    ASClassDefinitionNode *classNode = (ASClassDefinitionNode *)nodes[0];
+    ASMethodNode *method = classNode.methods[0];
+    ASMessageSendNode *msg = (ASMessageSendNode *)method.body[0];
+    XCTAssertEqual(msg.selectorParts.count, 4U);
+    XCTAssertEqualObjects(msg.selectorParts[0], @"NSMakeRect");
+    XCTAssertEqualObjects(msg.selectorParts[1], @"");
+    XCTAssertEqualObjects(msg.selectorParts[2], @"");
+    XCTAssertEqualObjects(msg.selectorParts[3], @"");
+    XCTAssertEqual(msg.arguments.count, 4U);
+    XCTAssertEqualObjects(msg.selector, @"NSMakeRect::::");
+}
+
 - (void)test_parseTokens_superInsideBlock_returnsError {
     // Attempt to use super inside a block — should produce a parse error.
     NSString *source = @"@class Foo : NSObject\n- run {\nid b = ^{\n[super init]\n}\n}\n@end";

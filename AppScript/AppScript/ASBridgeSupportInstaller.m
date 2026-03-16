@@ -120,6 +120,14 @@ static id ASBoxConstantSymbol(void *symPtr, NSString *typeEncoding) {
             const char *s = *(const char **)symPtr;
             return s ? @(s) : nil;
         }
+        case '{': {
+            NSUInteger size = 0;
+            NSGetSizeAndAlignment([typeEncoding UTF8String], &size, NULL);
+            if (size > 0) {
+                return [NSValue valueWithBytes:symPtr objCType:[typeEncoding UTF8String]];
+            }
+            return nil;
+        }
         default: return nil;
     }
 }
@@ -241,6 +249,31 @@ static id ASCallCFunction(void *funcPtr,
         if (n == 1 && [argTypes[0] isEqualToString:@"*"]) {
             const char *r = ((const char *(*)(const char *))funcPtr)(ASUnboxCString(boxed[0]));
             return r ? @(r) : nil;
+        }
+    }
+
+    // Geometry struct returns — NSRect/NSSize/NSPoint (all args are double on macOS)
+    if ([ret hasPrefix:@"{CGRect"] || [ret hasPrefix:@"{_NSRect"]) {
+        if (n == 4 && [argTypes[0] isEqualToString:@"d"] && [argTypes[1] isEqualToString:@"d"]
+                   && [argTypes[2] isEqualToString:@"d"] && [argTypes[3] isEqualToString:@"d"]) {
+            NSRect r = ((NSRect (*)(double,double,double,double))funcPtr)(
+                ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1]),
+                ASUnboxDouble(boxed[2]), ASUnboxDouble(boxed[3]));
+            return [NSValue valueWithRect:r];
+        }
+    }
+    if ([ret hasPrefix:@"{CGSize"] || [ret hasPrefix:@"{_NSSize"]) {
+        if (n == 2 && [argTypes[0] isEqualToString:@"d"] && [argTypes[1] isEqualToString:@"d"]) {
+            NSSize s = ((NSSize (*)(double,double))funcPtr)(
+                ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1]));
+            return [NSValue valueWithSize:s];
+        }
+    }
+    if ([ret hasPrefix:@"{CGPoint"] || [ret hasPrefix:@"{_NSPoint"]) {
+        if (n == 2 && [argTypes[0] isEqualToString:@"d"] && [argTypes[1] isEqualToString:@"d"]) {
+            NSPoint p = ((NSPoint (*)(double,double))funcPtr)(
+                ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1]));
+            return [NSValue valueWithPoint:p];
         }
     }
 

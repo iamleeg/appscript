@@ -18,11 +18,24 @@
 
 #import <Cocoa/Cocoa.h>
 #import <AppScript/AppScript.h>
+#import <AppScript/NSBundle+AppScriptBridgeSupportLoading.h>
+#include <dlfcn.h>
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
+            // Load Foundation's BridgeSupport companion dylib so dlsym can find
+            // inline functions like NSMakeRect that are compiled into it.
+            NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+            NSURL *companionURL = [[[foundationBundle resourceURL]
+                                     URLByAppendingPathComponent:@"BridgeSupport"]
+                                     URLByAppendingPathComponent:@"Foundation.dylib"];
+            dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+            // Install Foundation's BridgeSupport so scripts can call NSMakeRect, NSMakeSize, etc.
+            [NSBundle loadBridgeSupportForFramework:@"Foundation"];
+
             NSError *loadError = nil;
             if (![[NSBundle mainBundle] loadScriptsWithError:&loadError]) {
                 NSLog(@"Unable to load app scripts: %@", [loadError localizedDescription]);

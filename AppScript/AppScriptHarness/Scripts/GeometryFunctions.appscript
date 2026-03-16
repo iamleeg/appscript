@@ -1,0 +1,15 @@
+@class GeometryFunctionsTest : ASTestCase
+
+- runTests {
+    id rect = [ASFoundation NSMakeRect:10 :20 :300 :400]
+    id size = [ASFoundation NSMakeSize:50 :75]
+    id zero = [ASFoundation NSZeroRect]
+
+    id result = [NSMutableArray array]
+    [result addObject:rect]
+    [result addObject:size]
+    [result addObject:zero]
+    return result
+}
+
+@end

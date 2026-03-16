@@ -1028,14 +1028,20 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
 
             [state skipNewlines];
 
-            // Additional keyword:arg pairs
-            while ([state currentIs:ASTokenTypeIdentifier]) {
-                NSString *nextPart = [state consume].text;
-                if (![state currentIs:ASTokenTypeColon]) {
-                    if (error) {
-                        *error = [self unexpectedTokenError:[state current]];
+            // Additional keyword:arg pairs — supports both named (key:arg) and
+            // unnamed (:arg) parts, e.g. [obj NSMakeRect:x :y :w :h].
+            while ([state currentIs:ASTokenTypeIdentifier] || [state currentIs:ASTokenTypeColon]) {
+                NSString *nextPart;
+                if ([state currentIs:ASTokenTypeIdentifier]) {
+                    nextPart = [state consume].text;
+                    if (![state currentIs:ASTokenTypeColon]) {
+                        if (error) {
+                            *error = [self unexpectedTokenError:[state current]];
+                        }
+                        return nil;
                     }
-                    return nil;
+                } else {
+                    nextPart = @""; // unnamed keyword part
                 }
                 [state consume]; // :
                 [state skipNewlines];

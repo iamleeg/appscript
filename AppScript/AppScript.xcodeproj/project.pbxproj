@@ -111,7 +111,6 @@
 				"NSNumber+AppScriptLogic.h",
 				"NSObject+AppScriptControlFlow.h",
 				"NSString+AppScriptRuntime.h",
-				"NSValue+AppScriptGeometry.h",
 				"NSURL+AppScriptFileReading.h",
 			);
 			target = 980EBA002F5F35DD0023077B /* AppScript */;

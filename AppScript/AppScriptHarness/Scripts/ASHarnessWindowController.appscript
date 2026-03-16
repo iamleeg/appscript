@@ -6,7 +6,7 @@
 @property (copy) results
 
 - init {
-    id contentRect = [NSValue rectWithX:0 y:0 width:900 height:600]
+    id contentRect = [ASFoundation NSMakeRect:0 :0 :900 :600]
     id NSWindowStyleMaskTitled = @1
     id NSWindowStyleMaskClosable = @2
     id NSWindowStyleMaskMiniaturizable = @4
@@ -14,7 +14,7 @@
     id styleMask = [[[NSWindowStyleMaskTitled bitwiseOr:NSWindowStyleMaskClosable] bitwiseOr:NSWindowStyleMaskMiniaturizable] bitwiseOr:NSWindowStyleMaskResizable]
     id window = [[NSWindow alloc] initWithContentRect:contentRect styleMask:styleMask backing:2 defer:NO]
     [window setTitle:@"AppScript Integration Tests"]
-    id minSize = [NSValue sizeWithWidth:600 height:300]
+    id minSize = [ASFoundation NSMakeSize:600 :300]
     [window setMinSize:minSize]
     self = [super initWithWindow:window]
     [self setResults:@[]]
@@ -36,7 +36,7 @@
     [content addSubview:summary]
     [self setSummaryLabel:summary]
 
-    id zeroRect = [NSValue zeroRect]
+    id zeroRect = [ASFoundation NSZeroRect]
     id table = [[NSTableView alloc] initWithFrame:zeroRect]
     [table setUsesAlternatingRowBackgroundColors:YES]
     [table setColumnAutoresizingStyle:1]
