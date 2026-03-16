@@ -200,6 +200,12 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 /// description matching `selector`. Returns the raw ObjC type encoding string
 /// (from protocol data — valid for the lifetime of the process) or NULL if not found.
 /// Checks both required and optional instance methods.
+///
+/// The full superclass walk is intentional: a class may implement a protocol method
+/// whose declaration lives on a superclass (e.g. NSTableViewDataSource declared on an
+/// ObjC superclass). Using the protocol encoding for the sentinel is always correct —
+/// if a selector coincides with a protocol method (e.g. isEqual: from <NSObject>),
+/// the protocol's primitive encoding (BOOL, NSUInteger, etc.) is what callers expect.
 static const char *ASProtocolTypeEncodingForSelector(Class cls, SEL selector) {
     while (cls != Nil) {
         unsigned int protocolCount = 0;
@@ -586,6 +592,8 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     // Class methods must be installed on the metaclass so the ObjC runtime finds them
     // when the selector is sent to the class object itself.
     Class targetClass = methodNode.isClassMethod ? object_getClass(cls) : cls;
+    // Use the protocol encoding if one exists; falls back to all-id for AppScript-only methods.
+    // See ASProtocolTypeEncodingForSelector for the rationale behind the full superclass walk.
     const char *encoding = ASProtocolTypeEncodingForSelector(targetClass, sel);
     if (encoding == NULL) {
         encoding = ASTypeEncodingForParamCount(methodNode.parameterNames.count);
