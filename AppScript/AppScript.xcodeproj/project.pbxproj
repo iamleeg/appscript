@@ -63,8 +63,9 @@
 		980EBA1F2F5F36220023077B /* AppScriptHarness.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AppScriptHarness.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		980EBA2F2F5F36230023077B /* AppScriptHarnessTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppScriptHarnessTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		980EBA392F5F36230023077B /* AppScriptHarnessUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppScriptHarnessUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		98F04CF22F616D3D0081BDAF /* ARCHITECTURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ARCHITECTURE.md; sourceTree = "<group>"; };
-		98F04CF32F616D3D0081BDAF /* CODING_STANDARDS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CODING_STANDARDS.md; sourceTree = "<group>"; };
+		98A94D292F685310009B7C9A /* CODING_STANDARDS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = CODING_STANDARDS.md; path = ../CODING_STANDARDS.md; sourceTree = SOURCE_ROOT; };
+		98A94D2A2F68552A009B7C9A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = ../README.md; sourceTree = SOURCE_ROOT; };
+		98A94D2B2F685549009B7C9A /* ARCHITECTURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = ARCHITECTURE.md; path = ../ARCHITECTURE.md; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -225,8 +226,9 @@
 		98F04CF12F616D250081BDAF /* Documentation */ = {
 			isa = PBXGroup;
 			children = (
-				98F04CF22F616D3D0081BDAF /* ARCHITECTURE.md */,
-				98F04CF32F616D3D0081BDAF /* CODING_STANDARDS.md */,
+				98A94D2B2F685549009B7C9A /* ARCHITECTURE.md */,
+				98A94D2A2F68552A009B7C9A /* README.md */,
+				98A94D292F685310009B7C9A /* CODING_STANDARDS.md */,
 			);
 			path = Documentation;
 			sourceTree = "<group>";

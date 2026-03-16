@@ -2,7 +2,7 @@
 
 > "Objective-C without the C"
 
-AppScript is an interpreted scripting language embedded in macOS applications. It lets you iterate rapidly on Objective-C code — defining classes, sending messages, and wiring up Cocoa — without a compile-link-run cycle. Scripts are written in a syntax familiar to any Objective-C developer, loaded at runtime as a framework, and executed with full access to the host application's classes.
+AppScript is an interpreted scripting language embedded in macOS applications. It lets you and your coding assistant iterate rapidly on Objective-C code. You write scripts in a language that's very similar to a subset of the Objective-C language, but that doesn't include primitive types or bare pointers—making it safer and easier to get to working software.
 
 ## What it looks like
 
@@ -17,7 +17,7 @@ AppScript is an interpreted scripting language embedded in macOS applications. I
 @end
 ```
 
-That defines a real Objective-C class. Once the bundle is loaded, the host application instantiates it and calls it normally:
+That defines a real Objective-C class. You can call it normally from within AppScript, and even grab a reference to the class from within Objective-C:
 
 ```objc
 Class cls = NSClassFromString(@"Greeter");
@@ -31,7 +31,7 @@ NSLog(@"%@", [greeter greetingForName:@"world"]); // WORLD!
 - **Objective-C message syntax**: `[receiver keyword:arg]`, multi-keyword messages, `super`, blocks — all work as expected.
 - **Classes and categories**: define new subclasses or extend existing Objective-C classes with `@class` / `@category` / `@end`.
 - **Properties**: `@property` with the usual modifiers (`strong`, `weak`, `copy`, `readonly`, …); accessors are synthesised automatically.
-- **Blocks**: zero- to four-parameter blocks with lexical capture of `self` and surrounding variables.
+- **Blocks**: code blocks with lexical capture of `self` and surrounding variables.
 - **BridgeSupport integration**: call C functions and read C constants from any framework by loading its BridgeSupport metadata once, then messaging the `AS<FrameworkName>` proxy class.
 - **No C escapes**: no raw pointers, no `#import`, no operator overloading. Every operation is a message send.
 
@@ -92,7 +92,7 @@ AppScript is narrower in scope: it is explicitly a subset of Objective-C, not a 
 
 [StepTalk](https://github.com/nickhealthy/StepTalk) is a scripting framework for GNUstep that embeds Smalltalk as a scripting language in GNUstep applications. Like Objective-Smalltalk it is a general-purpose Smalltalk environment. StepTalk is well suited to extending GNUstep applications with user-scriptable behaviour — end users can write scripts that drive the application without touching its source code.
 
-AppScript serves a different audience: the developer, not the end user. An AppScript script is a first-class part of the application's source code, written and maintained by the same people who write the Objective-C. The syntax is deliberately kept close to Objective-C so that reviewing, refactoring, and eventually replacing a script is as low-friction as possible.
+AppScript serves a different audience: the application developer. An AppScript script is a first-class part of the application's source code, written and maintained by the same people who write the Objective-C. The syntax is deliberately kept close to Objective-C so that reviewing, refactoring, and eventually replacing a script is as low-friction as possible.
 
 ### Summary
 
@@ -122,6 +122,12 @@ LICENSES/                Third-party licence texts
 - **Language reference**: [ARCHITECTURE.md](ARCHITECTURE.md) — complete description of AppScript syntax and semantics.
 - **Coding standards**: [CODING_STANDARDS.md](CODING_STANDARDS.md) — engineering practices for contributors.
 - **Framework API** (DocC): build the `AppScript` scheme with *Product → Build Documentation* to browse the embedded API reference, including articles on loading scripts, defining classes, BridgeSupport integration, and runtime implementation details.
+
+## Upcoming features
+
+- String backslash escaping
+- Load scripts at development time from arbitrary paths or strings
+- Debugging support
 
 ## Licence
 
