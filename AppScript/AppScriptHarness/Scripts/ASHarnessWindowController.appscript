@@ -1,0 +1,101 @@
+@class ASHarnessWindowController : NSWindowController <NSTableViewDataSource, NSTableViewDelegate>
+
+@property (strong) tableView
+@property (strong) summaryLabel
+@property (strong) runButton
+@property (copy) results
+
+- init {
+    id contentRect = [NSValue rectWithX:0 y:0 width:900 height:600]
+    id NSWindowStyleMaskTitled = @1
+    id NSWindowStyleMaskClosable = @2
+    id NSWindowStyleMaskMiniaturizable = @4
+    id NSWindowStyleMaskResizable = @8
+    id styleMask = [[[NSWindowStyleMaskTitled bitwiseOr:NSWindowStyleMaskClosable] bitwiseOr:NSWindowStyleMaskMiniaturizable] bitwiseOr:NSWindowStyleMaskResizable]
+    id window = [[NSWindow alloc] initWithContentRect:contentRect styleMask:styleMask backing:2 defer:NO]
+    [window setTitle:@"AppScript Integration Tests"]
+    id minSize = [NSValue sizeWithWidth:600 height:300]
+    [window setMinSize:minSize]
+    self = [super initWithWindow:window]
+    [self setResults:@[]]
+    [self buildUI]
+    return self
+}
+
+- buildUI {
+    id content = [[self window] contentView]
+
+    id runBtn = [NSButton buttonWithTitle:@"Run Tests" target:self action:@"runTests:"]
+    [runBtn setTranslatesAutoresizingMaskIntoConstraints:NO]
+    [content addSubview:runBtn]
+    [self setRunButton:runBtn]
+
+    id summary = [NSTextField labelWithString:@"Press \"Run Tests\" to begin."]
+    [summary setTranslatesAutoresizingMaskIntoConstraints:NO]
+    [summary setLineBreakMode:4]
+    [content addSubview:summary]
+    [self setSummaryLabel:summary]
+
+    id zeroRect = [NSValue zeroRect]
+    id table = [[NSTableView alloc] initWithFrame:zeroRect]
+    [table setUsesAlternatingRowBackgroundColors:YES]
+    [table setColumnAutoresizingStyle:1]
+    [table setDataSource:self]
+    [table setDelegate:self]
+
+    id statusCol = [[NSTableColumn alloc] initWithIdentifier:@"status"]
+    [statusCol setTitle:@""]
+    [statusCol setWidth:28]
+    [statusCol setMinWidth:28]
+    [statusCol setMaxWidth:28]
+    [table addTableColumn:statusCol]
+
+    id testCol = [[NSTableColumn alloc] initWithIdentifier:@"test"]
+    [testCol setTitle:@"Test"]
+    [testCol setWidth:200]
+    [testCol setMinWidth:100]
+    [table addTableColumn:testCol]
+
+    id expectedCol = [[NSTableColumn alloc] initWithIdentifier:@"expected"]
+    [expectedCol setTitle:@"Expected"]
+    [expectedCol setWidth:300]
+    [expectedCol setMinWidth:100]
+    [table addTableColumn:expectedCol]
+
+    id actualCol = [[NSTableColumn alloc] initWithIdentifier:@"actual"]
+    [actualCol setTitle:@"Actual"]
+    [actualCol setWidth:300]
+    [actualCol setMinWidth:100]
+    [table addTableColumn:actualCol]
+
+    [self setTableView:table]
+
+    id scroll = [[NSScrollView alloc] initWithFrame:zeroRect]
+    [scroll setTranslatesAutoresizingMaskIntoConstraints:NO]
+    [scroll setHasVerticalScroller:YES]
+    [scroll setHasHorizontalScroller:YES]
+    [scroll setAutohidesScrollers:YES]
+    [scroll setDocumentView:table]
+    [content addSubview:scroll]
+
+    id views = @{ @"run": runBtn, @"summary": summary, @"scroll": scroll }
+    id metrics = @{ @"pad": 12, @"btnPad": 8 }
+
+    id hScrollConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-(pad)-[scroll]-(pad)-|" options:0 metrics:metrics views:views]
+    [content addConstraints:hScrollConstraints]
+
+    id hSummaryConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-(pad)-[summary]-(>=pad)-[run]-(pad)-|" options:1024 metrics:metrics views:views]
+    [content addConstraints:hSummaryConstraints]
+
+    id vConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|-(pad)-[scroll]-(btnPad)-[run]-(pad)-|" options:0 metrics:metrics views:views]
+    [content addConstraints:vConstraints]
+
+    [summary setContentHuggingPriority:250 forOrientation:0]
+    return self
+}
+
+- runTests: sender {
+    return self
+}
+
+@end
