@@ -1,4 +1,6 @@
-@category AppDelegate (AppScriptDelegate)
+@class AppDelegate : NSObject
+
+@property (strong) windowController
 
 - applicationDidFinishLaunching: notification {
     id controllerClass = [@"ASHarnessController" as_class]
