@@ -17,10 +17,8 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // The application startup logic lives in Scripts/AppDelegate.appscript.
-// This stub retains only applicationShouldTerminateAfterLastWindowClosed: in
-// Objective-C because NSApplicationDelegate declares it as returning BOOL, a
-// primitive type that AppScript cannot guarantee to return with the correct
-// type encoding.
+// This file is a minimal ObjC stub; the class must exist in ObjC for the
+// windowController property (used from AppScript via KVC).
 
 #import "AppDelegate.h"
 
@@ -29,9 +27,5 @@
 @end
 
 @implementation AppDelegate
-
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
-    return YES;
-}
 
 @end

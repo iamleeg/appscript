@@ -9,4 +9,8 @@
     [[self windowController] runTests:nil]
 }
 
+- applicationShouldTerminateAfterLastWindowClosed: sender {
+    return YES
+}
+
 @end

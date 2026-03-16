@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+ // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // ASRuntimeInstallerTests.m — Unit tests for ASRuntimeInstaller
 // Copyright (C) 2026 Graham Lee
@@ -25,6 +25,9 @@
 #import <AppScript/ASPropertyNode.h>
 #import <AppScript/ASReturnNode.h>
 #import <AppScript/ASStringLiteralNode.h>
+#import <AppScript/ASIdentifierNode.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 
 // ---------------------------------------------------------------------------
 // Convenience helpers
@@ -60,6 +63,14 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
                                                        line:1
                                                      column:1];
 }
+
+// ---------------------------------------------------------------------------
+// Protocol used by test 7 to verify BOOL-returning protocol method encoding.
+// ---------------------------------------------------------------------------
+
+@protocol ASTestBoolProtocol <NSObject>
+- (BOOL)returnsBool;
+@end
 
 // ---------------------------------------------------------------------------
 // Test class
@@ -249,7 +260,66 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 }
 
 // ---------------------------------------------------------------------------
-// 7. A category definition installs its methods on an existing class.
+// 7. A class conforming to a protocol with a BOOL-returning method installs
+//    the sentinel with the protocol's type encoding (not the all-id fallback),
+//    and calling the method correctly unboxes the BOOL return value.
+// ---------------------------------------------------------------------------
+
+- (void)test_installNodes_protocolBOOLMethod_usesProtocolEncoding {
+    NSString *className = uniqueClassName(@"ASTestBoolProto");
+
+    // Force ASTestBoolProtocol into the ObjC runtime's protocol table.
+    // Without a @protocol() expression the compiler may not emit it into __objc_protolist,
+    // causing objc_getProtocol() to return NULL and class_addProtocol to be skipped.
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestBoolProtocol);
+
+    // Build: - returnsBool { return YES }
+    ASIdentifierNode *yesNode = [[ASIdentifierNode alloc] initWithName:@"YES" line:1 column:1];
+    ASReturnNode *ret = [[ASReturnNode alloc] initWithValue:yesNode line:1 column:1];
+    ASMethodNode *method = [[ASMethodNode alloc] initWithSelectorParts:@[@"returnsBool"]
+                                                        parameterNames:@[]
+                                                                  body:@[ret]
+                                                         isClassMethod:NO
+                                                                  line:1
+                                                                column:1];
+
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+                                       initWithClassName:className
+                                          superclassName:@"NSObject"
+                                           protocolNames:@[@"ASTestBoolProtocol"]
+                                              properties:@[]
+                                                 methods:@[method]
+                                                    line:1
+                                                  column:1];
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classDef]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+
+    XCTAssertTrue(result, @"Installing the class should succeed");
+    XCTAssertNil(error, @"No error should be set");
+
+    Class installedClass = NSClassFromString(className);
+    XCTAssertNotNil(installedClass, @"The class must be registered");
+
+    // The sentinel IMP should carry the BOOL encoding from the protocol, not the all-id fallback.
+    Method m = class_getInstanceMethod(installedClass, @selector(returnsBool));
+    XCTAssertTrue(m != NULL, @"Method should be installed");
+    const char *encoding = method_getTypeEncoding(m);
+    // Protocol declares BOOL return: encoding must NOT start with '@' (id — the all-id fallback).
+    // On arm64 macOS, BOOL is bool, encoding 'B'; on legacy x86 it was 'c' (signed char).
+    XCTAssertNotEqual(encoding[0], '@',
+                      @"Sentinel encoding should use protocol's BOOL return type, not id (@)");
+
+    // Calling the method should return YES.
+    id instance = [[installedClass alloc] init];
+    BOOL boolResult = ((BOOL (*)(id, SEL))objc_msgSend)(instance, @selector(returnsBool));
+    XCTAssertTrue(boolResult, @"-returnsBool should return YES as defined in the method body");
+}
+
+// ---------------------------------------------------------------------------
+// 9. A category definition installs its methods on an existing class.
 // ---------------------------------------------------------------------------
 
 - (void)test_installNodes_categoryDefinition_addsMethod {

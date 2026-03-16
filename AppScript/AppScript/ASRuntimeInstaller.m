@@ -196,30 +196,38 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 // Falls back to an all-id encoding when no real signature is available.
 // ---------------------------------------------------------------------------
 
-/// Search the protocols adopted by `cls` (and its superclasses) for a method description
-/// matching `selector`. Returns nil if not found.
-static NSMethodSignature *ASProtocolMethodSignatureForSelector(Class cls, SEL selector) {
+/// Walk cls and its superclass chain, checking all adopted protocols for a method
+/// description matching `selector`. Returns the raw ObjC type encoding string
+/// (from protocol data — valid for the lifetime of the process) or NULL if not found.
+/// Checks both required and optional instance methods.
+static const char *ASProtocolTypeEncodingForSelector(Class cls, SEL selector) {
     while (cls != Nil) {
         unsigned int protocolCount = 0;
         Protocol * __unsafe_unretained *protocols = class_copyProtocolList(cls, &protocolCount);
         for (unsigned int i = 0; i < protocolCount; i++) {
-            // Check required instance methods, then optional instance methods.
             struct objc_method_description desc =
                 protocol_getMethodDescription(protocols[i], selector, YES, YES);
             if (desc.name != NULL && desc.types != NULL) {
-                if (protocols) free(protocols);
-                return [NSMethodSignature signatureWithObjCTypes:desc.types];
+                free(protocols);
+                return desc.types;
             }
             desc = protocol_getMethodDescription(protocols[i], selector, NO, YES);
             if (desc.name != NULL && desc.types != NULL) {
-                if (protocols) free(protocols);
-                return [NSMethodSignature signatureWithObjCTypes:desc.types];
+                free(protocols);
+                return desc.types;
             }
         }
         if (protocols) free(protocols);
         cls = class_getSuperclass(cls);
     }
-    return nil;
+    return NULL;
+}
+
+/// Search the protocols adopted by `cls` (and its superclasses) for a method description
+/// matching `selector`. Returns nil if not found.
+static NSMethodSignature *ASProtocolMethodSignatureForSelector(Class cls, SEL selector) {
+    const char *types = ASProtocolTypeEncodingForSelector(cls, selector);
+    return types ? [NSMethodSignature signatureWithObjCTypes:types] : nil;
 }
 
 static NSMethodSignature *ASMethodSignatureForSelectorIMP(id self, SEL _cmd, SEL selector) {
@@ -453,18 +461,21 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
                              self.interpreter,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // 7. Install sentinel IMP for each method selector (routes through forwarding).
-    for (ASMethodNode *methodNode in classDef.methods) {
-        [self installSentinelForMethodNode:methodNode onClass:newClass];
-    }
-
-    // 8. Add properties and synthesize KVC accessors.
+    // 7. Add properties and synthesize KVC accessors.
     for (ASPropertyNode *propertyNode in classDef.properties) {
         [self addProperty:propertyNode toClass:newClass className:className];
     }
 
-    // 9. Register the class pair.
+    // 8. Register the class pair before installing sentinels so that
+    //    class_copyProtocolList returns the protocols added in step 4.
     objc_registerClassPair(newClass);
+
+    // 9. Install sentinel IMP for each method selector (routes through forwarding).
+    //    Done after registration so ASProtocolTypeEncodingForSelector can walk the
+    //    protocol list and return the correct encoding (e.g., BOOL instead of id).
+    for (ASMethodNode *methodNode in classDef.methods) {
+        [self installSentinelForMethodNode:methodNode onClass:newClass];
+    }
 
     // 10. Record in the global AppScript class registry.
     NSValue *classValue = [NSValue valueWithNonretainedObject:newClass];
@@ -525,11 +536,11 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     // 2. For each method node, install a sentinel IMP using class_replaceMethod (category semantics).
     for (ASMethodNode *methodNode in categoryDef.methods) {
         methodMap[methodNode.selector] = methodNode;
-
-        NSUInteger paramCount = methodNode.parameterNames.count;
-        const char *encoding = ASTypeEncodingForParamCount(paramCount);
         SEL sel = NSSelectorFromString(methodNode.selector);
-
+        const char *encoding = ASProtocolTypeEncodingForSelector(existingClass, sel);
+        if (encoding == NULL) {
+            encoding = ASTypeEncodingForParamCount(methodNode.parameterNames.count);
+        }
         // Categories replace existing implementations.
         class_replaceMethod(existingClass, sel, (IMP)_objc_msgForward, encoding);
     }
@@ -571,12 +582,14 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
 // ---------------------------------------------------------------------------
 
 - (void)installSentinelForMethodNode:(ASMethodNode *)methodNode onClass:(Class)cls {
-    NSUInteger paramCount = methodNode.parameterNames.count;
-    const char *encoding = ASTypeEncodingForParamCount(paramCount);
     SEL sel = NSSelectorFromString(methodNode.selector);
     // Class methods must be installed on the metaclass so the ObjC runtime finds them
     // when the selector is sent to the class object itself.
     Class targetClass = methodNode.isClassMethod ? object_getClass(cls) : cls;
+    const char *encoding = ASProtocolTypeEncodingForSelector(targetClass, sel);
+    if (encoding == NULL) {
+        encoding = ASTypeEncodingForParamCount(methodNode.parameterNames.count);
+    }
     class_addMethod(targetClass, sel, (IMP)_objc_msgForward, encoding);
 }
 
@@ -631,12 +644,20 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     // Retrieve/create the key string for this property's associated object.
     NSString *keyObject = ASPropertyKeyForClassAndName(className, propertyName);
 
+    // The method map was stored as an associated object in the step before property synthesis.
+    // Skip synthesizing any accessor whose selector is already covered by an AppScript method
+    // definition — the custom method takes priority, matching Objective-C @synthesize semantics.
+    NSDictionary<NSString *, ASMethodNode *> *methodMap =
+        objc_getAssociatedObject(cls, &ASMethodMapKey);
+
     // --- Getter ---
     SEL getterSel = NSSelectorFromString(propertyName);
-    IMP getterIMP = imp_implementationWithBlock(^id(id blockSelf) {
-        return objc_getAssociatedObject(blockSelf, (__bridge const void *)keyObject);
-    });
-    class_addMethod(cls, getterSel, getterIMP, "@@:");
+    if (methodMap[propertyName] == nil) {
+        IMP getterIMP = imp_implementationWithBlock(^id(id blockSelf) {
+            return objc_getAssociatedObject(blockSelf, (__bridge const void *)keyObject);
+        });
+        class_addMethod(cls, getterSel, getterIMP, "@@:");
+    }
 
     if (isReadonly) {
         return;
@@ -647,14 +668,16 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     NSString *setterName = [NSString stringWithFormat:@"set%@%@:",
                             [[propertyName substringToIndex:1] uppercaseString],
                             [propertyName substringFromIndex:1]];
-    SEL setterSel = NSSelectorFromString(setterName);
+    if (methodMap[setterName] == nil) {
+        SEL setterSel = NSSelectorFromString(setterName);
 
-    // Capture policy and keyObject in a block; capture by value.
-    objc_AssociationPolicy capturedPolicy = policy;
-    IMP setterIMP = imp_implementationWithBlock(^void(id blockSelf, id value) {
-        objc_setAssociatedObject(blockSelf, (__bridge const void *)keyObject, value, capturedPolicy);
-    });
-    class_addMethod(cls, setterSel, setterIMP, "v@:@");
+        // Capture policy and keyObject in a block; capture by value.
+        objc_AssociationPolicy capturedPolicy = policy;
+        IMP setterIMP = imp_implementationWithBlock(^void(id blockSelf, id value) {
+            objc_setAssociatedObject(blockSelf, (__bridge const void *)keyObject, value, capturedPolicy);
+        });
+        class_addMethod(cls, setterSel, setterIMP, "v@:@");
+    }
 }
 
 @end
