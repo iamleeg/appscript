@@ -159,3 +159,4 @@
 {"actor":"Graham Lee","comment":null,"created_at":"2026-03-16T11:05:01Z","event_type":"closed","id":159,"issue_id":"appscript-7u5","new_value":"Closed","old_value":""}
 {"actor":"Graham Lee","comment":null,"created_at":"2026-03-16T11:05:01Z","event_type":"closed","id":160,"issue_id":"appscript-vkj","new_value":"Closed","old_value":""}
 {"actor":"Graham Lee","comment":null,"created_at":"2026-03-16T11:27:17Z","event_type":"closed","id":161,"issue_id":"appscript-2ai","new_value":"Audit complete — full-chain walk is correct; no code change needed, design intent documented in comments.","old_value":""}
+{"actor":"Graham Lee","comment":null,"created_at":"2026-03-16T11:28:09Z","event_type":"created","id":162,"issue_id":"appscript-7ew","new_value":"","old_value":""}
