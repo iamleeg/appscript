@@ -74,9 +74,13 @@ static void writeFile(NSString *dir, NSString *filename, NSString *content) {
     NSError *error = nil;
     BOOL result = [loader loadScriptFromFileAtPath:@"/nonexistent/path/appscript.appscript"
                                              error:&error];
-    
+
     XCTAssertFalse(result, @"Loading from nonexistent file should fail");
     XCTAssertNotNil(error, @"Error should be set on failure");
+    XCTAssertEqualObjects(error.domain, ASLoaderErrorDomain,
+                          @"Error domain should be ASLoaderErrorDomain");
+    XCTAssertEqual(error.code, ASLoaderErrorFileNotFound,
+                   @"Error code should be ASLoaderErrorFileNotFound");
 }
 
 - (void)test_loadScriptFromFileAtPath_duplicateLoad {
@@ -284,12 +288,15 @@ static void writeFile(NSString *dir, NSString *filename, NSString *content) {
         });
         
         dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
-        
-        // At least one should succeed (due to duplicate detection)
-        XCTAssertTrue(success1 || success2, @"At least one load should succeed");
-        
-        // If both succeeded, that's also acceptable (race condition in duplicate detection)
-        // The important thing is that neither should crash
+
+        // Exactly one load must succeed and one must fail with DuplicateLoad
+        XCTAssertTrue(success1 != success2, @"Exactly one load should succeed");
+
+        NSError *failingError = success1 ? error2 : error1;
+        XCTAssertEqualObjects(failingError.domain, ASLoaderErrorDomain,
+                              @"Failing error domain should be ASLoaderErrorDomain");
+        XCTAssertEqual(failingError.code, ASLoaderErrorDuplicateLoad,
+                       @"Failing error code should be ASLoaderErrorDuplicateLoad");
     }
 }
 

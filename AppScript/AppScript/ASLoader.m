@@ -64,141 +64,173 @@ NSString * const ASLoaderErrorDomain = @"ASLoaderErrorDomain";
 }
 
 // ---------------------------------------------------------------------------
-// Helper: Check if script has already been loaded
-// ---------------------------------------------------------------------------
-
-- (BOOL)hasLoadedPath:(NSString *)path error:(NSError **)error {
-    __block BOOL alreadyLoaded = NO;
-    dispatch_sync(self.loadedScriptsQueue, ^{
-        alreadyLoaded = [self.loadedPaths containsObject:path];
-    });
-    
-    if (alreadyLoaded) {
-        if (error) {
-            *error = [NSError errorWithDomain:ASLoaderErrorDomain
-                                         code:ASLoaderErrorDuplicateLoad
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                    @"The script at path \"%@\" has already been loaded.", path]
-            }];
-        }
-    }
-    return alreadyLoaded;
-}
-
-- (BOOL)hasLoadedSourceHash:(NSString *)hash error:(NSError **)error {
-    __block BOOL alreadyLoaded = NO;
-    dispatch_sync(self.loadedScriptsQueue, ^{
-        alreadyLoaded = [self.loadedSourceHashes containsObject:hash];
-    });
-    
-    if (alreadyLoaded) {
-        if (error) {
-            *error = [NSError errorWithDomain:ASLoaderErrorDomain
-                                         code:ASLoaderErrorDuplicateLoad
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                    @"The script has already been loaded (hash: %@).", hash]
-            }];
-        }
-    }
-    return alreadyLoaded;
-}
-
-// ---------------------------------------------------------------------------
-// Helper: Mark script as loaded
-// ---------------------------------------------------------------------------
-
-- (void)markPathAsLoaded:(NSString *)path {
-    dispatch_sync(self.loadedScriptsQueue, ^{
-        [self.loadedPaths addObject:path];
-    });
-}
-
-- (void)markSourceHashAsLoaded:(NSString *)hash {
-    dispatch_sync(self.loadedScriptsQueue, ^{
-        [self.loadedSourceHashes addObject:hash];
-    });
-}
-
-// ---------------------------------------------------------------------------
 // Helper: Compute hash of source string
 // ---------------------------------------------------------------------------
 
 - (NSString *)hashOfString:(NSString *)string {
     const char *bytes = [string UTF8String];
     NSUInteger length = [string lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
-    
+
     // Simple hash using CRC32-like algorithm
     uint32_t hash = 0;
     for (NSUInteger i = 0; i < length; i++) {
         hash = hash * 31 + bytes[i];
     }
-    
+
     return [NSString stringWithFormat:@"%08x", hash];
 }
 
 // ---------------------------------------------------------------------------
-// Helper: Load and install nodes from source
+// Atomic claim helpers (test-and-set in one dispatch_sync block)
 // ---------------------------------------------------------------------------
 
-- (BOOL)loadAndInstallNodesFromSource:(NSString *)source
-                             scriptPath:(nullable NSString *)scriptPath
-                                 error:(NSError **)error {
+/// Returns YES if the path was newly claimed; NO if it was already claimed.
+- (BOOL)claimPath:(NSString *)absolutePath {
+    __block BOOL claimed = NO;
+    dispatch_sync(self.loadedScriptsQueue, ^{
+        if (![self.loadedPaths containsObject:absolutePath]) {
+            [self.loadedPaths addObject:absolutePath];
+            claimed = YES;
+        }
+    });
+    return claimed;
+}
+
+/// Atomically claims all paths. Returns YES if every path was newly claimed
+/// (and marks them all). Returns NO and sets error if any was already claimed;
+/// in that case no paths are marked.
+- (BOOL)claimPaths:(NSArray<NSString *> *)absolutePaths error:(NSError **)error {
+    __block NSString *duplicate = nil;
+    dispatch_sync(self.loadedScriptsQueue, ^{
+        for (NSString *path in absolutePaths) {
+            if ([self.loadedPaths containsObject:path]) {
+                duplicate = path;
+                return;
+            }
+        }
+        // All clear — mark every path
+        for (NSString *path in absolutePaths) {
+            [self.loadedPaths addObject:path];
+        }
+    });
+
+    if (duplicate) {
+        if (error) {
+            *error = [NSError errorWithDomain:ASLoaderErrorDomain
+                                         code:ASLoaderErrorDuplicateLoad
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"The script at path \"%@\" has already been loaded.", duplicate]
+            }];
+        }
+        return NO;
+    }
+    return YES;
+}
+
+/// Returns YES if the hash was newly claimed; NO if it was already claimed.
+- (BOOL)claimSourceHash:(NSString *)hash {
+    __block BOOL claimed = NO;
+    dispatch_sync(self.loadedScriptsQueue, ^{
+        if (![self.loadedSourceHashes containsObject:hash]) {
+            [self.loadedSourceHashes addObject:hash];
+            claimed = YES;
+        }
+    });
+    return claimed;
+}
+
+/// Atomically claims all hashes. Returns YES if every hash was newly claimed
+/// (and marks them all). Returns NO and sets error if any was already claimed;
+/// in that case no hashes are marked.
+- (BOOL)claimSourceHashes:(NSArray<NSString *> *)hashes error:(NSError **)error {
+    __block NSString *duplicate = nil;
+    dispatch_sync(self.loadedScriptsQueue, ^{
+        for (NSString *hash in hashes) {
+            if ([self.loadedSourceHashes containsObject:hash]) {
+                duplicate = hash;
+                return;
+            }
+        }
+        // All clear — mark every hash
+        for (NSString *hash in hashes) {
+            [self.loadedSourceHashes addObject:hash];
+        }
+    });
+
+    if (duplicate) {
+        if (error) {
+            *error = [NSError errorWithDomain:ASLoaderErrorDomain
+                                         code:ASLoaderErrorDuplicateLoad
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"The script has already been loaded (hash: %@).", duplicate]
+            }];
+        }
+        return NO;
+    }
+    return YES;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Shared lex+parse+install pipeline
+// ---------------------------------------------------------------------------
+
+- (BOOL)loadSource:(NSString *)source scriptPath:(NSString *)path error:(NSError **)error {
     ASLexer *lexer = [ASLexer new];
     ASParser *parser = [ASParser new];
-    
+
     // Lex
     NSError *lexError = nil;
     NSArray<ASToken *> *tokens = [lexer tokenize:source error:&lexError];
     if (!tokens) {
         if (error) {
+            NSMutableDictionary *info = [@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"Lexer error in %@", path]
+            } mutableCopy];
+            if (lexError) info[NSUnderlyingErrorKey] = lexError;
             *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                          code:ASLoaderErrorLexerFailure
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                    @"Lexer error in %@", scriptPath ?: @"<source string>"],
-                NSUnderlyingErrorKey: lexError ?: [NSNull null]
-            }];
+                                     userInfo:info];
         }
         return NO;
     }
-    
+
     // Parse
     NSError *parseError = nil;
     NSArray<ASASTNode *> *nodes = [parser parseTokens:tokens error:&parseError];
     if (!nodes) {
         if (error) {
+            NSMutableDictionary *info = [@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"Parser error in %@", path]
+            } mutableCopy];
+            if (parseError) info[NSUnderlyingErrorKey] = parseError;
             *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                          code:ASLoaderErrorParserFailure
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                    @"Parser error in %@", scriptPath ?: @"<source string>"],
-                NSUnderlyingErrorKey: parseError ?: [NSNull null]
-            }];
+                                     userInfo:info];
         }
         return NO;
     }
-    
+
     // Install
-    NSString *path = scriptPath ?: @"<source string>";
     NSError *installError = nil;
-    BOOL installed = [self.installer installNodes:nodes
-                                       scriptPath:path
-                                            error:&installError];
+    BOOL installed = [self.installer installNodes:nodes scriptPath:path error:&installError];
     if (!installed) {
         if (error) {
+            NSMutableDictionary *info = [@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"Runtime install error in %@", path]
+            } mutableCopy];
+            if (installError) info[NSUnderlyingErrorKey] = installError;
             *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                          code:ASLoaderErrorInstallFailure
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                    @"Runtime install error in %@", path],
-                NSUnderlyingErrorKey: installError ?: [NSNull null]
-            }];
+                                     userInfo:info];
         }
         return NO;
     }
-    
+
     return YES;
 }
 
@@ -217,171 +249,193 @@ NSString * const ASLoaderErrorDomain = @"ASLoaderErrorDomain";
 - (BOOL)loadScriptFromFileAtPath:(NSString *)filePath
                       scriptName:(nullable NSString *)scriptName
                            error:(NSError **)error {
-    // Check if already loaded
     NSString *absolutePath = [filePath stringByResolvingSymlinksInPath];
-    if ([self hasLoadedPath:absolutePath error:error]) {
+
+    // 1. File existence check — no state change on failure; allows retry
+    if (![[NSFileManager defaultManager] fileExistsAtPath:absolutePath]) {
+        if (error) {
+            *error = [NSError errorWithDomain:ASLoaderErrorDomain
+                                         code:ASLoaderErrorFileNotFound
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"No AppScript source file found at path: %@", absolutePath]
+            }];
+        }
         return NO;
     }
-    
-    // Read file
+
+    // 2. Atomically claim the path
+    if (![self claimPath:absolutePath]) {
+        if (error) {
+            *error = [NSError errorWithDomain:ASLoaderErrorDomain
+                                         code:ASLoaderErrorDuplicateLoad
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"The script at path \"%@\" has already been loaded.", absolutePath]
+            }];
+        }
+        return NO;
+    }
+
+    // 3. Read file
     NSError *readError = nil;
     NSString *source = [NSString stringWithContentsOfURL:[NSURL fileURLWithPath:absolutePath]
                                                encoding:NSUTF8StringEncoding
                                                   error:&readError];
     if (!source) {
         if (error) {
+            NSMutableDictionary *info = [@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"Could not read AppScript source file: %@", absolutePath]
+            } mutableCopy];
+            if (readError) info[NSUnderlyingErrorKey] = readError;
             *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                          code:ASLoaderErrorFileReadFailure
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                    @"Could not read AppScript source file: %@", absolutePath],
-                NSUnderlyingErrorKey: readError ?: [NSNull null]
-            }];
+                                     userInfo:info];
         }
         return NO;
     }
-    
-    // Load and install
-    BOOL success = [self loadAndInstallNodesFromSource:source
-                                            scriptPath:scriptName ?: absolutePath
-                                                error:error];
-    
-    if (success) {
-        [self markPathAsLoaded:absolutePath];
-    }
-    
-    return success;
+
+    // 4. Lex → parse → install (path already claimed)
+    return [self loadSource:source scriptPath:scriptName ?: absolutePath error:error];
 }
 
 - (BOOL)loadScriptFromString:(NSString *)source
                   scriptName:(nullable NSString *)scriptName
                        error:(NSError **)error {
-    // Compute hash for duplicate detection
     NSString *hash = [self hashOfString:source];
-    if ([self hasLoadedSourceHash:hash error:error]) {
+
+    // Atomically claim the hash
+    if (![self claimSourceHash:hash]) {
+        if (error) {
+            *error = [NSError errorWithDomain:ASLoaderErrorDomain
+                                         code:ASLoaderErrorDuplicateLoad
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"The script has already been loaded (hash: %@).", hash]
+            }];
+        }
         return NO;
     }
-    
-    // Load and install
-    BOOL success = [self loadAndInstallNodesFromSource:source
-                                            scriptPath:scriptName ?: hash
-                                                error:error];
-    
-    if (success) {
-        [self markSourceHashAsLoaded:hash];
-    }
-    
-    return success;
+
+    return [self loadSource:source scriptPath:scriptName ?: hash error:error];
 }
 
 - (BOOL)loadScriptsFromFilesAtPaths:(NSArray<NSString *> *)filePaths error:(NSError **)error {
-    // Build a map of absolute path → script name
-    NSMutableDictionary<NSString *, NSString *> *pathToName = [NSMutableDictionary dictionary];
+    // 1. Resolve all paths
+    NSMutableArray<NSString *> *absolutePaths = [NSMutableArray arrayWithCapacity:filePaths.count];
     for (NSString *path in filePaths) {
-        NSString *absolutePath = [path stringByResolvingSymlinksInPath];
-        pathToName[absolutePath] = path;
+        [absolutePaths addObject:[path stringByResolvingSymlinksInPath]];
     }
-    
-    // Check for duplicates
-    for (NSString *path in filePaths) {
-        NSString *absolutePath = [path stringByResolvingSymlinksInPath];
-        if ([self hasLoadedPath:absolutePath error:error]) {
+
+    // 2. Check all files exist before touching state
+    for (NSString *absolutePath in absolutePaths) {
+        if (![[NSFileManager defaultManager] fileExistsAtPath:absolutePath]) {
+            if (error) {
+                *error = [NSError errorWithDomain:ASLoaderErrorDomain
+                                             code:ASLoaderErrorFileNotFound
+                                         userInfo:@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                        @"No AppScript source file found at path: %@", absolutePath]
+                }];
+            }
             return NO;
         }
     }
-    
-    // Read all files
+
+    // 3. Atomically claim all paths (all-or-nothing)
+    if (![self claimPaths:absolutePaths error:error]) {
+        return NO;
+    }
+
+    // 4. Read all files
     NSMutableDictionary<NSString *, NSString *> *pathToSource = [NSMutableDictionary dictionary];
-    for (NSString *path in filePaths) {
-        NSString *absolutePath = [path stringByResolvingSymlinksInPath];
+    for (NSString *absolutePath in absolutePaths) {
         NSError *readError = nil;
         NSString *source = [NSString stringWithContentsOfURL:[NSURL fileURLWithPath:absolutePath]
                                                    encoding:NSUTF8StringEncoding
                                                       error:&readError];
         if (!source) {
             if (error) {
+                NSMutableDictionary *info = [@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                        @"Could not read AppScript source file: %@", absolutePath]
+                } mutableCopy];
+                if (readError) info[NSUnderlyingErrorKey] = readError;
                 *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                              code:ASLoaderErrorFileReadFailure
-                                         userInfo:@{
-                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                        @"Could not read AppScript source file: %@", absolutePath],
-                    NSUnderlyingErrorKey: readError ?: [NSNull null]
-                }];
+                                         userInfo:info];
             }
             return NO;
         }
         pathToSource[absolutePath] = source;
     }
-    
-    // Build nodes for each script
+
+    // 5. Lex + parse all files
     ASParser *parser = [ASParser new];
     NSMutableDictionary<NSString *, NSArray<ASASTNode *> *> *pathToNodes = [NSMutableDictionary dictionary];
-    
-    for (NSString *path in filePaths) {
-        NSString *absolutePath = [path stringByResolvingSymlinksInPath];
+
+    for (NSUInteger i = 0; i < filePaths.count; i++) {
+        NSString *absolutePath = absolutePaths[i];
         NSString *source = pathToSource[absolutePath];
-        
-        // Lex
+
         ASLexer *lexer = [ASLexer new];
         NSError *lexError = nil;
         NSArray<ASToken *> *tokens = [lexer tokenize:source error:&lexError];
         if (!tokens) {
             if (error) {
+                NSMutableDictionary *info = [@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                        @"Lexer error in %@", absolutePath]
+                } mutableCopy];
+                if (lexError) info[NSUnderlyingErrorKey] = lexError;
                 *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                              code:ASLoaderErrorLexerFailure
-                                         userInfo:@{
-                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                        @"Lexer error in %@", absolutePath],
-                    NSUnderlyingErrorKey: lexError ?: [NSNull null]
-                }];
+                                         userInfo:info];
             }
             return NO;
         }
-        
-        // Parse
+
         NSError *parseError = nil;
         NSArray<ASASTNode *> *nodes = [parser parseTokens:tokens error:&parseError];
         if (!nodes) {
             if (error) {
+                NSMutableDictionary *info = [@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                        @"Parser error in %@", absolutePath]
+                } mutableCopy];
+                if (parseError) info[NSUnderlyingErrorKey] = parseError;
                 *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                              code:ASLoaderErrorParserFailure
-                                         userInfo:@{
-                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                        @"Parser error in %@", absolutePath],
-                    NSUnderlyingErrorKey: parseError ?: [NSNull null]
-                }];
+                                         userInfo:info];
             }
             return NO;
         }
         pathToNodes[absolutePath] = nodes;
     }
-    
-    // Topologically sort by superclass dependency
+
+    // 6. Topological sort by superclass dependency (Kahn's algorithm)
     NSMutableDictionary<NSString *, NSNumber *> *classToScriptIndex = [NSMutableDictionary dictionary];
     for (NSUInteger i = 0; i < filePaths.count; i++) {
-        NSString *path = filePaths[i];
-        NSString *absolutePath = [path stringByResolvingSymlinksInPath];
-        NSArray<ASASTNode *> *nodes = pathToNodes[absolutePath];
-        for (ASASTNode *node in nodes) {
+        NSString *absolutePath = absolutePaths[i];
+        for (ASASTNode *node in pathToNodes[absolutePath]) {
             if ([node isKindOfClass:[ASClassDefinitionNode class]]) {
                 NSString *className = ((ASClassDefinitionNode *)node).className;
                 classToScriptIndex[className] = @(i);
             }
         }
     }
-    
+
     NSMutableArray<NSNumber *> *inDegree = [NSMutableArray array];
     NSMutableArray<NSMutableArray<NSNumber *> *> *dependents = [NSMutableArray array];
     for (NSUInteger i = 0; i < filePaths.count; i++) {
         [inDegree addObject:@0];
         [dependents addObject:[NSMutableArray array]];
     }
-    
+
     for (NSUInteger i = 0; i < filePaths.count; i++) {
-        NSString *path = filePaths[i];
-        NSString *absolutePath = [path stringByResolvingSymlinksInPath];
-        NSArray<ASASTNode *> *nodes = pathToNodes[absolutePath];
-        for (ASASTNode *node in nodes) {
+        NSString *absolutePath = absolutePaths[i];
+        for (ASASTNode *node in pathToNodes[absolutePath]) {
             if (![node isKindOfClass:[ASClassDefinitionNode class]]) continue;
             NSString *superclassName = ((ASClassDefinitionNode *)node).superclassName;
             if (!superclassName) continue;
@@ -393,14 +447,14 @@ NSString * const ASLoaderErrorDomain = @"ASLoaderErrorDomain";
             inDegree[i] = @(inDegree[i].unsignedIntegerValue + 1);
         }
     }
-    
+
     NSMutableArray<NSNumber *> *queue = [NSMutableArray array];
     for (NSUInteger i = 0; i < filePaths.count; i++) {
         if (inDegree[i].unsignedIntegerValue == 0) {
             [queue addObject:@(i)];
         }
     }
-    
+
     NSMutableArray<NSNumber *> *sortedIndices = [NSMutableArray array];
     while (queue.count > 0) {
         NSNumber *idxNum = queue.firstObject;
@@ -414,65 +468,54 @@ NSString * const ASLoaderErrorDomain = @"ASLoaderErrorDomain";
             }
         }
     }
-    
-    // Install in sorted order
+
+    // 7. Install in sorted order
     for (NSNumber *idxNum in sortedIndices) {
         NSUInteger idx = idxNum.unsignedIntegerValue;
-        NSString *path = filePaths[idx];
-        NSString *absolutePath = [path stringByResolvingSymlinksInPath];
+        NSString *absolutePath = absolutePaths[idx];
         NSArray<ASASTNode *> *nodes = pathToNodes[absolutePath];
-        
+
         NSError *installError = nil;
         BOOL installed = [self.installer installNodes:nodes
                                            scriptPath:absolutePath
                                                 error:&installError];
         if (!installed) {
             if (error) {
+                NSMutableDictionary *info = [@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                        @"Runtime install error in %@", absolutePath]
+                } mutableCopy];
+                if (installError) info[NSUnderlyingErrorKey] = installError;
                 *error = [NSError errorWithDomain:ASLoaderErrorDomain
                                              code:ASLoaderErrorInstallFailure
-                                         userInfo:@{
-                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                        @"Runtime install error in %@", absolutePath],
-                    NSUnderlyingErrorKey: installError ?: [NSNull null]
-                }];
+                                         userInfo:info];
             }
             return NO;
         }
-        
-        [self markPathAsLoaded:absolutePath];
     }
-    
+
     return YES;
 }
 
 - (BOOL)loadScriptsFromStrings:(NSArray<NSString *> *)sources error:(NSError **)error {
-    // Check for duplicates
+    // 1. Compute all hashes
+    NSMutableArray<NSString *> *hashes = [NSMutableArray arrayWithCapacity:sources.count];
     for (NSString *source in sources) {
-        NSString *hash = [self hashOfString:source];
-        if ([self hasLoadedSourceHash:hash error:error]) {
+        [hashes addObject:[self hashOfString:source]];
+    }
+
+    // 2. Atomically claim all hashes (all-or-nothing)
+    if (![self claimSourceHashes:hashes error:error]) {
+        return NO;
+    }
+
+    // 3. Lex → parse → install each source in order
+    for (NSUInteger i = 0; i < sources.count; i++) {
+        if (![self loadSource:sources[i] scriptPath:hashes[i] error:error]) {
             return NO;
         }
     }
-    
-    // Load and install each source
-    for (NSString *source in sources) {
-        NSString *hash = [self hashOfString:source];
-        
-        NSError *installError = nil;
-        BOOL installed = [self loadAndInstallNodesFromSource:source
-                                                    scriptPath:hash
-                                                        error:&installError];
-        if (!installed) {
-            if (error) {
-                // Copy the error from installError
-                *error = installError;
-            }
-            return NO;
-        }
-        
-        [self markSourceHashAsLoaded:hash];
-    }
-    
+
     return YES;
 }
 
