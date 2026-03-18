@@ -12,3 +12,4 @@
 | appscript-ax6 | Code | 2026-03-18T21:21:50+00:00 | | 2026-03-18T21:22:20+00:00 | 1 min | Guard clause in ASTestRunner + CODING_STANDARDS.md documentation |
 | appscript-ax6 | Compile | 2026-03-18T21:22:20+00:00 | | 2026-03-18T21:23:30+00:00 | 1 min | Build succeeded first try; discovered integration-tests.sh used wrong scheme name (defect 1), fixed it |
 | appscript-ax6 | Test | 2026-03-18T21:23:30+00:00 | | 2026-03-18T21:26:31+00:00 | 3 min | All unit tests pass; all integration tests pass (testAllScriptTestsPass + launch tests); no regressions |
+| appscript-ax6 | Postmortem | 2026-03-18T21:28:18+00:00 | | 2026-03-18T21:31:18+00:00 | 3 min | (estimated end time) |

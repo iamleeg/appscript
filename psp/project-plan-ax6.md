@@ -9,33 +9,33 @@
 
 | Phase | Estimate | Actual | Actual% |
 |-------|----------|--------|---------|
-|Planning| 5 min | 1 min | |
-|Design| 2 min | | |
-|Code| 5 min | | |
-|Compile| 5 min | | |
-|Test| 10 min | | |
-|Postmortem| 5 min | | |
-|Total| 32 min | | 100 |
+|Planning| 5 min | 1 min | 11% |
+|Design| 2 min | 0 min | 0% |
+|Code| 5 min | 1 min | 11% |
+|Compile| 5 min | 1 min | 11% |
+|Test| 10 min | 3 min | 33% |
+|Postmortem| 5 min | 3 min | 33% |
+|Total| 32 min | 9 min | 100% |
 
 ## Defects Injected
 
 | Phase | Count | % |
 |-------|-------|---|
-|Planning| 0 | |
-|Design| | |
-|Code| | |
-|Compile| | |
-|Test| | |
-|Total in Development| | |
+|Planning| 0 | 0% |
+|Design| 0 | 0% |
+|Code| 0 | 0% |
+|Compile| 0 | 0% |
+|Test| 0 | 0% |
+|Total in Development| 0 | 0% |
 
 ## Defects Removed
 
 | Phase | Count | % |
 |-------|-------|---|
-|Planning| 0 | |
-|Design| | |
-|Code| | |
-|Compile| | |
-|Test| | |
-|Total in Development| | |
-|Total After Development| | |
+|Planning| 0 | 0% |
+|Design| 0 | 0% |
+|Code| 0 | 0% |
+|Compile| 1 | 100% |
+|Test| 0 | 0% |
+|Total in Development| 1 | 100% |
+|Total After Development| 0 | 0% |
