@@ -61,13 +61,21 @@
     id actual = [actualRaw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
 
     id expectedURL = [[NSBundle mainBundle] URLForResource:testName withExtension:@"expected"]
-    id rawContents = [expectedURL as_stringContents]
+    id hasURL = [expectedURL isKindOfClass:[NSURL class]]
+    id rawContents = [hasURL ifTrue:^{
+        return [expectedURL as_stringContents]
+    } ifFalse:^{
+        return nil
+    }]
     id hasContents = [rawContents isKindOfClass:[NSString class]]
 
     id expected = [hasContents ifTrue:^{
         return [rawContents stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
     } ifFalse:^{
-        return [@"no .expected file for " stringByAppendingString:testName]
+        id msg = [@"missing .expected file for " stringByAppendingString:testName]
+        id hint = [@" — create AppScriptHarness/Scripts/" stringByAppendingString:testName]
+        id hint2 = [hint stringByAppendingString:@".expected"]
+        return [msg stringByAppendingString:hint2]
     }]
 
     id passed = [hasContents ifTrue:^{

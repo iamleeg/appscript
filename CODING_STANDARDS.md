@@ -131,6 +131,24 @@ This makes the harness usable in CI without a GUI.
 2. Create `MyFeature.expected` alongside it with the exact expected output.
 3. Verify the harness exits 0 locally before opening a pull request.
 
+**File pairing rules:**
+
+- Both `<ClassName>.appscript` and `<ClassName>.expected` are **required**. `<ClassName>` is the test class name with the `Test` suffix stripped (e.g. `ArithmeticTest` → `Arithmetic.appscript` + `Arithmetic.expected`).
+- A script without its `.expected` file will not crash the harness, but the test will fail with the message `missing .expected file for <ClassName> — create AppScriptHarness/Scripts/<ClassName>.expected`. This is a test failure, not a harness error.
+- Do **not** add any other file types (e.g. `.md`, `.txt`) to `AppScriptHarness/Scripts/` — that folder's contents are copied verbatim into the app bundle at build time.
+
+**Capture-then-assert workflow for `.expected` files:**
+
+When writing a new harness test, don't guess the exact output format. Instead:
+
+1. Add `MyFeature.appscript` with the `-runTests` method returning the result you want to verify.
+2. Run the harness without a `MyFeature.expected` file (or with an empty placeholder).
+3. The harness will report a failure and show the actual output in the `actual` field of the result.
+4. Copy that actual output into `MyFeature.expected`.
+5. Re-run the harness to confirm it exits 0.
+
+This avoids subtle format mismatches (e.g. how `NSArray -description` escapes special characters).
+
 Harness tests are required for any behaviour described in ARCHITECTURE.md that cannot be fully exercised by unit tests (e.g. multi-class interactions, the full parse–interpret pipeline, error crash behaviour).
 
 ## Documentation
