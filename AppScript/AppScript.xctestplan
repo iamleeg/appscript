@@ -1,0 +1,41 @@
+{
+  "configurations" : [
+    {
+      "id" : "28E44249-35AC-4226-ADEE-69C3FB5E1942",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    },
+    {
+      "id" : "6A407871-1CA3-46AC-AC7A-A2967766B744",
+      "name" : "ASan",
+      "options" : {
+        "addressSanitizer" : {
+          "enabled" : true
+        }
+      }
+    },
+    {
+      "id" : "DFEF4ECC-39AB-4770-AAFF-19091DF0B980",
+      "name" : "TSan",
+      "options" : {
+        "threadSanitizerEnabled" : true
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:AppScript.xcodeproj",
+        "identifier" : "980EBA0B2F5F35DD0023077B",
+        "name" : "AppScriptTests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "6CE93B1D-2866-4897-A5F4-9EB804D8EB34",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:AppScript.xcodeproj",
+      "identifier" : "980EBA1E2F5F36220023077B",
+      "name" : "AppScriptHarness"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:AppScript.xcodeproj",
+        "identifier" : "980EBA2E2F5F36230023077B",
+        "name" : "AppScriptHarnessTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:AppScript.xcodeproj",
+        "identifier" : "980EBA382F5F36230023077B",
+        "name" : "AppScriptHarnessUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
