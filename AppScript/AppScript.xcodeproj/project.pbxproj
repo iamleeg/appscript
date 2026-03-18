@@ -89,6 +89,7 @@
 				ASDictionaryLiteralNode.h,
 				ASIdentifierNode.h,
 				ASInterpreter.h,
+				ASLoader.h,
 				ASLexer.h,
 				ASMessageSendNode.h,
 				ASMethodNode.h,
