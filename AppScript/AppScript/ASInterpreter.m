@@ -360,16 +360,20 @@
             }
         }
         if (foundMethod) {
-            sig = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(foundMethod)];
+            const char *typeEncoding = method_getTypeEncoding(foundMethod);
+            if (typeEncoding) {
+                sig = [NSMethodSignature signatureWithObjCTypes:typeEncoding];
+            }
         }
     }
 
     if (sig == nil) {
         [self reportError:[NSString stringWithFormat:
                            @"Object of class '%@' does not respond to selector '%@'",
-                           NSStringFromClass([receiver class]), node.selector]
+                           receiver ? NSStringFromClass([receiver class]) : @"nil", node.selector]
                      node:node
                   context:ctx];
+        return nil;
     }
 
     // Build and invoke the NSInvocation.
