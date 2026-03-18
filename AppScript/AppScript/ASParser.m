@@ -809,7 +809,16 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
         if ([raw hasPrefix:@"@\""] && [raw hasSuffix:@"\""]) {
             content = [raw substringWithRange:NSMakeRange(2, raw.length - 3)];
         }
-        return [[ASStringLiteralNode alloc] initWithValue:content
+        NSError *unescapeError = nil;
+        NSString *unescaped = [self unescapeString:content
+                                            atLine:strTok.line
+                                            column:strTok.column
+                                             error:&unescapeError];
+        if (!unescaped) {
+            if (error) *error = unescapeError;
+            return nil;
+        }
+        return [[ASStringLiteralNode alloc] initWithValue:unescaped
                                                      line:strTok.line
                                                    column:strTok.column];
     }
@@ -1148,6 +1157,222 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
                                                          body:body
                                                          line:line
                                                        column:column];
+}
+
+// ---------------------------------------------------------------------------
+// String literal unescaping
+// ---------------------------------------------------------------------------
+
+/// Translates C / Objective-C escape sequences in a raw string literal content
+/// (i.e. the text after stripping the surrounding @" … " delimiters) into the
+/// corresponding Unicode characters.
+///
+/// Supported sequences mirror those of the Objective-C language:
+///   \\  \"  \n  \t  \r  \0  \a  \b  \f  \v
+///   \xNN  (1–2 hex digits)
+///   \uNNNN  (exactly 4 hex digits)
+///   \UNNNNNNNN  (exactly 8 hex digits)
+///   \NNN  (1–3 octal digits)
+///
+/// Any backslash followed by an unrecognised character is a parse error.
+- (nullable NSString *)unescapeString:(NSString *)raw
+                               atLine:(NSUInteger)line
+                               column:(NSUInteger)column
+                                error:(NSError **)error {
+    NSUInteger len = raw.length;
+    NSMutableString *result = [NSMutableString stringWithCapacity:len];
+    NSUInteger i = 0;
+
+    while (i < len) {
+        unichar c = [raw characterAtIndex:i];
+
+        if (c != '\\') {
+            [result appendFormat:@"%C", c];
+            i++;
+            continue;
+        }
+
+        // Backslash — look at the next character.
+        if (i + 1 >= len) {
+            // Trailing backslash with nothing after it.
+            if (error) {
+                *error = [NSError errorWithDomain:ASParserErrorDomain
+                                             code:ASParserErrorInvalidEscapeSequence
+                                         userInfo:@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                        @"Trailing backslash in string literal at line %lu, column %lu",
+                        (unsigned long)line, (unsigned long)column],
+                }];
+            }
+            return nil;
+        }
+
+        unichar next = [raw characterAtIndex:i + 1];
+
+        // Simple single-character escapes.
+        switch (next) {
+            case '\\': [result appendString:@"\\"]; i += 2; continue;
+            case '"':  [result appendString:@"\""]; i += 2; continue;
+            case 'n':  [result appendString:@"\n"]; i += 2; continue;
+            case 't':  [result appendString:@"\t"]; i += 2; continue;
+            case 'r':  [result appendString:@"\r"]; i += 2; continue;
+            case '0':  [result appendFormat:@"%C", (unichar)0x0000]; i += 2; continue;
+            case 'a':  [result appendFormat:@"%C", (unichar)0x0007]; i += 2; continue;
+            case 'b':  [result appendFormat:@"%C", (unichar)0x0008]; i += 2; continue;
+            case 'f':  [result appendFormat:@"%C", (unichar)0x000C]; i += 2; continue;
+            case 'v':  [result appendFormat:@"%C", (unichar)0x000B]; i += 2; continue;
+            default: break;
+        }
+
+        // \xNN — hex escape (1–2 hex digits).
+        if (next == 'x') {
+            NSUInteger j = i + 2;
+            NSUInteger hexStart = j;
+            while (j < len && j < hexStart + 2) {
+                unichar h = [raw characterAtIndex:j];
+                if (!((h >= '0' && h <= '9') || (h >= 'a' && h <= 'f') || (h >= 'A' && h <= 'F'))) break;
+                j++;
+            }
+            if (j == hexStart) {
+                if (error) {
+                    *error = [NSError errorWithDomain:ASParserErrorDomain
+                                                 code:ASParserErrorInvalidEscapeSequence
+                                             userInfo:@{
+                        NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                            @"\\x escape requires at least one hex digit at line %lu, column %lu",
+                            (unsigned long)line, (unsigned long)column],
+                    }];
+                }
+                return nil;
+            }
+            NSString *hexStr = [raw substringWithRange:NSMakeRange(hexStart, j - hexStart)];
+            unsigned int codePoint = 0;
+            [[NSScanner scannerWithString:hexStr] scanHexInt:&codePoint];
+            [result appendFormat:@"%C", (unichar)codePoint];
+            i = j;
+            continue;
+        }
+
+        // \uNNNN — 4-digit Unicode escape.
+        if (next == 'u') {
+            if (i + 5 >= len + 1) { // need exactly 4 digits
+                if (error) {
+                    *error = [NSError errorWithDomain:ASParserErrorDomain
+                                                 code:ASParserErrorInvalidEscapeSequence
+                                             userInfo:@{
+                        NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                            @"\\u escape requires exactly 4 hex digits at line %lu, column %lu",
+                            (unsigned long)line, (unsigned long)column],
+                    }];
+                }
+                return nil;
+            }
+            NSString *hexStr = [raw substringWithRange:NSMakeRange(i + 2, 4)];
+            for (NSUInteger k = 0; k < 4; k++) {
+                unichar h = [hexStr characterAtIndex:k];
+                if (!((h >= '0' && h <= '9') || (h >= 'a' && h <= 'f') || (h >= 'A' && h <= 'F'))) {
+                    if (error) {
+                        *error = [NSError errorWithDomain:ASParserErrorDomain
+                                                     code:ASParserErrorInvalidEscapeSequence
+                                                 userInfo:@{
+                            NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                                @"\\u escape requires exactly 4 hex digits at line %lu, column %lu",
+                                (unsigned long)line, (unsigned long)column],
+                        }];
+                    }
+                    return nil;
+                }
+            }
+            unsigned int codePoint = 0;
+            [[NSScanner scannerWithString:hexStr] scanHexInt:&codePoint];
+            [result appendFormat:@"%C", (unichar)codePoint];
+            i += 6;
+            continue;
+        }
+
+        // \UNNNNNNNN — 8-digit Unicode escape (full code point, may be outside BMP).
+        if (next == 'U') {
+            if (i + 9 >= len + 1) { // need exactly 8 digits
+                if (error) {
+                    *error = [NSError errorWithDomain:ASParserErrorDomain
+                                                 code:ASParserErrorInvalidEscapeSequence
+                                             userInfo:@{
+                        NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                            @"\\U escape requires exactly 8 hex digits at line %lu, column %lu",
+                            (unsigned long)line, (unsigned long)column],
+                    }];
+                }
+                return nil;
+            }
+            NSString *hexStr = [raw substringWithRange:NSMakeRange(i + 2, 8)];
+            for (NSUInteger k = 0; k < 8; k++) {
+                unichar h = [hexStr characterAtIndex:k];
+                if (!((h >= '0' && h <= '9') || (h >= 'a' && h <= 'f') || (h >= 'A' && h <= 'F'))) {
+                    if (error) {
+                        *error = [NSError errorWithDomain:ASParserErrorDomain
+                                                     code:ASParserErrorInvalidEscapeSequence
+                                                 userInfo:@{
+                            NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                                @"\\U escape requires exactly 8 hex digits at line %lu, column %lu",
+                                (unsigned long)line, (unsigned long)column],
+                        }];
+                    }
+                    return nil;
+                }
+            }
+            unsigned int codePoint = 0;
+            [[NSScanner scannerWithString:hexStr] scanHexInt:&codePoint];
+            // Append as a UTF-32 code point; NSString uses UTF-16 surrogates for non-BMP.
+            if (codePoint <= 0xFFFF) {
+                [result appendFormat:@"%C", (unichar)codePoint];
+            } else {
+                // Encode as a surrogate pair.
+                codePoint -= 0x10000;
+                unichar high = (unichar)(0xD800 + (codePoint >> 10));
+                unichar low  = (unichar)(0xDC00 + (codePoint & 0x3FF));
+                [result appendFormat:@"%C%C", high, low];
+            }
+            i += 10;
+            continue;
+        }
+
+        // \NNN — octal escape (1–3 octal digits, first digit may be 1–7 here since \0 is handled above).
+        if (next >= '1' && next <= '7') {
+            NSUInteger j = i + 1;
+            NSUInteger octStart = j;
+            while (j < len && j < octStart + 3) {
+                unichar o = [raw characterAtIndex:j];
+                if (o < '0' || o > '7') break;
+                j++;
+            }
+            NSString *octStr = [raw substringWithRange:NSMakeRange(octStart, j - octStart)];
+            unsigned int codePoint = 0;
+            NSScanner *scanner = [NSScanner scannerWithString:octStr];
+            [scanner scanInt:(int *)&codePoint]; // decimal scan; we need octal
+            // Parse octal manually.
+            codePoint = 0;
+            for (NSUInteger k = 0; k < octStr.length; k++) {
+                codePoint = codePoint * 8 + ([octStr characterAtIndex:k] - '0');
+            }
+            [result appendFormat:@"%C", (unichar)codePoint];
+            i = j;
+            continue;
+        }
+
+        // Unrecognised escape sequence.
+        if (error) {
+            *error = [NSError errorWithDomain:ASParserErrorDomain
+                                         code:ASParserErrorInvalidEscapeSequence
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"Unrecognised escape sequence '\\%C' in string literal at line %lu, column %lu",
+                    next, (unsigned long)line, (unsigned long)column],
+            }];
+        }
+        return nil;
+    }
+
+    return [result copy];
 }
 
 // ---------------------------------------------------------------------------

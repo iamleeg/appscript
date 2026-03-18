@@ -31,6 +31,8 @@ typedef NS_ENUM(NSInteger, ASParserErrorCode) {
     ASParserErrorUnexpectedToken = 1,
     /// End of input was reached before the grammar was satisfied.
     ASParserErrorUnexpectedEOF = 2,
+    /// A string literal contains an unrecognised backslash escape sequence.
+    ASParserErrorInvalidEscapeSequence = 3,
 };
 
 /// Parses a flat token array produced by ASLexer into a list of top-level AST nodes.
