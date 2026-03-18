@@ -37,6 +37,27 @@ id band_members = @{ @"Bass": @"Roy Estrada", @"Drums" : @"Jimmy Carl Black", @"
 id selector = @"writeToFile:atomically:"
 ```
 
+String literals support the same backslash escape sequences as Objective-C:
+
+| Sequence | Meaning |
+|----------|---------|
+| `\\`     | Literal backslash |
+| `\"`     | Literal double-quote |
+| `\n`     | Newline (U+000A) |
+| `\t`     | Horizontal tab (U+0009) |
+| `\r`     | Carriage return (U+000D) |
+| `\0`     | Null character (U+0000) |
+| `\a`     | Bell (U+0007) |
+| `\b`     | Backspace (U+0008) |
+| `\f`     | Form feed (U+000C) |
+| `\v`     | Vertical tab (U+000B) |
+| `\xNN`   | Hex character (1–2 hex digits) |
+| `\uNNNN` | Unicode code point (4 hex digits) |
+| `\UNNNNNNNN` | Unicode code point (8 hex digits) |
+| `\NNN`   | Octal character (1–3 octal digits, first digit 1–7) |
+
+An unrecognised backslash sequence (e.g. `@"\q"`) is a parse error.
+
 Two modifiers are acceptable before `id` when declaring a variable:
 
 - `weak id`: Indicates that the variable is a weak reference. Variables are strong references by default.

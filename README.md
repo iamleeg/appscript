@@ -125,7 +125,6 @@ LICENSES/                Third-party licence texts
 
 ## Upcoming features
 
-- String backslash escaping
 - Load scripts at development time from arbitrary paths or strings
 - Debugging support
 

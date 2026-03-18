@@ -25,8 +25,8 @@
 |Design|0|0%|
 |Code|0|0%|
 |Compile|0|0%|
-|Test|0|0%|
-|Total in Development|0|0%|
+|Test|4|100%|
+|Total in Development|4|100%|
 
 ## Defects Removed
 
@@ -36,6 +36,6 @@
 |Design|0|0%|
 |Code|0|0%|
 |Compile|0|0%|
-|Test|0|0%|
-|Total in Development|0|0%|
-|Total After Development|0|0%|
+|Test|4|100%|
+|Total in Development|4|100%|
+|Total After Development|4|100%|
