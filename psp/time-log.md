@@ -18,3 +18,4 @@
 |AppScript-ewo|Code|2026-03-18 20:31| |2026-03-18 20:32|1 min|Implemented unescapeString:atLine:column:error: and wired into string literal parsing|
 |AppScript-ewo|Compile|2026-03-18 20:32| |2026-03-18 20:35|3 min|BUILD SUCCEEDED on first attempt — no compile errors|
 |AppScript-ewo|Test|2026-03-18 20:35| |2026-03-18 21:05|30 min|Unit tests (17 cases, all pass); integration test with 4 defects: missing .expected file caused abort, wrong expected content, missing docs updates|
+|AppScript-ewo|Postmortem|2026-03-18 21:08| |2026-03-18 21:13|5 min|Postmortem analysis and reflection|

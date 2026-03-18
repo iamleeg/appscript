@@ -9,13 +9,13 @@
 
 | Phase | Estimate | Actual | Actual% |
 |-------|----------|--------|---------|
-|Planning|15 min|4 min| |
-|Design|15 min|1 min| |
-|Code|45 min|1 min| |
-|Compile|10 min|3 min| |
-|Test|30 min|4 min| |
-|Postmortem|10 min| | |
-|Total|125 min|13 min (excl. postmortem)| |
+|Planning|15 min|4 min|10%|
+|Design|15 min|1 min|3%|
+|Code|45 min|1 min|3%|
+|Compile|10 min|3 min|8%|
+|Test|30 min|30 min|77%|
+|Postmortem|10 min|5 min| |
+|Total|125 min|44 min|100%|
 
 ## Defects Injected
 
