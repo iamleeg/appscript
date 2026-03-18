@@ -12,4 +12,4 @@
 |AppScript-7ew|Code|2026-03-18 16:52| |2026-03-18 16:54|120 min|Implementing ASLoader class|
 |AppScript-7ew|Compile|2026-03-18 16:54| |2026-03-18 16:54|5 min|Compiling ASLoader class|
 |AppScript-7ew|Test|2026-03-18 16:54| |2026-03-18 17:19|25 min|Writing tests for ASLoader class|
-|AppScript-7ew|Postmortem|2026-03-18 17:20| | | |Postmortem analysis and documentation|
+|AppScript-7ew|Postmortem|2026-03-18 17:20| |2026-03-18 17:21|1 min|Postmortem analysis and documentation|
