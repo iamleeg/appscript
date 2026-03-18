@@ -91,7 +91,7 @@ Every phase was dramatically over-estimated (35% of total estimate used). The co
 |----------|--------|-----|
 | High | Add integration test checklist item to psp-develop sign-off | Update psp-develop skill |
 | High | Add documentation update requirement to requirements template | Update psp-plan skill or requirements template |
-| Medium | Fix latent nil-URL crash in `ASTestRunner.appscript` | File as a new beads issue |
-| Medium | Add `HOWTO.md` to `AppScriptHarness/Scripts/` explaining `.appscript`+`.expected` pairing | File as a new beads issue |
+| Medium | Fix latent nil-URL crash in `ASTestRunner.appscript` | Tracked as appscript-ax6 |
+| Medium | Add `HOWTO.md` to `AppScriptHarness/Scripts/` explaining `.appscript`+`.expected` pairing | Tracked as appscript-ax6 |
 | Low | Add "capture-then-assert" guidance for new integration tests | Add to harness HOWTO |
 | Low | Calibrate Code phase estimates: identified fix-site issues ≈ 5 min, not 45 min | Remember for next planning |
