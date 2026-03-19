@@ -19,7 +19,7 @@
 include $(GNUSTEP_MAKEFILES)/common.make
 
 FRAMEWORK_NAME = AppScript
-NEEDS_GUI = no
+AppScript_NEEDS_GUI = no
 ADDITIONAL_OBJCFLAGS = -fobjc-arc
 
 AppScript_OBJC_FILES = \
@@ -165,3 +165,22 @@ internal-check:: $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle
 	/usr/local/bin/xctest $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle
 
 $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle: all
+
+# ---------------------------------------------------------------------------
+# AppScriptHarness application target
+# ---------------------------------------------------------------------------
+
+APP_NAME = AppScriptHarness
+AppScriptHarness_NEEDS_GUI = yes
+
+AppScriptHarness_OBJC_FILES = \
+	AppScriptHarness/main.m
+
+AppScriptHarness_RESOURCE_FILES = \
+	AppScriptHarness/Scripts
+
+AppScriptHarness_LDFLAGS = \
+	-F$(GNUSTEP_BUILD_DIR) \
+	-framework AppScript
+
+include $(GNUSTEP_MAKEFILES)/application.make
