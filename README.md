@@ -84,7 +84,7 @@ Several other languages provide scripting over Objective-C or GNUstep runtimes. 
 
 ### Objective-Smalltalk
 
-[Objective-Smalltalk](http://www.objective-smalltalk.com) is a full Smalltalk dialect that compiles to native Objective-C and integrates deeply with Cocoa. It is a general-purpose language suitable for building complete applications or frameworks on top of Cocoa — you can write an entire macOS app in Objective-Smalltalk and ship it. The language has its own syntax, type system, and semantics; learning it means learning Smalltalk.
+[Objective-Smalltalk](http://objective.st) is a full Smalltalk dialect that compiles to native Objective-C and integrates deeply with Cocoa. It is a general-purpose language suitable for building complete applications or frameworks on top of Cocoa — you can write an entire macOS app in Objective-Smalltalk and ship it. The language has its own syntax, type system, and semantics; learning it means learning Smalltalk. You can use Objective-ST as a scripting language just as you can AppScript.
 
 AppScript is narrower in scope: it is explicitly a subset of Objective-C, not a new language. The goal is to let an Objective-C developer move a method or class into a script file without learning new idioms. AppScript is not intended for building entire applications; it is intended for rapid prototyping of Objective-C code that will eventually be rewritten in Objective-C or Swift.
 
@@ -125,7 +125,6 @@ LICENSES/                Third-party licence texts
 
 ## Upcoming features
 
-- Load scripts at development time from arbitrary paths or strings
 - Debugging support
 
 ## Licence

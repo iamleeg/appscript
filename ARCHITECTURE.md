@@ -429,3 +429,86 @@ Structs that are not registered with `NSValue` produce a runtime error.
 - Functions with variadic arguments (`...`) are not supported and are silently omitted from the generated proxy.
 - Function pointer arguments and return values are not supported.
 - BridgeSupport metadata is only loaded for frameworks explicitly requested by the host application; it is never loaded automatically.
+
+## Loading scripts
+
+AppScript provides two mechanisms for loading scripts into the runtime, suited to different use cases.
+
+### Loading from a bundle
+
+The standard production path: call `-loadScriptsWithError:` on an `NSBundle` to discover and load all `.appscript` files in that bundle. This is the approach described in [README.md](README.md).
+
+```objc
+#import <AppScript/AppScript.h>
+
+NSError *error = nil;
+if (![[NSBundle mainBundle] loadScriptsWithError:&error]) {
+    NSLog(@"Script load failed: %@", error);
+    abort();
+}
+```
+
+Each bundle may only be loaded once. A second call on the same bundle returns `NO` with error code `ASBundleLoadingErrorDuplicateLoad`.
+
+### Loading from arbitrary paths or strings
+
+`ASLoader` supports loading scripts from arbitrary file paths or source strings at runtime. This is useful during development (e.g. loading scripts from a project directory rather than the app bundle), in tools and tests, or for evaluating dynamically generated scripts.
+
+```objc
+#import <AppScript/AppScript.h>
+
+ASLoader *loader = [[ASLoader alloc] init];
+NSError *error = nil;
+
+// Load from a file path
+if (![loader loadScriptFromFileAtPath:@"/path/to/MyScript.appscript" error:&error]) {
+    NSLog(@"Failed: %@", error);
+}
+
+// Load from a source string
+NSString *source = @"@class Greeter : NSObject\n- greet { return @\"Hello\" }\n@end";
+if (![loader loadScriptFromString:source error:&error]) {
+    NSLog(@"Failed: %@", error);
+}
+```
+
+You can also supply a `scriptName:` for clearer error messages:
+
+```objc
+[loader loadScriptFromFileAtPath:path scriptName:@"MyFeature" error:&error];
+[loader loadScriptFromString:source scriptName:@"generated-script" error:&error];
+```
+
+To load multiple files in dependency order (superclass relationships are resolved automatically using topological sort):
+
+```objc
+NSArray *paths = @[@"/scripts/Base.appscript", @"/scripts/Derived.appscript"];
+[loader loadScriptsFromFilesAtPaths:paths error:&error];
+```
+
+Multiple strings can also be loaded in one call, though dependency ordering is not applied for string-based batches:
+
+```objc
+[loader loadScriptsFromStrings:@[sourceA, sourceB] error:&error];
+```
+
+#### Duplicate-load detection
+
+`ASLoader` tracks loaded scripts to prevent double-loading:
+- File-based scripts are identified by their absolute path.
+- String-based scripts are identified by a hash of their source content.
+
+A duplicate load returns `NO` with error code `ASLoaderErrorDuplicateLoad`.
+
+#### Error codes
+
+| Code | Meaning |
+|---|---|
+| `ASLoaderErrorFileNotFound` | The specified file does not exist. |
+| `ASLoaderErrorFileReadFailure` | The file could not be read (permissions, encoding). |
+| `ASLoaderErrorLexerFailure` | The source failed lexing. |
+| `ASLoaderErrorParserFailure` | The source failed parsing. |
+| `ASLoaderErrorInstallFailure` | The runtime could not install the parsed definitions. |
+| `ASLoaderErrorDuplicateLoad` | The script has already been loaded. |
+
+All errors are in the `ASLoaderErrorDomain` error domain.
