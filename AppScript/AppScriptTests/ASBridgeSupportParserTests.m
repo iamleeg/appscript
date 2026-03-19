@@ -17,11 +17,11 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
-#import "ASBridgeSupportParser.h"
-#import "ASBridgeSupportDocument.h"
-#import "ASBridgeSupportFunction.h"
-#import "ASBridgeSupportConstant.h"
-#import "ASBridgeSupportEnumeration.h"
+#import <AppScript/ASBridgeSupportParser.h>
+#import <AppScript/ASBridgeSupportDocument.h>
+#import <AppScript/ASBridgeSupportFunction.h>
+#import <AppScript/ASBridgeSupportConstant.h>
+#import <AppScript/ASBridgeSupportEnumeration.h>
 
 @interface ASBridgeSupportParserTests : XCTestCase
 @end

@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
-#import "NSNumber+AppScriptBitwise.h"
+#import <AppScript/NSNumber+AppScriptBitwise.h>
 
 @interface NSNumber_AppScriptBitwiseTests : XCTestCase
 @end

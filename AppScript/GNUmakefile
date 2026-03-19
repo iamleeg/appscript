@@ -112,3 +112,56 @@ AppScript_HEADER_FILES = \
 	NSURL+AppScriptFileReading.h
 
 include $(GNUSTEP_MAKEFILES)/framework.make
+
+# ---------------------------------------------------------------------------
+# Test bundle target
+# ---------------------------------------------------------------------------
+
+BUNDLE_NAME = AppScriptTests
+
+AppScriptTests_OBJC_FILES = \
+	AppScriptTests/ASASTNodeTests.m \
+	AppScriptTests/ASBoxerTests.m \
+	AppScriptTests/ASBridgeSupportInstallerTests.m \
+	AppScriptTests/ASBridgeSupportParserTests.m \
+	AppScriptTests/ASInterpreterTests.m \
+	AppScriptTests/ASLexerTests.m \
+	AppScriptTests/ASLoaderTests.m \
+	AppScriptTests/ASParserStringEscapeTests.m \
+	AppScriptTests/ASParserTests.m \
+	AppScriptTests/ASRuntimeInstallerTests.m \
+	AppScriptTests/NSBundle_AppScriptBridgeSupportLoadingTests.m \
+	AppScriptTests/NSBundle_AppScriptLoadingTests.m \
+	AppScriptTests/NSNumber_AppScriptArithmeticTests.m \
+	AppScriptTests/NSNumber_AppScriptBitwiseTests.m \
+	AppScriptTests/NSNumber_AppScriptControlFlowTests.m \
+	AppScriptTests/NSNumber_AppScriptLogicTests.m \
+	AppScriptTests/NSObject_AppScriptControlFlowTests.m \
+	AppScriptTests/NSString_AppScriptRuntimeTests.m \
+	AppScriptTests/NSURL_AppScriptFileReadingTests.m
+
+AppScriptTests_OBJCFLAGS = -fobjc-arc
+
+AppScriptTests_BUNDLE_LIBS = \
+	-lXCTest \
+	-framework AppScript
+
+AppScriptTests_LIB_DIRS = \
+	-L/usr/local/lib \
+	-F$(GNUSTEP_BUILD_DIR)
+
+ADDITIONAL_BUNDLE_LIBS = $(AppScriptTests_BUNDLE_LIBS)
+ADDITIONAL_LIB_DIRS    = $(AppScriptTests_LIB_DIRS)
+ADDITIONAL_INCLUDE_DIRS = -I/usr/local/include
+
+include $(GNUSTEP_MAKEFILES)/bundle.make
+
+# ---------------------------------------------------------------------------
+# check target — build the test bundle then run xctest against it
+# ---------------------------------------------------------------------------
+
+internal-check:: $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle
+	DYLD_LIBRARY_PATH=/usr/local/lib:$(DYLD_LIBRARY_PATH) \
+	/usr/local/bin/xctest $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle
+
+$(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle: all

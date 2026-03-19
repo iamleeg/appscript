@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
-#import "NSNumber+AppScriptArithmetic.h"
+#import <AppScript/NSNumber+AppScriptArithmetic.h>
 
 @interface NSNumber_AppScriptArithmeticTests : XCTestCase
 @end

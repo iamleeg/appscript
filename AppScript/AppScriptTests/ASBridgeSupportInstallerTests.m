@@ -18,10 +18,10 @@
 
 #import <XCTest/XCTest.h>
 #import <dlfcn.h>
-#import "ASBridgeSupportInstaller.h"
-#import "ASBridgeSupportParser.h"
-#import "ASBridgeSupportDocument.h"
-#import "ASBridgeSupportFunction.h"
+#import <AppScript/ASBridgeSupportInstaller.h>
+#import <AppScript/ASBridgeSupportParser.h>
+#import <AppScript/ASBridgeSupportDocument.h>
+#import <AppScript/ASBridgeSupportFunction.h>
 
 @interface ASBridgeSupportInstallerTests : XCTestCase
 @end

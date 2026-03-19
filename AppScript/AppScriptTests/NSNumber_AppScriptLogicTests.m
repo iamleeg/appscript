@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
-#import "NSNumber+AppScriptLogic.h"
+#import <AppScript/NSNumber+AppScriptLogic.h>
 
 @interface NSNumber_AppScriptLogicTests : XCTestCase
 @end

@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
-#import "NSObject+AppScriptControlFlow.h"
+#import <AppScript/NSObject+AppScriptControlFlow.h>
 
 @interface NSObject_AppScriptControlFlowTests : XCTestCase
 @end

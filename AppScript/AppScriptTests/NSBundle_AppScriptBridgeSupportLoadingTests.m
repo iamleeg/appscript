@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
-#import "NSBundle+AppScriptBridgeSupportLoading.h"
+#import <AppScript/NSBundle+AppScriptBridgeSupportLoading.h>
 
 @interface NSBundle_AppScriptBridgeSupportLoadingTests : XCTestCase
 @end
