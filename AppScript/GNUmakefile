@@ -172,15 +172,49 @@ $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle: all
 
 APP_NAME = AppScriptHarness
 AppScriptHarness_NEEDS_GUI = yes
+AppScriptHarness_MAIN_MODEL_FILE = MainMenu.nib
 
 AppScriptHarness_OBJC_FILES = \
 	AppScriptHarness/main.m
 
+AppScriptHarness_RESOURCE_FILES_DIR = AppScriptHarness/Scripts
 AppScriptHarness_RESOURCE_FILES = \
-	AppScriptHarness/Scripts
+	$(notdir $(wildcard AppScriptHarness/Scripts/*.appscript)) \
+	$(notdir $(wildcard AppScriptHarness/Scripts/*.expected)) \
+	$(notdir $(wildcard AppScriptHarness/Scripts/*.bridgesupport))
 
 AppScriptHarness_LDFLAGS = \
 	-F$(GNUSTEP_BUILD_DIR) \
-	-framework AppScript
+	-framework AppScript \
+	-Wl,-headerpad_max_install_names
 
 include $(GNUSTEP_MAKEFILES)/application.make
+
+# ---------------------------------------------------------------------------
+# Post-build steps for AppScriptHarness.app:
+#   1. Compile MainMenu.xib → MainMenu.nib  (macOS/ibtool only; skipped on Linux)
+#   2. Embed AppScript.framework in Contents/Frameworks/ and fix the binary's
+#      load command so the app is self-contained and launchable from anywhere.
+# ---------------------------------------------------------------------------
+
+IBTOOL          := $(shell xcrun --find ibtool 2>/dev/null)
+INSTALL_NAME_TOOL := install_name_tool
+HARNESS_APP     = $(GNUSTEP_BUILD_DIR)/AppScriptHarness.app
+HARNESS_BINARY  = $(HARNESS_APP)/Contents/MacOS/AppScriptHarness
+HARNESS_FW_DIR  = $(HARNESS_APP)/Contents/Frameworks
+EMBEDDED_FW     = $(HARNESS_FW_DIR)/AppScript.framework/AppScript
+FW_RPATH_NAME   = @executable_path/../Frameworks/AppScript.framework/AppScript
+
+after-AppScriptHarness-all::
+ifneq ($(IBTOOL),)
+	$(IBTOOL) --compile $(HARNESS_APP)/Contents/Resources/MainMenu.nib \
+		AppScriptHarness/Base.lproj/MainMenu.xib
+endif
+	$(MKDIRS) $(HARNESS_FW_DIR)
+	$(INSTALL) -d $(HARNESS_FW_DIR)
+	cp -Rf $(GNUSTEP_BUILD_DIR)/AppScript.framework $(HARNESS_FW_DIR)/
+	$(INSTALL_NAME_TOOL) -change AppScript.framework/AppScript \
+		$(FW_RPATH_NAME) $(HARNESS_BINARY)
+	$(INSTALL_NAME_TOOL) -change libgnustep-baseadd.1.31.dylib \
+		/usr/local/lib/libgnustep-baseadd.1.31.dylib $(HARNESS_BINARY) 2>/dev/null || true
+	codesign --sign - --force $(HARNESS_BINARY)
