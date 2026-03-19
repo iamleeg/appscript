@@ -12,3 +12,4 @@
 | appscript-isd | Code | 2026-03-19T16:29:38+00:00 | | 2026-03-19T16:30:33+00:00 | 1 min | Added application target section and per-target NEEDS_GUI |
 | appscript-isd | Compile | 2026-03-19T16:30:33+00:00 | | 2026-03-19T16:38:11+00:00 | 8 min | Defect 1: RESOURCE_DIRS doesn't copy files; fixed to RESOURCE_FILES |
 | appscript-isd | Test | 2026-03-19T16:38:11+00:00 | | 2026-03-19T17:11:00+00:00 | 32 min | Found 4 more defects via launch testing: missing nib, unresolvable dylib paths, codesign flag, wrong resource layout. All fixed. App UI verified working. |
+| appscript-isd | Postmortem | 2026-03-19T17:15:34+00:00 | | 2026-03-19T17:17:41+00:00 | 2 min | |
