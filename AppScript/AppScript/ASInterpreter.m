@@ -88,6 +88,18 @@
 @end
 
 // ---------------------------------------------------------------------------
+// Public constants
+// ---------------------------------------------------------------------------
+
+NSString *const ASRuntimeErrorException = @"ASRuntimeErrorException";
+
+NSString *const ASErrorMessageKey     = @"ASErrorMessage";
+NSString *const ASErrorScriptPathKey  = @"ASErrorScriptPath";
+NSString *const ASErrorLineKey        = @"ASErrorLine";
+NSString *const ASErrorColumnKey      = @"ASErrorColumn";
+NSString *const ASErrorMessageCodeKey = @"ASErrorMessageCode";
+
+// ---------------------------------------------------------------------------
 // ASInterpreter private interface
 // ---------------------------------------------------------------------------
 
@@ -111,10 +123,11 @@
                       arguments:(NSArray *)arguments
                      paramNames:(NSArray<NSString *> *)paramNames;
 
-/// Reports a runtime error and aborts.
+/// Reports a runtime error by raising an ``ASRuntimeErrorException``.
 - (void)reportError:(NSString *)message
+               code:(ASErrorCode)code
                node:(nullable ASASTNode *)node
-             context:(ASExecutionContext *)ctx NS_SWIFT_UNAVAILABLE("") __attribute__((noreturn));
+            context:(ASExecutionContext *)ctx NS_SWIFT_UNAVAILABLE("") __attribute__((noreturn));
 
 @end
 
@@ -197,16 +210,18 @@
         if ([ctx.constantNames containsObject:assign.variableName]) {
             [self reportError:[NSString stringWithFormat:
                                @"Cannot reassign constant '%@'", assign.variableName]
-                         node:node
-                      context:ctx];
+                          code:ASErrorCodeCannotReassignConstant
+                          node:node
+                       context:ctx];
         }
         id value = [self evaluateExpression:assign.value context:ctx];
         BOOL found = [ctx.currentScope updateValue:value forName:assign.variableName];
         if (!found) {
             [self reportError:[NSString stringWithFormat:
                                @"Undefined variable '%@'", assign.variableName]
-                         node:node
-                      context:ctx];
+                          code:ASErrorCodeUndefinedVariable
+                          node:node
+                       context:ctx];
         }
         return;
     }
@@ -252,8 +267,9 @@
         }
 
         [self reportError:[NSString stringWithFormat:@"Undefined identifier '%@'", name]
-                     node:node
-                  context:ctx];
+                      code:ASErrorCodeUndefinedIdentifier
+                      node:node
+                   context:ctx];
     }
 
     // --- Array literal ---
@@ -294,9 +310,10 @@
     // --- Fallback: unrecognised node type ---
     [self reportError:[NSString stringWithFormat:
                        @"Unknown AST node type: %@", NSStringFromClass([node class])]
-                 node:node
-              context:ctx];
-    return nil;
+                  code:ASErrorCodeUnknownASTNodeType
+                  node:node
+               context:ctx];
+    __builtin_unreachable();
 }
 
 // ---------------------------------------------------------------------------
@@ -371,9 +388,9 @@
         [self reportError:[NSString stringWithFormat:
                            @"Object of class '%@' does not respond to selector '%@'",
                            receiver ? NSStringFromClass([receiver class]) : @"nil", node.selector]
-                     node:node
-                  context:ctx];
-        return nil;
+                      code:ASErrorCodeUnrecognisedSelector
+                      node:node
+                   context:ctx];
     }
 
     // Build and invoke the NSInvocation.
@@ -550,17 +567,34 @@
 // ---------------------------------------------------------------------------
 
 - (void)reportError:(NSString *)message
+               code:(ASErrorCode)code
                node:(nullable ASASTNode *)node
             context:(ASExecutionContext *)ctx {
     NSString *path = ctx.scriptPath ?: @"<unknown>";
     NSUInteger line = node ? node.lineNumber : 0;
     NSUInteger col  = node ? node.columnNumber : 0;
-    fprintf(stderr, "AppScript error at %s:%lu:%lu: %s\n",
-            path.UTF8String,
-            (unsigned long)line,
-            (unsigned long)col,
-            message.UTF8String);
-    abort();
+
+    NSString *reason = [NSString stringWithFormat:@"AppScript error at %@:%lu:%lu: %@",
+                                                   path, (unsigned long)line,
+                                                   (unsigned long)col, message];
+    NSDictionary *userInfo = @{
+        ASErrorMessageKey:     message,
+        ASErrorScriptPathKey:  path,
+        ASErrorLineKey:        @(line),
+        ASErrorColumnKey:      @(col),
+        ASErrorMessageCodeKey: @(code),
+    };
+
+    // Callers are responsible for not swallowing this exception: an
+    // ASRuntimeErrorException always represents a programming mistake in the
+    // AppScript source under evaluation, and silently catching it will hide
+    // that mistake from the developer.
+    [[NSException exceptionWithName:ASRuntimeErrorException
+                             reason:reason
+                           userInfo:userInfo] raise];
+    // -[NSException raise] is noreturn; __builtin_unreachable() satisfies
+    // the compiler's flow analysis for our __attribute__((noreturn)) declaration.
+    __builtin_unreachable();
 }
 
 @end

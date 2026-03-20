@@ -21,6 +21,91 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+// ---------------------------------------------------------------------------
+// Runtime error exception name
+// ---------------------------------------------------------------------------
+
+/// The name of the ``NSException`` raised by ``ASInterpreter`` when a runtime
+/// error is detected in an AppScript method body.
+///
+/// Callers that need to distinguish AppScript runtime errors from other
+/// exceptions should match against this constant. The exception's `userInfo`
+/// dictionary carries structured information via the `ASError*Key` constants
+/// below.
+///
+/// > Warning: Do not swallow this exception silently — unhandled AppScript
+/// > runtime errors represent a programming mistake in the script under
+/// > evaluation, and suppressing them will hide those mistakes from the
+/// > developer.
+FOUNDATION_EXPORT NSString *const ASRuntimeErrorException;
+
+// ---------------------------------------------------------------------------
+// userInfo keys for ASRuntimeErrorException
+// ---------------------------------------------------------------------------
+
+/// The human-readable error message describing what went wrong.
+/// Value type: `NSString *`.
+FOUNDATION_EXPORT NSString *const ASErrorMessageKey;
+
+/// The file-system path of the `.appscript` source file in which the error
+/// occurred, or the string `"<unknown>"` when the path is unavailable.
+/// Value type: `NSString *`.
+FOUNDATION_EXPORT NSString *const ASErrorScriptPathKey;
+
+/// The 1-based line number of the AST node that triggered the error, or `0`
+/// when no node is available.
+/// Value type: `NSNumber *` (`NSUInteger`).
+FOUNDATION_EXPORT NSString *const ASErrorLineKey;
+
+/// The 1-based column number of the AST node that triggered the error, or `0`
+/// when no node is available.
+/// Value type: `NSNumber *` (`NSUInteger`).
+FOUNDATION_EXPORT NSString *const ASErrorColumnKey;
+
+/// A numeric code that uniquely identifies the *type* of runtime error.
+/// Value type: `NSNumber *` wrapping an ``ASErrorCode`` enumerator.
+///
+/// Use this key to programmatically distinguish error kinds without parsing
+/// the human-readable ``ASErrorMessageKey`` string.
+FOUNDATION_EXPORT NSString *const ASErrorMessageCodeKey;
+
+// ---------------------------------------------------------------------------
+// Error code enumeration
+// ---------------------------------------------------------------------------
+
+/// Identifies the kind of AppScript runtime error that caused an
+/// ``ASRuntimeErrorException`` to be raised.
+///
+/// Retrieve the code from the exception's `userInfo` via ``ASErrorMessageCodeKey``.
+typedef NS_ENUM(NSInteger, ASErrorCode) {
+    /// An attempt was made to assign a new value to a variable that was
+    /// declared with `const`. Reassigning a constant is always a programming
+    /// error in AppScript.
+    ASErrorCodeCannotReassignConstant = 1,
+
+    /// An assignment expression targeted a variable name that does not appear
+    /// in any enclosing scope. Declare the variable with `id` before assigning
+    /// to it.
+    ASErrorCodeUndefinedVariable = 2,
+
+    /// An identifier expression could not be resolved: the name was not found
+    /// in any enclosing scope, is not `self`, `super`, `nil`, `YES`, or `NO`,
+    /// and does not match any known Objective-C class name.
+    ASErrorCodeUndefinedIdentifier = 3,
+
+    /// The interpreter encountered an AST node whose class is not handled by
+    /// ``ASInterpreter``. This indicates a mismatch between the parser and the
+    /// interpreter and should be treated as an interpreter bug.
+    ASErrorCodeUnknownASTNodeType = 4,
+
+    /// A message send targeted an object whose class does not respond to the
+    /// requested selector. Check that the selector is spelled correctly and
+    /// that the receiver is of the expected type.
+    ASErrorCodeUnrecognisedSelector = 5,
+};
+
+// ---------------------------------------------------------------------------
+
 /// An AST-walking interpreter that evaluates AppScript method bodies.
 ///
 /// `ASInterpreter` is stateless and thread-safe. All mutable execution state

@@ -103,6 +103,34 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
 }
 
 // ---------------------------------------------------------------------------
+// Helper for error-path tests: run body and return the caught exception,
+// or nil if no exception was raised.
+// ---------------------------------------------------------------------------
+
+/// An AST node type that ASInterpreter does not handle, used to trigger
+/// ASErrorCodeUnknownASTNodeType.
+@interface ASUnknownTestNode : ASASTNode
+@end
+@implementation ASUnknownTestNode
+@end
+
+static NSException * _Nullable runAndCatch(ASInterpreter *interp,
+                                            NSArray<ASASTNode *> *body) {
+    @try {
+        [interp evaluateMethodBody:body
+                      withReceiver:[NSObject new]
+                     definingClass:[NSObject class]
+                          selector:@"test"
+                         arguments:@[]
+                    parameterNames:@[]
+                        scriptPath:@"test.appscript"];
+        return nil;
+    } @catch (NSException *ex) {
+        return ex;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
 
@@ -416,6 +444,102 @@ static ASMessageSendNode *messageSendNode(ASASTNode *receiver,
                    @"[NSNull null] from a native message send should be returned as-is");
     XCTAssertNotEqual(result, [ASNull null],
                       @"[NSNull null] from a native call must not be conflated with ASNull");
+}
+
+// ---------------------------------------------------------------------------
+// 18. Cannot reassign constant raises ASErrorCodeCannotReassignConstant
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_cannotReassignConstant_raisesCorrectException {
+    // const x = @"a"; x = @"b"  — reassigning a constant is forbidden.
+    ASVariableDeclarationNode *constDecl =
+        [[ASVariableDeclarationNode alloc] initWithVariableName:@"x"
+                                                    initializer:stringNode(@"a")
+                                                         isWeak:NO
+                                                     isConstant:YES
+                                                           line:1
+                                                         column:1];
+    NSArray<ASASTNode *> *body = @[constDecl, assignNode(@"x", stringNode(@"b"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex, @"Reassigning a constant should raise an exception");
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException,
+                          @"Exception name should be ASRuntimeErrorException");
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey],
+                          @(ASErrorCodeCannotReassignConstant),
+                          @"userInfo should carry ASErrorCodeCannotReassignConstant");
+}
+
+// ---------------------------------------------------------------------------
+// 19. Undefined variable assignment raises ASErrorCodeUndefinedVariable
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_undefinedVariable_raisesCorrectException {
+    // z = @"value"  — z has never been declared.
+    NSArray<ASASTNode *> *body = @[assignNode(@"z", stringNode(@"value"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex, @"Assigning to an undeclared variable should raise an exception");
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException,
+                          @"Exception name should be ASRuntimeErrorException");
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey],
+                          @(ASErrorCodeUndefinedVariable),
+                          @"userInfo should carry ASErrorCodeUndefinedVariable");
+}
+
+// ---------------------------------------------------------------------------
+// 20. Undefined identifier raises ASErrorCodeUndefinedIdentifier
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_undefinedIdentifier_raisesCorrectException {
+    // return nonExistentName  — not a keyword, param, or ObjC class.
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"nonExistentNameXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex, @"Referencing an undefined identifier should raise an exception");
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException,
+                          @"Exception name should be ASRuntimeErrorException");
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey],
+                          @(ASErrorCodeUndefinedIdentifier),
+                          @"userInfo should carry ASErrorCodeUndefinedIdentifier");
+}
+
+// ---------------------------------------------------------------------------
+// 21. Unknown AST node type raises ASErrorCodeUnknownASTNodeType
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_unknownASTNodeType_raisesCorrectException {
+    // Inject an ASUnknownTestNode — a subclass of ASASTNode with no handler.
+    ASUnknownTestNode *unknown = [[ASUnknownTestNode alloc] initWithLine:1 column:1];
+    NSArray<ASASTNode *> *body = @[returnNode(unknown)];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex, @"An unrecognised AST node type should raise an exception");
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException,
+                          @"Exception name should be ASRuntimeErrorException");
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey],
+                          @(ASErrorCodeUnknownASTNodeType),
+                          @"userInfo should carry ASErrorCodeUnknownASTNodeType");
+}
+
+// ---------------------------------------------------------------------------
+// 22. Unrecognised selector raises ASErrorCodeUnrecognisedSelector
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_unrecognisedSelector_raisesCorrectException {
+    // [NSObject nonExistentMethod999]
+    ASMessageSendNode *send = messageSendNode(identNode(@"NSObject"),
+                                              @[@"nonExistentMethod999"],
+                                              @[]);
+    NSArray<ASASTNode *> *body = @[returnNode(send)];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex, @"Sending an unrecognised selector should raise an exception");
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException,
+                          @"Exception name should be ASRuntimeErrorException");
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey],
+                          @(ASErrorCodeUnrecognisedSelector),
+                          @"userInfo should carry ASErrorCodeUnrecognisedSelector");
 }
 
 // ---------------------------------------------------------------------------
