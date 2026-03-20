@@ -69,6 +69,13 @@ FOUNDATION_EXPORT NSString *const ASErrorColumnKey;
 /// the human-readable ``ASErrorMessageKey`` string.
 FOUNDATION_EXPORT NSString *const ASErrorMessageCodeKey;
 
+/// A snapshot of all variable bindings visible in the scope at the error site.
+/// Value type: `NSDictionary<NSString *, id> *`.
+/// Keys are variable names (including `self` and `_cmd`); values are their
+/// runtime values. AppScript nil values are represented as the `NSString`
+/// `@"ASNull"` to distinguish them from ObjC `nil` and `NSNull`.
+FOUNDATION_EXPORT NSString *const ASErrorLocalsKey;
+
 // ---------------------------------------------------------------------------
 // Error code enumeration
 // ---------------------------------------------------------------------------

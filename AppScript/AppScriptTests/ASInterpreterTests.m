@@ -656,4 +656,115 @@ static NSException * _Nullable runAndCatch(ASInterpreter *interp,
                    @"After self = [super init], returning self should yield the same object");
 }
 
+// ---------------------------------------------------------------------------
+// 18. Local variable dump — ASErrorLocalsKey is an NSDictionary
+//
+// Any runtime error should include ASErrorLocalsKey in userInfo pointing to
+// an NSDictionary (even if it contains only implicit bindings).
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_localsKey_isNSDictionary {
+    NSArray<ASASTNode *> *body = @[[[ASUnknownTestNode alloc] initWithLine:1 column:1]];
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex, @"Unknown node type should raise an exception");
+    id locals = ex.userInfo[ASErrorLocalsKey];
+    XCTAssertTrue([locals isKindOfClass:[NSDictionary class]],
+                  @"ASErrorLocalsKey should be an NSDictionary");
+}
+
+// ---------------------------------------------------------------------------
+// 19. Local variable dump — declared variable and its value appear in locals
+//
+// A variable declared before the error fires should be visible in the dump.
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_localsKey_containsDeclaredVariable {
+    // body: id myVar = "hello"; <error>
+    NSArray<ASASTNode *> *body = @[
+        varDeclNode(@"myVar", stringNode(@"hello")),
+        [[ASUnknownTestNode alloc] initWithLine:1 column:1],
+    ];
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    NSDictionary *locals = ex.userInfo[ASErrorLocalsKey];
+    XCTAssertEqualObjects(locals[@"myVar"], @"hello",
+                          @"Declared variable should appear in locals with its assigned value");
+}
+
+// ---------------------------------------------------------------------------
+// 20. Local variable dump — AppScript nil appears as "ASNull"
+//
+// A variable initialised without a value holds AppScript nil ([ASNull null]).
+// In the locals dict this must appear as the NSString @"ASNull", not ObjC nil.
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_localsKey_appScriptNilAppearsAsASNull {
+    // body: id myVar; <error>  (no initializer → stored as [ASNull null])
+    NSArray<ASASTNode *> *body = @[
+        varDeclNode(@"myVar", nil),
+        [[ASUnknownTestNode alloc] initWithLine:1 column:1],
+    ];
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    NSDictionary *locals = ex.userInfo[ASErrorLocalsKey];
+    XCTAssertEqualObjects(locals[@"myVar"], @"ASNull",
+                          @"Variable with no initializer (AppScript nil) should appear as 'ASNull'");
+}
+
+// ---------------------------------------------------------------------------
+// 21. Local variable dump — implicit variables self and _cmd are present
+//
+// The root scope always binds self and _cmd; both should appear in the dump.
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_localsKey_containsSelfAndCmd {
+    NSObject *receiver = [NSObject new];
+    NSArray<ASASTNode *> *body = @[[[ASUnknownTestNode alloc] initWithLine:1 column:1]];
+    NSException *ex = nil;
+    @try {
+        [self.interpreter evaluateMethodBody:body
+                                withReceiver:receiver
+                               definingClass:[NSObject class]
+                                    selector:@"mySelector"
+                                   arguments:@[]
+                              parameterNames:@[]
+                                  scriptPath:@"test.appscript"];
+    } @catch (NSException *caught) {
+        ex = caught;
+    }
+    XCTAssertNotNil(ex);
+    NSDictionary *locals = ex.userInfo[ASErrorLocalsKey];
+    XCTAssertEqual(locals[@"self"], receiver, @"self should appear in locals");
+    XCTAssertEqualObjects(locals[@"_cmd"], @"mySelector", @"_cmd should appear in locals");
+}
+
+// ---------------------------------------------------------------------------
+// 22. Local variable dump — weak variable appears with its value or "ASNull"
+//
+// A weak-declared variable must not be silently omitted from the locals dump.
+// When the referent is still alive the value is present; when deallocated the
+// scope holds [ASNull null], which must appear as "ASNull".
+// ---------------------------------------------------------------------------
+
+- (void)test_reportError_localsKey_weakVariablePresentInLocals {
+    // body: weak id weakRef = "alive"; <error>
+    NSArray<ASASTNode *> *body = @[
+        [[ASVariableDeclarationNode alloc] initWithVariableName:@"weakRef"
+                                                    initializer:stringNode(@"alive")
+                                                         isWeak:YES
+                                                     isConstant:NO
+                                                           line:1
+                                                         column:1],
+        [[ASUnknownTestNode alloc] initWithLine:1 column:1],
+    ];
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    NSDictionary *locals = ex.userInfo[ASErrorLocalsKey];
+    // The key must be present. Its value is either the live object or @"ASNull"
+    // (if the referent was already deallocated when reportError: fires).
+    id value = locals[@"weakRef"];
+    XCTAssertNotNil(value,
+                    @"Weak variable should appear in locals (value if alive, 'ASNull' if deallocated)");
+}
+
 @end

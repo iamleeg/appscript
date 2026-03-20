@@ -71,4 +71,19 @@
     return [_bindings objectForKey:name] != nil;
 }
 
+- (NSDictionary<NSString *, id> *)allVisibleBindings {
+    NSMutableDictionary<NSString *, id> *result = [NSMutableDictionary dictionary];
+    ASScope *scope = self;
+    while (scope != nil) {
+        [scope->_bindings enumerateKeysAndObjectsUsingBlock:^(NSString *key, id value, BOOL *stop) {
+            if (result[key] == nil) {
+                // Inner scope wins; only add a name the first time we see it.
+                result[key] = (value == [ASNull null]) ? @"ASNull" : value;
+            }
+        }];
+        scope = scope.enclosingScope;
+    }
+    return [result copy];
+}
+
 @end

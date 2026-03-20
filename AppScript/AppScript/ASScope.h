@@ -51,6 +51,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Returns YES if a variable with this name is declared in THIS scope frame only.
 - (BOOL)hasNameLocally:(NSString *)name;
 
+/// Returns a dictionary of all variable bindings visible from this scope frame,
+/// walking the full scope chain. Inner scopes shadow outer scopes for duplicate names.
+/// AppScript nil values ([ASNull null]) are represented as the NSString @"ASNull".
+- (NSDictionary<NSString *, id> *)allVisibleBindings;
+
 @end
 
 NS_ASSUME_NONNULL_END

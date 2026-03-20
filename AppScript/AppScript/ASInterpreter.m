@@ -98,6 +98,7 @@ NSString *const ASErrorScriptPathKey  = @"ASErrorScriptPath";
 NSString *const ASErrorLineKey        = @"ASErrorLine";
 NSString *const ASErrorColumnKey      = @"ASErrorColumn";
 NSString *const ASErrorMessageCodeKey = @"ASErrorMessageCode";
+NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
 
 // ---------------------------------------------------------------------------
 // ASInterpreter private interface
@@ -577,12 +578,14 @@ NSString *const ASErrorMessageCodeKey = @"ASErrorMessageCode";
     NSString *reason = [NSString stringWithFormat:@"AppScript error at %@:%lu:%lu: %@",
                                                    path, (unsigned long)line,
                                                    (unsigned long)col, message];
+    NSDictionary *locals = [ctx.currentScope allVisibleBindings];
     NSDictionary *userInfo = @{
         ASErrorMessageKey:     message,
         ASErrorScriptPathKey:  path,
         ASErrorLineKey:        @(line),
         ASErrorColumnKey:      @(col),
         ASErrorMessageCodeKey: @(code),
+        ASErrorLocalsKey:      locals,
     };
 
     // Callers are responsible for not swallowing this exception: an
