@@ -11,3 +11,5 @@ AppScript/AppScript.xcodeproj/xcuserdata/leeg.xcuserdatad/xcdebugger/Breakpoints
 AppScript/*.framework/
 AppScript/obj/
 AppScript/derived_src/
+AppScript/*.bundle
+AppScript/*.app
