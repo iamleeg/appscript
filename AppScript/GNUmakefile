@@ -217,4 +217,5 @@ endif
 		$(FW_RPATH_NAME) $(HARNESS_BINARY)
 	$(INSTALL_NAME_TOOL) -change libgnustep-baseadd.1.31.dylib \
 		/usr/local/lib/libgnustep-baseadd.1.31.dylib $(HARNESS_BINARY) 2>/dev/null || true
-	codesign --sign - --force $(HARNESS_BINARY)
+	rm -f $(HARNESS_APP)/Contents/stamp.make
+	codesign --sign - --force $(HARNESS_APP)
