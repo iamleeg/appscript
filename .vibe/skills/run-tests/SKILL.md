@@ -14,7 +14,10 @@ These scripts run _all_ of the tests of the specified type. It's always good pra
 
 Run the script at `scripts/unit-tests.sh`, relative to the base directory for this skill.
 
-Run the script with no arguments to use the default test configuration (no runtime sanitizers). Run the script with a single argument that's a configuration name to use that test configuration instead. The test configurations are:
+Run the script with no arguments to use the default test configuration (no runtime sanitizers).
+This builds and runs the tests using both xcodebuild and GNUstep make: it's **mandatory** that you ensure both compile correctly, run all tests, and pass.
+
+Run the script with a single argument that's a configuration name to use that test configuration instead; this just uses xcodebuild (no need to additionally use GNUstep for the alternate configurations). The test configurations are:
 
 - `ASan`: Run with the Address Sanitizer enabled.
 - `TSan`: Run with the Thread Sanitizer enabled.

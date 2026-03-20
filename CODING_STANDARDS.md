@@ -30,16 +30,21 @@ No source file may be added to the project without this header. Dependencies (th
 
 ## Implementation Language
 
-All implementation is in Objective-C. Specifically:
+All implementation is in Objective-C, or AppScript. Specifically:
 
-- Implementation files use the `.m` extension. Use `.mm` only when a file must interoperate directly with a C++ library; justify this in a comment at the top of the file.
+- The AppScript framework _must_ be implemented in Objective-C; no Objective-C++, no Swift.
+- Objective-C implementation files use the `.m` extension. Avoid Objective-C++.
 - Header files use the `.h` extension.
 - No Swift source files may be added to the framework or test targets. Swift may be used in ancillary tooling (scripts, generators) but not in the runtime itself.
 - Target the macOS SDK. Use `NS_ASSUME_NONNULL_BEGIN` / `NS_ASSUME_NONNULL_END` in every header to enable nullability checking. Annotate all out-parameters and return types explicitly.
 - Use `NS_DESIGNATED_INITIALIZER` and `NS_UNAVAILABLE` to make the intended initialiser surface clear.
+- The AppScriptHarness app must use AppScript for its implementation wherever possible. If it's impossible to build a feature in AppScript, use Objective-C instead but create a task in beads to implement the missing AppScript capability in the framework.
 
 ## Project Structure
 
+This project builds with both Xcode, and GNUstep. It's **CRITICAL** that all development work builds successfully and passes tests with both structures.
+
+### Xcode
 The repository contains three Xcode targets:
 
 | Target | Type | Purpose |
@@ -58,6 +63,15 @@ LICENSES/            # Third-party licence texts
 ```
 
 Each source file in `AppScript/` has a corresponding test file in `AppScriptTests/` with the same base name and a `Tests` suffix (e.g. `ASParser.m` → `ASParserTests.m`).
+
+### GNUstep
+The repository contains a GNUmakefile with three targets:
+
+| Target | Type | Purpose |
+|---|---|---|
+| `AppScript` | Framework | The runtime: parser, interpreter, runtime classes |
+| `AppScriptTests` | Bundle | GNUstep tool-xctest unit tests for every framework class |
+| `AppScriptHarness` | GNUstep app | Integration test harness (see below) |
 
 ## Memory Management
 
@@ -217,7 +231,7 @@ Run `/ambiguity-resolution` on ARCHITECTURE.md whenever a design change is made 
 
 Before approving a pull request, verify:
 
-- [ ] Every new `.m` file has the AGPL licence header.
+- [ ] Every new `.m` or `.appscript` file has the AGPL licence header.
 - [ ] Every new public method has at least one unit test.
 - [ ] Every new public method has a `///` documentation comment in its header.
 - [ ] Complex multi-class flows have a DocC article, linked from the catalog.
@@ -226,3 +240,7 @@ Before approving a pull request, verify:
 - [ ] Any behaviour change is reflected in ARCHITECTURE.md.
 - [ ] New end-to-end behaviour is covered by a harness test.
 - [ ] Mutable state has a documented owning queue.
+- [ ] The framework builds using both xcodebuild and make.
+- [ ] The unit tests build and pass using both xcodebuild and make check.
+- [ ] The AppScriptHarness app builds using both xcodebuild and make.
+- [ ] The AppScriptHarness UI tests build and pass in xcodebuild.
