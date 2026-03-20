@@ -767,4 +767,186 @@ static NSException * _Nullable runAndCatch(ASInterpreter *interp,
                     @"Weak variable should appear in locals (value if alive, 'ASNull' if deallocated)");
 }
 
+// ---------------------------------------------------------------------------
+// Source context display (clang-style caret diagnostics) — REQ-1..REQ-5
+// ---------------------------------------------------------------------------
+//
+// These tests exercise the source-context block that ASInterpreter appends to
+// the NSException reason string when reportError:code:node:context: fires.
+//
+// Strategy: write a temporary .appscript file with known content, then run
+// the interpreter with scriptPath pointing to that file and AST nodes whose
+// line/column values target specific positions in the file.  The interpreter
+// will trigger "undefined identifier" for the name "nonExistentXYZ" which is
+// guaranteed not to exist in any scope.
+//
+// Helper: run interpreter with a custom scriptPath and return the exception.
+// ---------------------------------------------------------------------------
+
+static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
+                                                    NSArray<ASASTNode *> *body,
+                                                    NSString *path) {
+    @try {
+        [interp evaluateMethodBody:body
+                      withReceiver:[NSObject new]
+                     definingClass:[NSObject class]
+                          selector:@"test"
+                         arguments:@[]
+                    parameterNames:@[]
+                        scriptPath:path];
+        return nil;
+    } @catch (NSException *ex) {
+        return ex;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 33. Source line appears in reason when file exists and line > 0
+// ---------------------------------------------------------------------------
+
+- (void)test_sourceContext_includesSourceLine_whenFileExists {
+    // Write a 2-line temp file; trigger an error at line 2.
+    NSString *source = @"firstLine\nsecondLine";
+    NSURL *tmp = [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                    stringByAppendingPathComponent:@"sc_test1.appscript"]];
+    [source writeToURL:tmp atomically:YES encoding:NSUTF8StringEncoding error:nil];
+
+    // identNode at line:2, col:1 → triggers "undefined identifier"
+    ASIdentifierNode *node = [[ASIdentifierNode alloc] initWithName:@"nonExistentXYZ"
+                                                               line:2
+                                                             column:1];
+    NSException *ex = runAndCatchWithPath(self.interpreter, @[returnNode(node)], tmp.path);
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"secondLine"],
+                  @"Exception reason should contain the source line at the error location");
+    [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
+}
+
+// ---------------------------------------------------------------------------
+// 34. Caret appears at column − 1 offset in the source context block
+// ---------------------------------------------------------------------------
+
+- (void)test_sourceContext_caretAtCorrectColumn {
+    // "abcdefgh" — error at col:4 → caret preceded by 3 spaces.
+    NSString *source = @"abcdefgh";
+    NSURL *tmp = [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                    stringByAppendingPathComponent:@"sc_test2.appscript"]];
+    [source writeToURL:tmp atomically:YES encoding:NSUTF8StringEncoding error:nil];
+
+    ASIdentifierNode *node = [[ASIdentifierNode alloc] initWithName:@"nonExistentXYZ"
+                                                               line:1
+                                                             column:4];
+    NSException *ex = runAndCatchWithPath(self.interpreter, @[returnNode(node)], tmp.path);
+    XCTAssertNotNil(ex);
+    // Reason should contain the source line followed by "   ^" (3 spaces then caret).
+    XCTAssertTrue([ex.reason containsString:@"abcdefgh\n   ^"],
+                  @"Caret should be at column 4 (3 spaces before ^), got: %@", ex.reason);
+    [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
+}
+
+// ---------------------------------------------------------------------------
+// 35. No source context block when line == 0
+// ---------------------------------------------------------------------------
+
+- (void)test_sourceContext_omittedWhenLineIsZero {
+    // ASUnknownTestNode with line:0 → reportError sees line==0 → no context block.
+    ASUnknownTestNode *node = [[ASUnknownTestNode alloc] initWithLine:0 column:0];
+    NSException *ex = runAndCatch(self.interpreter, @[returnNode(node)]);
+    XCTAssertNotNil(ex);
+    // Reason must match the bare format with no trailing newline/context.
+    NSString *expected = [NSString stringWithFormat:@"AppScript error at test.appscript:0:0:"];
+    XCTAssertTrue([ex.reason hasPrefix:expected],
+                  @"Reason should start with bare error prefix, got: %@", ex.reason);
+    // Must NOT contain a source-unavailable notice (block omitted entirely).
+    XCTAssertFalse([ex.reason containsString:@"source unavailable"],
+                   @"Source-unavailable notice must not appear when line is 0");
+}
+
+// ---------------------------------------------------------------------------
+// 36. Source line shown but no caret when column == 0
+// ---------------------------------------------------------------------------
+
+- (void)test_sourceContext_showsLineButNoCaret_whenColumnIsZero {
+    NSString *source = @"mySourceLine";
+    NSURL *tmp = [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                    stringByAppendingPathComponent:@"sc_test4.appscript"]];
+    [source writeToURL:tmp atomically:YES encoding:NSUTF8StringEncoding error:nil];
+
+    // col:0 → show line, omit caret.
+    ASIdentifierNode *node = [[ASIdentifierNode alloc] initWithName:@"nonExistentXYZ"
+                                                               line:1
+                                                             column:0];
+    NSException *ex = runAndCatchWithPath(self.interpreter, @[returnNode(node)], tmp.path);
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"mySourceLine"],
+                  @"Source line should appear in reason even when col is 0");
+    XCTAssertFalse([ex.reason containsString:@"^"],
+                   @"Caret must be absent when column is 0");
+    [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
+}
+
+// ---------------------------------------------------------------------------
+// 37. "(source unavailable)" when the source file cannot be read
+// ---------------------------------------------------------------------------
+
+- (void)test_sourceContext_sourceUnavailable_whenFileMissing {
+    // scriptPath points to a file that does not exist.
+    NSString *missingPath = @"/nonexistent/path/does_not_exist.appscript";
+    ASIdentifierNode *node = [[ASIdentifierNode alloc] initWithName:@"nonExistentXYZ"
+                                                               line:1
+                                                             column:1];
+    NSException *ex = runAndCatchWithPath(self.interpreter, @[returnNode(node)], missingPath);
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"(source unavailable)"],
+                  @"Reason should contain '(source unavailable)' for a missing file, got: %@",
+                  ex.reason);
+}
+
+// ---------------------------------------------------------------------------
+// 38. Tab characters are expanded to 4 spaces in the displayed source line
+// ---------------------------------------------------------------------------
+
+- (void)test_sourceContext_tabsExpandedInDisplayLine {
+    // Line contains a tab; displayed line should show 4 spaces instead.
+    NSString *source = @"\tindentedCode";
+    NSURL *tmp = [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                    stringByAppendingPathComponent:@"sc_test6.appscript"]];
+    [source writeToURL:tmp atomically:YES encoding:NSUTF8StringEncoding error:nil];
+
+    ASIdentifierNode *node = [[ASIdentifierNode alloc] initWithName:@"nonExistentXYZ"
+                                                               line:1
+                                                             column:1];
+    NSException *ex = runAndCatchWithPath(self.interpreter, @[returnNode(node)], tmp.path);
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"    indentedCode"],
+                  @"Tab should be expanded to 4 spaces in the displayed source line, got: %@",
+                  ex.reason);
+    [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
+}
+
+// ---------------------------------------------------------------------------
+// 39. Caret position accounts for tab expansion
+// ---------------------------------------------------------------------------
+
+- (void)test_sourceContext_caretPositionAccountsForTabExpansion {
+    // Line: "\tcode" — tab expanded to 4 spaces → "    code"
+    // Error at col:2 in original (the 'c' of "code" in the raw line "\tcode",
+    // which is character index 1, i.e. col:2).  After tab expansion the prefix
+    // is "\t" → 4 spaces → caret at offset 4.
+    NSString *source = @"\tcode";
+    NSURL *tmp = [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                    stringByAppendingPathComponent:@"sc_test7.appscript"]];
+    [source writeToURL:tmp atomically:YES encoding:NSUTF8StringEncoding error:nil];
+
+    ASIdentifierNode *node = [[ASIdentifierNode alloc] initWithName:@"nonExistentXYZ"
+                                                               line:1
+                                                             column:2];
+    NSException *ex = runAndCatchWithPath(self.interpreter, @[returnNode(node)], tmp.path);
+    XCTAssertNotNil(ex);
+    // Display line is "    code"; caret should be at offset 4 (4 spaces then ^).
+    XCTAssertTrue([ex.reason containsString:@"    code\n    ^"],
+                  @"Caret should account for tab expansion, got: %@", ex.reason);
+    [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
+}
+
 @end

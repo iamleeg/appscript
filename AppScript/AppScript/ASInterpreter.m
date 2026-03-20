@@ -36,6 +36,7 @@
 #import "ASArrayLiteralNode.h"
 #import "ASDictionaryLiteralNode.h"
 #import "ASSuperNode.h"
+#import "NSURL+AppScriptFileReading.h"
 
 // ---------------------------------------------------------------------------
 // Internal execution context
@@ -567,6 +568,57 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
 // Error reporting
 // ---------------------------------------------------------------------------
 
+/// Returns a tab-expanded copy of `s` with each `\t` replaced by 4 spaces.
+static NSString *ASExpandTabs(NSString *s) {
+    return [s stringByReplacingOccurrencesOfString:@"\t" withString:@"    "];
+}
+
+/// Returns source-context lines to append to an error reason string, or `nil`
+/// when `line` is 0 (no node available).
+///
+/// When the source file can be read, the returned string is:
+///   tab-expanded source line + newline + (col-1 spaces) + "^"  (caret omitted when col == 0)
+///
+/// When the file cannot be read (missing, "<unknown>", etc.), the returned
+/// string is `(source unavailable)`.
+static NSString *ASSourceContext(NSString *path, NSUInteger line, NSUInteger col) {
+    // REQ-4: line == 0 means no AST node — omit block entirely.
+    if (line == 0) {
+        return nil;
+    }
+
+    // REQ-5: unreadable file — use the project's established file-reading utility.
+    NSString *source = [[NSURL fileURLWithPath:path] as_stringContents];
+    if (!source) {
+        return @"(source unavailable)";
+    }
+
+    NSArray<NSString *> *lines = [source componentsSeparatedByString:@"\n"];
+    // line is 1-based; guard against out-of-range values.
+    if (line > lines.count) {
+        return @"(source unavailable)";
+    }
+
+    NSString *rawLine = lines[line - 1];
+    NSString *displayLine = ASExpandTabs(rawLine);
+
+    // REQ-4: col == 0 → show source line, omit caret.
+    if (col == 0) {
+        return displayLine;
+    }
+
+    // REQ-2 + REQ-3: caret at column-1 offset in the tab-expanded line.
+    // We expand only the prefix (chars before the error column) to get the
+    // correct visual offset after tab expansion.
+    NSUInteger prefixLen = MIN(col - 1, rawLine.length);
+    NSString *expandedPrefix = ASExpandTabs([rawLine substringToIndex:prefixLen]);
+    NSString *spaces = [@"" stringByPaddingToLength:expandedPrefix.length
+                                         withString:@" "
+                                    startingAtIndex:0];
+
+    return [NSString stringWithFormat:@"%@\n%@^", displayLine, spaces];
+}
+
 - (void)reportError:(NSString *)message
                code:(ASErrorCode)code
                node:(nullable ASASTNode *)node
@@ -575,9 +627,13 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
     NSUInteger line = node ? node.lineNumber : 0;
     NSUInteger col  = node ? node.columnNumber : 0;
 
-    NSString *reason = [NSString stringWithFormat:@"AppScript error at %@:%lu:%lu: %@",
-                                                   path, (unsigned long)line,
-                                                   (unsigned long)col, message];
+    NSString *baseReason = [NSString stringWithFormat:@"AppScript error at %@:%lu:%lu: %@",
+                                                       path, (unsigned long)line,
+                                                       (unsigned long)col, message];
+    NSString *context = ASSourceContext(path, line, col);
+    NSString *reason = context
+        ? [NSString stringWithFormat:@"%@\n%@", baseReason, context]
+        : baseReason;
     NSDictionary *locals = [ctx.currentScope allVisibleBindings];
     NSDictionary *userInfo = @{
         ASErrorMessageKey:     message,
