@@ -61,6 +61,10 @@
 /// The value provided by a return statement (may be nil even when didReturn is YES).
 @property (nonatomic, strong, nullable) id returnValue;
 
+/// Running count of block literals evaluated in this frame (used to synthesise
+/// block frame names like `[ClassName method:]__block0`).
+@property (nonatomic) NSUInteger blockCount;
+
 - (instancetype)initWithScope:(ASScope *)scope
                  definingClass:(Class)definingClass
                    scriptPath:(NSString *)scriptPath NS_DESIGNATED_INITIALIZER;
@@ -89,6 +93,63 @@
 @end
 
 // ---------------------------------------------------------------------------
+// ASCallFrame — one entry in the per-thread AppScript call stack
+// ---------------------------------------------------------------------------
+
+/// A snapshot of one active AppScript call frame, used to build the call-stack
+/// section of an error report.
+@interface ASCallFrame : NSObject
+
+/// Synthesised display name: `-[ClassName selector:]` for methods,
+/// `[ClassName method:]__blockN` for blocks.
+@property (nonatomic, copy) NSString *frameName;
+
+/// Declared parameter names, parallel to `arguments`.
+@property (nonatomic, copy) NSArray<NSString *> *parameterNames;
+
+/// Evaluated argument values, parallel to `parameterNames`.
+@property (nonatomic, copy) NSArray *arguments;
+
+/// File-system path of the `.appscript` source file containing this method.
+@property (nonatomic, copy) NSString *scriptPath;
+
+/// 1-based line number in the *calling* frame where this call was initiated;
+/// 0 when called from ObjC (no AppScript call site).
+@property (nonatomic) NSUInteger callSiteLine;
+
+@end
+
+@implementation ASCallFrame
+@end
+
+// ---------------------------------------------------------------------------
+// Thread-local call stack helpers
+// ---------------------------------------------------------------------------
+
+/// Key under which the per-thread ASCallFrame mutable array is stored.
+static NSString *const ASCallStackThreadKey = @"ASInterpreterCallStack";
+
+/// Returns the ObjC class name suitable for display in a backtrace frame.
+/// For class-object receivers (metaclass), returns the class name directly.
+/// For instance receivers, returns the name of the instance's class.
+static NSString *ASClassNameForObject(id obj) {
+    return class_isMetaClass(object_getClass(obj))
+        ? NSStringFromClass((Class)obj)
+        : NSStringFromClass([obj class]);
+}
+
+/// Returns the call stack for the current thread, creating it on first access.
+static NSMutableArray<ASCallFrame *> *ASCurrentCallStack(void) {
+    NSMutableDictionary *dict = NSThread.currentThread.threadDictionary;
+    NSMutableArray *stack = dict[ASCallStackThreadKey];
+    if (!stack) {
+        stack = [NSMutableArray array];
+        dict[ASCallStackThreadKey] = stack;
+    }
+    return stack;
+}
+
+// ---------------------------------------------------------------------------
 // Public constants
 // ---------------------------------------------------------------------------
 
@@ -100,6 +161,7 @@ NSString *const ASErrorLineKey        = @"ASErrorLine";
 NSString *const ASErrorColumnKey      = @"ASErrorColumn";
 NSString *const ASErrorMessageCodeKey = @"ASErrorMessageCode";
 NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
+NSString *const ASErrorCallStackKey   = @"ASErrorCallStack";
 
 // ---------------------------------------------------------------------------
 // ASInterpreter private interface
@@ -116,6 +178,11 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
 
 /// Executes a block body in a child scope with the given arguments bound to paramNames.
 /// Returns the block's return value (nil if no return statement was reached).
+///
+/// `frameName` is the synthesised display name for this block frame
+/// (e.g. `[ClassName method:]__block0`). `callSiteNode` is the AST node
+/// where the block was defined (used to record line 0 — blocks are invoked
+/// from ObjC and have no AppScript call-site line).
 - (nullable id)executeBlockBody:(NSArray<ASASTNode *> *)body
                     parentScope:(ASScope *)parentScope
                    definingClass:(nullable Class)definingClass
@@ -123,7 +190,21 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                       weakNames:(NSMutableSet<NSString *> *)weakNames
                   constantNames:(NSMutableSet<NSString *> *)constantNames
                       arguments:(NSArray *)arguments
-                     paramNames:(NSArray<NSString *> *)paramNames;
+                     paramNames:(NSArray<NSString *> *)paramNames
+                      frameName:(NSString *)frameName;
+
+/// Private variant of the public `evaluateMethodBody:withReceiver:...` entry
+/// point. Accepts an additional `callSiteNode` used to record which line in the
+/// *calling* AppScript frame triggered this invocation (nil when called from
+/// ObjC, giving callSiteLine == 0).
+- (nullable id)evaluateMethodBody:(NSArray<ASASTNode *> *)body
+                     withReceiver:(id)receiver
+                    definingClass:(Class)definingClass
+                         selector:(NSString *)selector
+                        arguments:(NSArray *)arguments
+                   parameterNames:(NSArray<NSString *> *)parameterNames
+                       scriptPath:(NSString *)scriptPath
+                     callSiteNode:(nullable ASASTNode *)callSiteNode;
 
 /// Reports a runtime error by raising an ``ASRuntimeErrorException``.
 - (void)reportError:(NSString *)message
@@ -139,6 +220,8 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
 
 @implementation ASInterpreter
 
+// Public entry point — called from ObjC (ASRuntimeInstaller forwarding).
+// callSiteNode is nil because there is no AppScript AST node at the call site.
 - (nullable id)evaluateMethodBody:(NSArray<ASASTNode *> *)body
                      withReceiver:(id)receiver
                      definingClass:(Class)definingClass
@@ -146,33 +229,72 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                         arguments:(NSArray *)arguments
                    parameterNames:(NSArray<NSString *> *)parameterNames
                        scriptPath:(NSString *)scriptPath {
-    // Create root scope for this invocation.
-    ASScope *rootScope = [[ASScope alloc] initWithEnclosingScope:nil];
+    return [self evaluateMethodBody:body
+                       withReceiver:receiver
+                      definingClass:definingClass
+                           selector:selector
+                          arguments:arguments
+                     parameterNames:parameterNames
+                         scriptPath:scriptPath
+                       callSiteNode:nil];
+}
 
-    // Bind implicit variables.
-    [rootScope setValue:receiver forName:@"self"];
-    [rootScope setValue:selector forName:@"_cmd"];
+// Private implementation — also called from evaluateMessageSend: for super
+// dispatches, where the calling ASMessageSendNode is known.
+- (nullable id)evaluateMethodBody:(NSArray<ASASTNode *> *)body
+                     withReceiver:(id)receiver
+                     definingClass:(Class)definingClass
+                         selector:(NSString *)selector
+                        arguments:(NSArray *)arguments
+                   parameterNames:(NSArray<NSString *> *)parameterNames
+                       scriptPath:(NSString *)scriptPath
+                     callSiteNode:(nullable ASASTNode *)callSiteNode {
+    // Build the call frame for this invocation.
+    BOOL receiverIsClass = receiver && class_isMetaClass(object_getClass(receiver));
+    NSString *className = ASClassNameForObject(receiver);
+    NSString *prefix = receiverIsClass ? @"+" : @"-";
+    ASCallFrame *frame = [[ASCallFrame alloc] init];
+    frame.frameName      = [NSString stringWithFormat:@"%@[%@ %@]", prefix, className, selector];
+    frame.parameterNames = parameterNames;
+    frame.arguments      = arguments;
+    frame.scriptPath     = scriptPath;
+    frame.callSiteLine   = callSiteNode ? callSiteNode.lineNumber : 0;
 
-    // Bind parameters.
-    NSUInteger paramCount = parameterNames.count;
-    for (NSUInteger i = 0; i < paramCount && i < arguments.count; i++) {
-        [rootScope setValue:arguments[i] forName:parameterNames[i]];
-    }
+    // Push onto the thread-local call stack.
+    NSMutableArray<ASCallFrame *> *callStack = ASCurrentCallStack();
+    [callStack addObject:frame];
 
-    // Build execution context.
-    ASExecutionContext *ctx = [[ASExecutionContext alloc] initWithScope:rootScope
-                                                          definingClass:definingClass
-                                                            scriptPath:scriptPath];
+    @try {
+        // Create root scope for this invocation.
+        ASScope *rootScope = [[ASScope alloc] initWithEnclosingScope:nil];
 
-    // Execute body statements in order.
-    for (ASASTNode *statement in body) {
-        [self executeStatement:statement context:ctx];
-        if (ctx.didReturn) {
-            break;
+        // Bind implicit variables.
+        [rootScope setValue:receiver forName:@"self"];
+        [rootScope setValue:selector forName:@"_cmd"];
+
+        // Bind parameters.
+        NSUInteger paramCount = parameterNames.count;
+        for (NSUInteger i = 0; i < paramCount && i < arguments.count; i++) {
+            [rootScope setValue:arguments[i] forName:parameterNames[i]];
         }
-    }
 
-    return ctx.returnValue;
+        // Build execution context.
+        ASExecutionContext *ctx = [[ASExecutionContext alloc] initWithScope:rootScope
+                                                              definingClass:definingClass
+                                                                scriptPath:scriptPath];
+
+        // Execute body statements in order.
+        for (ASASTNode *statement in body) {
+            [self executeStatement:statement context:ctx];
+            if (ctx.didReturn) {
+                break;
+            }
+        }
+
+        return ctx.returnValue;
+    } @finally {
+        [callStack removeLastObject];
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -429,13 +551,16 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                                                       definingClass:&appScriptDefiningClass];
         if (appScriptMethod != nil) {
             // Direct AST dispatch: bypasses ObjC forwarding entirely.
+            // Pass the current ASMessageSendNode as callSiteNode so the callee
+            // frame records the line in this script where the super call was made.
             return [self evaluateMethodBody:appScriptMethod.body
                                withReceiver:receiver
                               definingClass:appScriptDefiningClass
                                    selector:node.selector
                                   arguments:argValues
                              parameterNames:appScriptMethod.parameterNames
-                                 scriptPath:ctx.scriptPath ?: @"<unknown>"];
+                                 scriptPath:ctx.scriptPath ?: @"<unknown>"
+                               callSiteNode:node];
         }
         // Native ObjC super method: safe to invoke via IMP since there is no
         // AppScript forwarding stub in the superclass chain.
@@ -459,27 +584,44 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                       weakNames:(NSMutableSet<NSString *> *)weakNames
                   constantNames:(NSMutableSet<NSString *> *)constantNames
                       arguments:(NSArray *)arguments
-                     paramNames:(NSArray<NSString *> *)paramNames {
-    ASScope *blockScope = [[ASScope alloc] initWithEnclosingScope:parentScope];
-    NSUInteger bindCount = MIN(paramNames.count, arguments.count);
-    for (NSUInteger i = 0; i < bindCount; i++) {
-        id val = arguments[i];
-        // ASNull means the caller passed AppScript nil; store as-is so the
-        // parameter evaluates to [ASNull null] (AppScript nil) in the block body.
-        [blockScope setValue:val forName:paramNames[i]];
-    }
-    ASExecutionContext *blockCtx = [[ASExecutionContext alloc] initWithScope:blockScope
-                                                               definingClass:definingClass
-                                                                  scriptPath:scriptPath];
-    blockCtx.weakNames = weakNames;
-    blockCtx.constantNames = constantNames;
-    for (ASASTNode *statement in body) {
-        [self executeStatement:statement context:blockCtx];
-        if (blockCtx.didReturn) {
-            break;
+                     paramNames:(NSArray<NSString *> *)paramNames
+                      frameName:(NSString *)frameName {
+    // Build and push a call frame for this block invocation.
+    // callSiteLine is 0: blocks are invoked from ObjC, not from an AppScript AST node.
+    ASCallFrame *frame = [[ASCallFrame alloc] init];
+    frame.frameName      = frameName;
+    frame.parameterNames = paramNames;
+    frame.arguments      = arguments;
+    frame.scriptPath     = scriptPath;
+    frame.callSiteLine   = 0;
+
+    NSMutableArray<ASCallFrame *> *callStack = ASCurrentCallStack();
+    [callStack addObject:frame];
+
+    @try {
+        ASScope *blockScope = [[ASScope alloc] initWithEnclosingScope:parentScope];
+        NSUInteger bindCount = MIN(paramNames.count, arguments.count);
+        for (NSUInteger i = 0; i < bindCount; i++) {
+            id val = arguments[i];
+            // ASNull means the caller passed AppScript nil; store as-is so the
+            // parameter evaluates to [ASNull null] (AppScript nil) in the block body.
+            [blockScope setValue:val forName:paramNames[i]];
         }
+        ASExecutionContext *blockCtx = [[ASExecutionContext alloc] initWithScope:blockScope
+                                                                   definingClass:definingClass
+                                                                      scriptPath:scriptPath];
+        blockCtx.weakNames = weakNames;
+        blockCtx.constantNames = constantNames;
+        for (ASASTNode *statement in body) {
+            [self executeStatement:statement context:blockCtx];
+            if (blockCtx.didReturn) {
+                break;
+            }
+        }
+        return blockCtx.returnValue;
+    } @finally {
+        [callStack removeLastObject];
     }
-    return blockCtx.returnValue;
 }
 
 - (id)evaluateBlockLiteral:(ASBlockLiteralNode *)node context:(ASExecutionContext *)ctx {
@@ -493,6 +635,16 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
     NSMutableSet<NSString *> *capturedConstantNames = [ctx.constantNames mutableCopy];
     ASInterpreter *interpreter = self;
 
+    // Synthesise a stable frame name for this block using the enclosing method's
+    // class and selector, plus a per-method block index (e.g. `[MyClass run]__block0`).
+    NSUInteger blockIndex = ctx.blockCount++;
+    id selfValue = [ctx.currentScope valueForName:@"self"];
+    NSString *enclosingClass = selfValue ? ASClassNameForObject(selfValue) : @"<unknown>";
+    NSString *enclosingSelector = [ctx.currentScope valueForName:@"_cmd"] ?: @"<unknown>";
+    NSString *capturedFrameName = [NSString stringWithFormat:@"[%@ %@]__block%lu",
+                                   enclosingClass, enclosingSelector,
+                                   (unsigned long)blockIndex];
+
     // Create an arity-specific ObjC block so that argument passing works correctly
     // when native Objective-C code invokes the block with the expected number of
     // arguments.  All AppScript block parameters are `id`.
@@ -504,7 +656,8 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                                    definingClass:capturedDefiningClass
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
-                                      arguments:@[] paramNames:paramNames];
+                                      arguments:@[] paramNames:paramNames
+                                      frameName:capturedFrameName];
         };
         return [block copy];
     }
@@ -517,7 +670,8 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
                                       arguments:@[a0 ?: [ASNull null]]
-                                     paramNames:@[p0]];
+                                     paramNames:@[p0]
+                                      frameName:capturedFrameName];
         };
         return [block copy];
     }
@@ -530,7 +684,8 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                                       scriptPath:scriptPath weakNames:capturedWeakNames
                                   constantNames:capturedConstantNames
                                       arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null]]
-                                     paramNames:@[p0, p1]];
+                                     paramNames:@[p0, p1]
+                                      frameName:capturedFrameName];
         };
         return [block copy];
     }
@@ -544,7 +699,8 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                                   constantNames:capturedConstantNames
                                       arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null],
                                                   a2 ?: [ASNull null]]
-                                     paramNames:@[p0, p1, p2]];
+                                     paramNames:@[p0, p1, p2]
+                                      frameName:capturedFrameName];
         };
         return [block copy];
     }
@@ -559,7 +715,8 @@ NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
                               constantNames:capturedConstantNames
                                   arguments:@[a0 ?: [ASNull null], a1 ?: [ASNull null],
                                               a2 ?: [ASNull null], a3 ?: [ASNull null]]
-                                 paramNames:@[p0, p1, p2, p3]];
+                                 paramNames:@[p0, p1, p2, p3]
+                                  frameName:capturedFrameName];
     };
     return [block copy];
 }
@@ -619,6 +776,31 @@ static NSString *ASSourceContext(NSString *path, NSUInteger line, NSUInteger col
     return [NSString stringWithFormat:@"%@\n%@^", displayLine, spaces];
 }
 
+/// Formats one call frame as a single backtrace line.
+///
+/// Example output:
+///   `  at -[MyClass doSomething:] (value=<"hello">) /path/to/script.appscript:12`
+static NSString *ASFormatCallFrame(ASCallFrame *frame) {
+    // Format arguments as `name=<description>` pairs.
+    NSMutableArray<NSString *> *argParts = [NSMutableArray array];
+    NSUInteger argCount = MIN(frame.parameterNames.count, frame.arguments.count);
+    for (NSUInteger i = 0; i < argCount; i++) {
+        NSString *name = frame.parameterNames[i];
+        id value = frame.arguments[i];
+        NSString *desc = value ? [value description] : @"nil";
+        [argParts addObject:[NSString stringWithFormat:@"%@=<%@>", name, desc]];
+    }
+    NSString *argsStr = [argParts componentsJoinedByString:@", "];
+
+    // Location: path only, or path:line when the call-site line is known.
+    NSString *location = frame.callSiteLine > 0
+        ? [NSString stringWithFormat:@"%@:%lu", frame.scriptPath, (unsigned long)frame.callSiteLine]
+        : frame.scriptPath;
+
+    return [NSString stringWithFormat:@"  at %@ (%@) %@",
+            frame.frameName, argsStr, location];
+}
+
 - (void)reportError:(NSString *)message
                code:(ASErrorCode)code
                node:(nullable ASASTNode *)node
@@ -630,10 +812,25 @@ static NSString *ASSourceContext(NSString *path, NSUInteger line, NSUInteger col
     NSString *baseReason = [NSString stringWithFormat:@"AppScript error at %@:%lu:%lu: %@",
                                                        path, (unsigned long)line,
                                                        (unsigned long)col, message];
-    NSString *context = ASSourceContext(path, line, col);
-    NSString *reason = context
-        ? [NSString stringWithFormat:@"%@\n%@", baseReason, context]
+    NSString *sourceCtx = ASSourceContext(path, line, col);
+    NSString *reason = sourceCtx
+        ? [NSString stringWithFormat:@"%@\n%@", baseReason, sourceCtx]
         : baseReason;
+
+    // Build the AppScript-level call stack (innermost frame first = last in array).
+    // No copy needed: reportError: is noreturn — @finally cleanup runs after the raise,
+    // not during this iteration.
+    NSMutableArray<NSString *> *frameLines = [NSMutableArray array];
+    NSMutableArray<ASCallFrame *> *stack = ASCurrentCallStack();
+    for (NSInteger i = (NSInteger)stack.count - 1; i >= 0; i--) {
+        [frameLines addObject:ASFormatCallFrame(stack[(NSUInteger)i])];
+    }
+    NSString *callStackString = [frameLines componentsJoinedByString:@"\n"];
+    if (frameLines.count > 0) {
+        reason = [NSString stringWithFormat:@"%@\nAppScript call stack (most recent call first):\n%@",
+                  reason, callStackString];
+    }
+
     NSDictionary *locals = [ctx.currentScope allVisibleBindings];
     NSDictionary *userInfo = @{
         ASErrorMessageKey:     message,
@@ -642,6 +839,7 @@ static NSString *ASSourceContext(NSString *path, NSUInteger line, NSUInteger col
         ASErrorColumnKey:      @(col),
         ASErrorMessageCodeKey: @(code),
         ASErrorLocalsKey:      locals,
+        ASErrorCallStackKey:   callStackString,
     };
 
     // Callers are responsible for not swallowing this exception: an

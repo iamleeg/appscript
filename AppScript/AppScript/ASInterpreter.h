@@ -76,6 +76,20 @@ FOUNDATION_EXPORT NSString *const ASErrorMessageCodeKey;
 /// `@"ASNull"` to distinguish them from ObjC `nil` and `NSNull`.
 FOUNDATION_EXPORT NSString *const ASErrorLocalsKey;
 
+/// A formatted AppScript-level call stack showing the chain of method
+/// invocations active at the time of the error, innermost frame first.
+/// Value type: `NSString *` — a multi-line string with one frame per line,
+/// in the form:
+///
+/// ```
+///   at -[ClassName selector:] (param0=<arg0>) /path/to/script.appscript:12
+///   at [ClassName method:]__block0 () /path/to/script.appscript:5
+/// ```
+///
+/// The string is empty when the error fires outside any AppScript call frame
+/// (e.g. during top-level evaluation with no active frames).
+FOUNDATION_EXPORT NSString *const ASErrorCallStackKey;
+
 // ---------------------------------------------------------------------------
 // Error code enumeration
 // ---------------------------------------------------------------------------
@@ -115,11 +129,18 @@ typedef NS_ENUM(NSInteger, ASErrorCode) {
 
 /// An AST-walking interpreter that evaluates AppScript method bodies.
 ///
-/// `ASInterpreter` is stateless and thread-safe. All mutable execution state
-/// (scope stack, return-value holder) is stack-allocated per call to
+/// `ASInterpreter` is stateless and thread-safe. The interpreter object itself
+/// holds no mutable state. Per-invocation execution state (scope chain,
+/// return-value holder) is stack-allocated inside each call to
 /// `evaluateMethodBody:withReceiver:selector:arguments:parameterNames:scriptPath:`.
 /// Multiple threads may therefore share a single `ASInterpreter` instance and
 /// invoke it concurrently without synchronisation.
+///
+/// > Note: The interpreter uses thread-local storage
+/// > (`NSThread.currentThread.threadDictionary`) to maintain a per-thread
+/// > AppScript call frame stack for error reporting. This does not affect
+/// > thread safety — frames from concurrent evaluations on different threads
+/// > are fully isolated from one another.
 @interface ASInterpreter : NSObject
 
 /// Evaluates the body statements of a method, and returns the result.

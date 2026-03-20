@@ -949,4 +949,160 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
     [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
 }
 
+// ---------------------------------------------------------------------------
+// 40–46. Call stack backtrace (appscript-5j3)
+//
+// Tests for the AppScript-level call stack that reportError: appends to the
+// exception reason and stores in userInfo[ASErrorCallStackKey].
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 40. Reason contains "AppScript call stack" header when an error fires
+// ---------------------------------------------------------------------------
+
+- (void)test_callStack_reasonContainsCallStackHeader_onError {
+    // Any error trigger inside evaluateMethodBody: should produce a call stack.
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"AppScript call stack (most recent call first):"],
+                  @"Reason should contain the call stack header, got: %@", ex.reason);
+}
+
+// ---------------------------------------------------------------------------
+// 41. Reason contains the frame name (-[ClassName selector:]) for active frame
+// ---------------------------------------------------------------------------
+
+- (void)test_callStack_reasonContainsFrameName_onError {
+    // runAndCatch uses receiver=[NSObject new], selector=@"test"
+    // → frame name "-[NSObject test]"
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"-[NSObject test]"],
+                  @"Reason should contain the method frame name, got: %@", ex.reason);
+}
+
+// ---------------------------------------------------------------------------
+// 42. userInfo[ASErrorCallStackKey] is present and is an NSString
+// ---------------------------------------------------------------------------
+
+- (void)test_callStack_userInfoContainsCallStackKey {
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    id callStack = ex.userInfo[ASErrorCallStackKey];
+    XCTAssertNotNil(callStack, @"userInfo should contain ASErrorCallStackKey");
+    XCTAssertTrue([callStack isKindOfClass:[NSString class]],
+                  @"ASErrorCallStackKey value should be NSString, got %@", [callStack class]);
+}
+
+// ---------------------------------------------------------------------------
+// 43. Parameter names and argument values appear in the frame description
+// ---------------------------------------------------------------------------
+
+- (void)test_callStack_parameterAndArgValues_appearsInFrame {
+    // Call with one named parameter so the frame shows "value=<...>"
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    @try {
+        [self.interpreter evaluateMethodBody:body
+                                withReceiver:[NSObject new]
+                               definingClass:[NSObject class]
+                                    selector:@"doSomething:"
+                                   arguments:@[@"argValue"]
+                              parameterNames:@[@"value"]
+                                  scriptPath:@"test.appscript"];
+    } @catch (NSException *ex) {
+        // Frame should show "value=<argValue>"
+        XCTAssertTrue([ex.reason containsString:@"value=<argValue>"],
+                      @"Reason should contain 'value=<argValue>', got: %@", ex.reason);
+        return;
+    }
+    XCTFail(@"Expected an exception to be raised");
+}
+
+// ---------------------------------------------------------------------------
+// 44. Script path (without colon+line) appears in frame when called from ObjC
+// ---------------------------------------------------------------------------
+
+- (void)test_callStack_scriptPathAppearsInFrame_noLineWhenCalledFromObjC {
+    // When evaluateMethodBody: is called from ObjC (callSiteNode == nil),
+    // callSiteLine is 0 and the frame shows path only (no ":N" suffix).
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatchWithPath(self.interpreter, body, @"/some/path/script.appscript");
+    XCTAssertNotNil(ex);
+
+    NSString *callStack = ex.userInfo[ASErrorCallStackKey];
+    XCTAssertNotNil(callStack);
+    // Path should appear; must NOT be followed by ":0" (callSiteLine == 0 → omit line).
+    XCTAssertTrue([callStack containsString:@"/some/path/script.appscript"],
+                  @"Call stack should contain the script path, got: %@", callStack);
+    XCTAssertFalse([callStack containsString:@"/some/path/script.appscript:0"],
+                   @"Call stack must not show ':0' for an ObjC call site, got: %@", callStack);
+}
+
+// ---------------------------------------------------------------------------
+// 45. Frame is correctly popped after normal return (no stale frames)
+// ---------------------------------------------------------------------------
+
+- (void)test_callStack_framePopped_afterNormalReturn {
+    // Run a body that succeeds (no error) then run one that errors.
+    // If the first frame wasn't popped the error would show two "at " lines.
+    NSArray<ASASTNode *> *successBody = @[returnNode(stringNode(@"ok"))];
+    [self.interpreter evaluateMethodBody:successBody
+                            withReceiver:[NSObject new]
+                           definingClass:[NSObject class]
+                                selector:@"firstCall"
+                               arguments:@[]
+                          parameterNames:@[]
+                              scriptPath:@"test.appscript"];
+
+    NSArray<ASASTNode *> *errorBody = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+    NSException *ex = runAndCatch(self.interpreter, errorBody);
+    XCTAssertNotNil(ex);
+
+    // Count occurrences of "  at " in the call stack — should be exactly 1.
+    NSString *callStack = ex.userInfo[ASErrorCallStackKey];
+    XCTAssertNotNil(callStack);
+    NSArray<NSString *> *atLines = [callStack componentsSeparatedByString:@"  at "];
+    NSUInteger frameCount = atLines.count - 1; // one separator → one frame
+    XCTAssertEqual(frameCount, (NSUInteger)1,
+                   @"Should have exactly 1 frame in stack (first frame was popped), got %lu in: %@",
+                   (unsigned long)frameCount, callStack);
+}
+
+// ---------------------------------------------------------------------------
+// 46. Call stack is separate from the source-context block in the reason string
+// ---------------------------------------------------------------------------
+
+- (void)test_callStack_appearsAfterSourceContext_inReason {
+    // Write a temp file so source context is also generated; verify ordering.
+    NSString *source = @"myLine";
+    NSURL *tmp = [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                    stringByAppendingPathComponent:@"cs_test_order.appscript"]];
+    [source writeToURL:tmp atomically:YES encoding:NSUTF8StringEncoding error:nil];
+
+    ASIdentifierNode *node = [[ASIdentifierNode alloc] initWithName:@"undefinedSymbolXYZ"
+                                                               line:1
+                                                             column:1];
+    NSException *ex = runAndCatchWithPath(self.interpreter, @[returnNode(node)], tmp.path);
+    XCTAssertNotNil(ex);
+
+    // Both source context and call stack should appear, call stack after.
+    NSRange srcRange = [ex.reason rangeOfString:@"myLine"];
+    NSRange stackRange = [ex.reason rangeOfString:@"AppScript call stack"];
+    XCTAssertNotEqual(srcRange.location, NSNotFound,
+                      @"Source line should appear in reason, got: %@", ex.reason);
+    XCTAssertNotEqual(stackRange.location, NSNotFound,
+                      @"Call stack header should appear in reason, got: %@", ex.reason);
+    XCTAssertGreaterThan(stackRange.location, srcRange.location,
+                         @"Call stack should appear after source context");
+    [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
+}
+
 @end
