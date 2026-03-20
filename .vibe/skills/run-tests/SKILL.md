@@ -8,7 +8,7 @@ user-invokable: true
 
 This skill provides scripts to run the unit tests and integration tests for this project. You must **always** run these scripts to get the results of tests; don't create other commands.
 
-These scripts run _all_ of the tests of the specified type. It's always good practice to run all tests when you make a change, so you can check for unexpected regressions in behavior.
+These scripts run _all_ of the tests of the specified type. Run all tests when you make a change (both unit tests and integration tests), so you can check for unexpected regressions in behavior.
 
 ## Run the unit tests
 
@@ -26,4 +26,4 @@ It's **critical** that the project never contains any address or thread sanitize
 
 ## Run the integration tests
 
-Run the script at `scripts/integration-tests.sh`, relative to the base directory for this skill.
+Run the script at `scripts/integration-tests.sh`, relative to the base directory for this skill. It's **critical** that there are no regressions in integration tests, even when you make low-level changes that don't result in new integration tests.
