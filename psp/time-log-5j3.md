@@ -13,3 +13,4 @@
 | appscript-5j3 | Compile | 2026-03-20T16:05 | 0 | 2026-03-20T16:07 | 2 | First compile: BUILD SUCCEEDED, no errors |
 | appscript-5j3 | Test | 2026-03-20T16:07 | 0 | 2026-03-20T16:25 | 18 | 7 new tests all pass; ASan/TSan clean; integration tests 29/29 passed |
 | appscript-5j3 | Review | 2026-03-20T16:25 | 0 | 2026-03-20T16:40 | 15 | 3 simplify fixes: ASClassNameForObject() helper, remove dead receiver field, remove unnecessary stack copy |
+| appscript-5j3 | Postmortem | 2026-03-20T16:40 | 0 | 2026-03-20T16:45 | 5 | Postmortem reflection, memory updates |
