@@ -27,3 +27,4 @@ FOUNDATION_EXPORT const unsigned char AppScriptVersionString[];
 #import <AppScript/NSString+AppScriptRuntime.h>
 #import <AppScript/NSNumber+AppScriptBitwise.h>
 #import <AppScript/ASLoader.h>
+#import <AppScript/ASUncaughtExceptionHandler.h>

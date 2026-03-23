@@ -53,6 +53,7 @@ AppScript_OBJC_FILES = \
 	AppScript/ASStringLiteralNode.m \
 	AppScript/ASSuperNode.m \
 	AppScript/ASToken.m \
+	AppScript/ASUncaughtExceptionHandler.m \
 	AppScript/ASVariableDeclarationNode.m \
 	AppScript/NSArray+AppScriptBlocks.m \
 	AppScript/NSBundle+AppScriptBridgeSupportLoading.m \
@@ -96,6 +97,7 @@ AppScript_HEADER_FILES = \
 	ASReturnNode.h \
 	ASRuntimeInstaller.h \
 	ASScope.h \
+	ASUncaughtExceptionHandler.h \
 	ASStringLiteralNode.h \
 	ASSuperNode.h \
 	ASToken.h \
@@ -130,6 +132,7 @@ AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASParserStringEscapeTests.m \
 	AppScriptTests/ASParserTests.m \
 	AppScriptTests/ASRuntimeInstallerTests.m \
+	AppScriptTests/ASUncaughtExceptionHandlerTests.m \
 	AppScriptTests/NSBundle_AppScriptBridgeSupportLoadingTests.m \
 	AppScriptTests/NSBundle_AppScriptLoadingTests.m \
 	AppScriptTests/NSNumber_AppScriptArithmeticTests.m \

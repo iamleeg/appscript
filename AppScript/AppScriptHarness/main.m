@@ -22,6 +22,11 @@
 #include <dlfcn.h>
 
 int main(int argc, const char * argv[]) {
+    // Install the AppScript uncaught-exception handler before NSApplicationMain
+    // so that any ASRuntimeErrorException that escapes uncaught produces an
+    // augmented crash report (with hybrid ObjC+AppScript call stack) on stderr.
+    ASInstallUncaughtExceptionHandler();
+
     @autoreleasepool {
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
