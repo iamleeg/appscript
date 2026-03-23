@@ -161,7 +161,8 @@ NSString *const ASErrorLineKey        = @"ASErrorLine";
 NSString *const ASErrorColumnKey      = @"ASErrorColumn";
 NSString *const ASErrorMessageCodeKey = @"ASErrorMessageCode";
 NSString *const ASErrorLocalsKey      = @"ASErrorLocals";
-NSString *const ASErrorCallStackKey   = @"ASErrorCallStack";
+NSString *const ASErrorCallStackKey        = @"ASErrorCallStack";
+NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
 
 // ---------------------------------------------------------------------------
 // ASInterpreter private interface
@@ -801,6 +802,66 @@ static NSString *ASFormatCallFrame(ASCallFrame *frame) {
             frame.frameName, argsStr, location];
 }
 
+/// Returns YES if `symbol` (one line from `[NSThread callStackSymbols]`) belongs
+/// to the AppScript runtime execution trampoline and should be filtered out of
+/// the hybrid backtrace.
+static BOOL ASIsRuntimeFrame(NSString *symbol) {
+    static NSArray<NSString *> *kFilters;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        kFilters = @[
+            @"ASForwardInvocationIMP",
+            @"evaluateMethodBody:",
+            @"evaluateMessageSend:",
+            @"executeStatement:",
+            @"reportError:",
+            // Must match this function's own name — update if renamed.
+            @"ASBuildHybridBacktrace",
+        ];
+    });
+    for (NSString *f in kFilters) {
+        if ([symbol containsString:f]) return YES;
+    }
+    return NO;
+}
+
+/// Builds a hybrid backtrace by interleaving `[NSThread callStackSymbols]` with
+/// AppScript call frames from `appscriptStack`.
+///
+/// Consecutive ObjC frames that match the runtime filter are replaced by the
+/// next unconsumed AppScript call frame (innermost first). Non-matching ObjC
+/// frames pass through verbatim. If AppScript frames are exhausted before all
+/// runtime clusters are consumed, the placeholder `  at <AppScript runtime frame>`
+/// is emitted for each remaining cluster.
+static NSString *ASBuildHybridBacktrace(NSArray<ASCallFrame *> *appscriptStack) {
+    NSArray<NSString *> *objcSymbols = [NSThread callStackSymbols];
+    // Consume AppScript frames innermost-first (last index = innermost).
+    NSInteger asIdx = (NSInteger)appscriptStack.count - 1;
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    BOOL inCluster = NO;
+
+    for (NSString *sym in objcSymbols) {
+        if (ASIsRuntimeFrame(sym)) {
+            if (!inCluster) {
+                // First frame of a new runtime cluster — emit the AppScript frame.
+                if (asIdx >= 0) {
+                    [lines addObject:ASFormatCallFrame(appscriptStack[(NSUInteger)asIdx])];
+                    asIdx--;
+                } else {
+                    [lines addObject:@"  at <AppScript runtime frame>"];
+                }
+                inCluster = YES;
+            }
+            // Remaining frames in the same cluster: skip.
+        } else {
+            inCluster = NO;
+            [lines addObject:sym];
+        }
+    }
+
+    return [lines componentsJoinedByString:@"\n"];
+}
+
 - (void)reportError:(NSString *)message
                code:(ASErrorCode)code
                node:(nullable ASASTNode *)node
@@ -826,20 +887,24 @@ static NSString *ASFormatCallFrame(ASCallFrame *frame) {
         [frameLines addObject:ASFormatCallFrame(stack[(NSUInteger)i])];
     }
     NSString *callStackString = [frameLines componentsJoinedByString:@"\n"];
-    if (frameLines.count > 0) {
-        reason = [NSString stringWithFormat:@"%@\nAppScript call stack (most recent call first):\n%@",
-                  reason, callStackString];
+
+    // Build the hybrid backtrace (ObjC frames interleaved with AppScript frames).
+    NSString *hybridCallStackString = ASBuildHybridBacktrace(stack);
+    if (hybridCallStackString.length > 0) {
+        reason = [NSString stringWithFormat:@"%@\nCall stack (most recent call first):\n%@",
+                  reason, hybridCallStackString];
     }
 
     NSDictionary *locals = [ctx.currentScope allVisibleBindings];
     NSDictionary *userInfo = @{
-        ASErrorMessageKey:     message,
-        ASErrorScriptPathKey:  path,
-        ASErrorLineKey:        @(line),
-        ASErrorColumnKey:      @(col),
-        ASErrorMessageCodeKey: @(code),
-        ASErrorLocalsKey:      locals,
-        ASErrorCallStackKey:   callStackString,
+        ASErrorMessageKey:          message,
+        ASErrorScriptPathKey:       path,
+        ASErrorLineKey:             @(line),
+        ASErrorColumnKey:           @(col),
+        ASErrorMessageCodeKey:      @(code),
+        ASErrorLocalsKey:           locals,
+        ASErrorCallStackKey:        callStackString,
+        ASErrorHybridCallStackKey:  hybridCallStackString,
     };
 
     // Callers are responsible for not swallowing this exception: an

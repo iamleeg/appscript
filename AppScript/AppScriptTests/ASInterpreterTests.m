@@ -966,7 +966,7 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
 
     NSException *ex = runAndCatch(self.interpreter, body);
     XCTAssertNotNil(ex);
-    XCTAssertTrue([ex.reason containsString:@"AppScript call stack (most recent call first):"],
+    XCTAssertTrue([ex.reason containsString:@"Call stack (most recent call first):"],
                   @"Reason should contain the call stack header, got: %@", ex.reason);
 }
 
@@ -1095,7 +1095,7 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
 
     // Both source context and call stack should appear, call stack after.
     NSRange srcRange = [ex.reason rangeOfString:@"myLine"];
-    NSRange stackRange = [ex.reason rangeOfString:@"AppScript call stack"];
+    NSRange stackRange = [ex.reason rangeOfString:@"Call stack (most recent call first):"];
     XCTAssertNotEqual(srcRange.location, NSNotFound,
                       @"Source line should appear in reason, got: %@", ex.reason);
     XCTAssertNotEqual(stackRange.location, NSNotFound,
@@ -1103,6 +1103,85 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
     XCTAssertGreaterThan(stackRange.location, srcRange.location,
                          @"Call stack should appear after source context");
     [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
+}
+
+// ---------------------------------------------------------------------------
+// 47–52. Hybrid ObjC+AppScript backtrace (appscript-oot)
+// ---------------------------------------------------------------------------
+
+- (void)test_hybridCallStack_appearsInUserInfo {
+    // ASErrorHybridCallStackKey must be present and hold an NSString.
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+
+    id hybrid = ex.userInfo[ASErrorHybridCallStackKey];
+    XCTAssertNotNil(hybrid, @"userInfo should contain ASErrorHybridCallStackKey");
+    XCTAssertTrue([hybrid isKindOfClass:[NSString class]],
+                  @"ASErrorHybridCallStackKey value should be NSString, got %@", [hybrid class]);
+}
+
+- (void)test_hybridCallStack_headerAppearsInReason {
+    // The reason string should use the new hybrid header.
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"Call stack (most recent call first):"],
+                  @"Reason should contain hybrid call stack header, got: %@", ex.reason);
+}
+
+- (void)test_hybridCallStack_oldAppScriptOnlyHeaderNotInReason {
+    // The old "AppScript call stack" header must be gone — replaced by hybrid.
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+    XCTAssertFalse([ex.reason containsString:@"AppScript call stack (most recent call first):"],
+                   @"Old AppScript-only header must not appear in reason, got: %@", ex.reason);
+}
+
+- (void)test_hybridCallStack_containsAppScriptFrameContent {
+    // AppScript frame lines ("  at ") should appear in the hybrid trace,
+    // replacing the AppScript runtime cluster for the active method.
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+
+    NSString *hybrid = ex.userInfo[ASErrorHybridCallStackKey];
+    XCTAssertTrue([hybrid containsString:@"  at "],
+                  @"Hybrid trace should contain AppScript '  at ' frame lines, got: %@", hybrid);
+}
+
+- (void)test_hybridCallStack_containsNativeObjcFrames {
+    // Native ObjC frames from [NSThread callStackSymbols] pass through verbatim
+    // and contain hex addresses (0x...).
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+
+    NSString *hybrid = ex.userInfo[ASErrorHybridCallStackKey];
+    XCTAssertTrue([hybrid containsString:@"0x"],
+                  @"Hybrid trace should contain native ObjC frames with hex addresses, got: %@",
+                  hybrid);
+}
+
+- (void)test_hybridCallStack_backwardsCompat_callStackKeyUnchanged {
+    // ASErrorCallStackKey must still hold the AppScript-only formatted stack.
+    NSArray<ASASTNode *> *body = @[returnNode(identNode(@"undefinedSymbolXYZ"))];
+
+    NSException *ex = runAndCatch(self.interpreter, body);
+    XCTAssertNotNil(ex);
+
+    NSString *appscriptOnly = ex.userInfo[ASErrorCallStackKey];
+    XCTAssertNotNil(appscriptOnly,
+                    @"ASErrorCallStackKey must still be present for backwards compatibility");
+    XCTAssertTrue([appscriptOnly containsString:@"  at "],
+                  @"ASErrorCallStackKey must still contain AppScript frame lines, got: %@",
+                  appscriptOnly);
 }
 
 @end

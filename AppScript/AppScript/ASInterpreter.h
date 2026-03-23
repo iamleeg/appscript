@@ -90,6 +90,29 @@ FOUNDATION_EXPORT NSString *const ASErrorLocalsKey;
 /// (e.g. during top-level evaluation with no active frames).
 FOUNDATION_EXPORT NSString *const ASErrorCallStackKey;
 
+/// A hybrid backtrace that interleaves native Objective-C frames with AppScript
+/// call frames, producing a single unified call stack at the point of the error.
+///
+/// The trace is built by walking `[NSThread callStackSymbols]` and replacing
+/// clusters of AppScript runtime frames (trampolines, evaluators) with the
+/// corresponding ``ASErrorCallStackKey``-style AppScript frame description.
+/// Native ObjC frames pass through verbatim.
+///
+/// Value type: `NSString *` — a multi-line string, one entry per line.
+/// Lines that originate from `[NSThread callStackSymbols]` use the system
+/// symbol format (frame number, binary name, address, symbol name + offset).
+/// Lines that represent AppScript call frames use the same format as
+/// ``ASErrorCallStackKey``:
+///
+/// ```
+///   at -[ClassName selector:] (param0=<arg0>) /path/to/script.appscript:12
+/// ```
+///
+/// When the AppScript call-frame stack is exhausted before all native runtime
+/// clusters are consumed, the placeholder `  at <AppScript runtime frame>` is
+/// emitted for each remaining cluster.
+FOUNDATION_EXPORT NSString *const ASErrorHybridCallStackKey;
+
 // ---------------------------------------------------------------------------
 // Error code enumeration
 // ---------------------------------------------------------------------------
