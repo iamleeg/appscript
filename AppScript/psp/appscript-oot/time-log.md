@@ -11,5 +11,5 @@
 | appscript-oot | Design | 2026-03-23T18:44:51+00:00 | | 2026-03-23T18:46:14+00:00 | 1 min | Fast — algorithm well-understood from requirements |
 | appscript-oot | Code | 2026-03-23T18:46:14+00:00 | | 2026-03-23T18:48:08+00:00 | 2 min | |
 | appscript-oot | Compile | 2026-03-23T18:48:08+00:00 | | 2026-03-23T18:50:16+00:00 | 2 min | All 861 unit tests pass; ASan+TSan clean; GNUstep env not installed (pre-existing) |
-| appscript-oot | Test | 2026-03-23T18:50:16+00:00 | | 2026-03-23T18:50:52+00:00 | 1 min | 861 unit + 29 integration all pass; ASan+TSan clean |
+| appscript-oot | Test | 2026-03-23T18:50:16+00:00 | | 2026-03-23T18:56:09+00:00 | 6 min | 861 unit + 29 integration all pass; ASan+TSan clean; GNUstep confirmed with GNUSTEP_MAKEFILES set (47 ASInterpreterTests PASSED) |
 | appscript-oot | Review | 2026-03-23T18:50:52+00:00 | | 2026-03-23T18:52:51+00:00 | 2 min | 3-agent parallel review; one fix: maintenance comment on self-referential filter string |
