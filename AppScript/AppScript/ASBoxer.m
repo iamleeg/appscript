@@ -17,6 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "ASBoxer.h"
+#import "ASStructValue.h"
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -122,9 +123,29 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             return [NSNull null];
         }
         case '{': {
-            // Struct — wrap in NSValue using the full type encoding string
-            // NSMethodSignature returns the full encoding including size qualifiers, so pass
-            // typeEncoding directly as the objCType.
+            // Struct — if the canonical name is registered with ASStructValue, return an
+            // ASStructValue so field accessors (e.g. .width, .height) are available.
+            // Otherwise fall back to a plain NSValue.
+            NSString *typeEncodingString = @(typeEncoding);
+            NSString *canonicalName = nil;
+            const char *p = typeEncoding + 1; // skip '{'
+            const char *nameStart = p;
+            while (*p && *p != '=' && *p != '}') { p++; }
+            if (p > nameStart) {
+                canonicalName = [[NSString alloc] initWithBytes:nameStart
+                                                         length:(NSUInteger)(p - nameStart)
+                                                       encoding:NSUTF8StringEncoding];
+            }
+            if (canonicalName && [ASStructValue registeredStructNamed:canonicalName]) {
+                NSUInteger structSize = 0;
+                NSGetSizeAndAlignment(typeEncoding, &structSize, NULL);
+                if (structSize > 0) {
+                    return [[ASStructValue alloc] initWithBytes:bytes
+                                                        length:structSize
+                                                  canonicalName:canonicalName
+                                            runtimeTypeEncoding:typeEncodingString];
+                }
+            }
             return [NSValue valueWithBytes:bytes objCType:typeEncoding];
         }
         default: {
@@ -217,11 +238,21 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
             return YES;
         }
         case '{': {
-            // NSValue containing a struct
+            // ASStructValue or NSValue containing a struct
+            if ([object isKindOfClass:[ASStructValue class]]) {
+                ASStructValue *sv = (ASStructValue *)object;
+                memcpy(outBytes, sv.bytes.bytes, sv.bytes.length);
+                return YES;
+            }
             [object getValue:outBytes];
             return YES;
         }
         default: {
+            if ([object isKindOfClass:[ASStructValue class]]) {
+                ASStructValue *sv = (ASStructValue *)object;
+                memcpy(outBytes, sv.bytes.bytes, sv.bytes.length);
+                return YES;
+            }
             if ([object isKindOfClass:[NSValue class]]) {
                 [object getValue:outBytes];
                 return YES;

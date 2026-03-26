@@ -17,6 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "NSNumber+AppScriptArithmetic.h"
+#import <math.h>
 
 @implementation NSNumber (AppScriptArithmetic)
 
@@ -46,6 +47,22 @@
 
 - (NSNumber *)negated {
     return [NSNumber numberWithDouble:-[self doubleValue]];
+}
+
+- (NSNumber *)rounded {
+    return [NSNumber numberWithDouble:round([self doubleValue])];
+}
+
+- (NSNumber *)floored {
+    return [NSNumber numberWithDouble:floor([self doubleValue])];
+}
+
+- (NSNumber *)numberMaximumOfSelfAnd:(NSNumber *)other {
+    return [NSNumber numberWithDouble:fmax([self doubleValue], [other doubleValue])];
+}
+
+- (NSNumber *)numberMinimumOfSelfAnd:(NSNumber *)other {
+    return [NSNumber numberWithDouble:fmin([self doubleValue], [other doubleValue])];
 }
 
 @end

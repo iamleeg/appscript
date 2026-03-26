@@ -39,6 +39,20 @@ NS_ASSUME_NONNULL_BEGIN
 /// Returns a new NSNumber whose value is the arithmetic negation of the receiver.
 - (NSNumber *)negated;
 
+/// Returns a new NSNumber whose value is the receiver rounded to the nearest integer.
+/// Uses round() semantics: half-values round away from zero (e.g. 2.5 → 3.0, -2.5 → -3.0).
+- (NSNumber *)rounded;
+
+/// Returns a new NSNumber whose value is the largest integer not greater than the receiver.
+/// Uses floor() semantics: rounds toward -infinity (e.g. 2.9 → 2.0, -2.1 → -3.0).
+- (NSNumber *)floored;
+
+/// Returns a new NSNumber whose value is the larger of the receiver and other.
+- (NSNumber *)numberMaximumOfSelfAnd:(NSNumber *)other;
+
+/// Returns a new NSNumber whose value is the smaller of the receiver and other.
+- (NSNumber *)numberMinimumOfSelfAnd:(NSNumber *)other;
+
 @end
 
 NS_ASSUME_NONNULL_END

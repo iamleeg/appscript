@@ -89,4 +89,97 @@
     XCTAssertEqualWithAccuracy([result doubleValue], 7.0, 1e-10);
 }
 
+// MARK: - rounded
+
+- (void)test_rounded_positiveFraction_roundsUp {
+    NSNumber *result = [@2.7 rounded];
+    XCTAssertEqualWithAccuracy([result doubleValue], 3.0, 1e-10);
+}
+
+- (void)test_rounded_positiveFraction_roundsDown {
+    NSNumber *result = [@2.3 rounded];
+    XCTAssertEqualWithAccuracy([result doubleValue], 2.0, 1e-10);
+}
+
+- (void)test_rounded_halfWay_roundsAwayFromZero {
+    NSNumber *result = [@2.5 rounded];
+    XCTAssertEqualWithAccuracy([result doubleValue], 3.0, 1e-10);
+}
+
+- (void)test_rounded_negativeHalfWay_roundsAwayFromZero {
+    NSNumber *result = [@(-2.5) rounded];
+    XCTAssertEqualWithAccuracy([result doubleValue], -3.0, 1e-10);
+}
+
+- (void)test_rounded_negativeFraction_roundsTowardZero {
+    NSNumber *result = [@(-2.3) rounded];
+    XCTAssertEqualWithAccuracy([result doubleValue], -2.0, 1e-10);
+}
+
+- (void)test_rounded_alreadyInteger_returnsUnchanged {
+    NSNumber *result = [@5 rounded];
+    XCTAssertEqualWithAccuracy([result doubleValue], 5.0, 1e-10);
+}
+
+// MARK: - floored
+
+- (void)test_floored_positiveFraction_roundsDown {
+    NSNumber *result = [@2.9 floored];
+    XCTAssertEqualWithAccuracy([result doubleValue], 2.0, 1e-10);
+}
+
+- (void)test_floored_negativeFraction_roundsTowardNegativeInfinity {
+    NSNumber *result = [@(-2.1) floored];
+    XCTAssertEqualWithAccuracy([result doubleValue], -3.0, 1e-10);
+}
+
+- (void)test_floored_alreadyInteger_returnsUnchanged {
+    NSNumber *result = [@4 floored];
+    XCTAssertEqualWithAccuracy([result doubleValue], 4.0, 1e-10);
+}
+
+// MARK: - numberMaximumOfSelfAnd:
+
+- (void)test_numberMaximumOfSelfAnd_leftIsLarger_returnsLeft {
+    NSNumber *result = [@10 numberMaximumOfSelfAnd:@3];
+    XCTAssertEqualWithAccuracy([result doubleValue], 10.0, 1e-10);
+}
+
+- (void)test_numberMaximumOfSelfAnd_rightIsLarger_returnsRight {
+    NSNumber *result = [@3 numberMaximumOfSelfAnd:@10];
+    XCTAssertEqualWithAccuracy([result doubleValue], 10.0, 1e-10);
+}
+
+- (void)test_numberMaximumOfSelfAnd_equalValues_returnsValue {
+    NSNumber *result = [@7 numberMaximumOfSelfAnd:@7];
+    XCTAssertEqualWithAccuracy([result doubleValue], 7.0, 1e-10);
+}
+
+- (void)test_numberMaximumOfSelfAnd_negativeValues_returnsLarger {
+    NSNumber *result = [@(-5) numberMaximumOfSelfAnd:@(-2)];
+    XCTAssertEqualWithAccuracy([result doubleValue], -2.0, 1e-10);
+}
+
+// MARK: - numberMinimumOfSelfAnd:
+
+- (void)test_numberMinimumOfSelfAnd_leftIsSmaller_returnsLeft {
+    NSNumber *result = [@3 numberMinimumOfSelfAnd:@10];
+    XCTAssertEqualWithAccuracy([result doubleValue], 3.0, 1e-10);
+}
+
+- (void)test_numberMinimumOfSelfAnd_rightIsSmaller_returnsRight {
+    NSNumber *result = [@10 numberMinimumOfSelfAnd:@3];
+    XCTAssertEqualWithAccuracy([result doubleValue], 3.0, 1e-10);
+}
+
+- (void)test_numberMinimumOfSelfAnd_equalValues_returnsValue {
+    NSNumber *result = [@7 numberMinimumOfSelfAnd:@7];
+    XCTAssertEqualWithAccuracy([result doubleValue], 7.0, 1e-10);
+}
+
+- (void)test_numberMinimumOfSelfAnd_negativeValues_returnsSmaller {
+    NSNumber *result = [@(-2) numberMinimumOfSelfAnd:@(-5)];
+    XCTAssertEqualWithAccuracy([result doubleValue], -5.0, 1e-10);
+}
+
 @end
