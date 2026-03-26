@@ -10,6 +10,17 @@ This skill provides scripts to run the unit tests and integration tests for this
 
 These scripts run _all_ of the tests of the specified type. Run all tests when you make a change (both unit tests and integration tests), so you can check for unexpected regressions in behavior.
 
+The tests are designed to run with the appscript source folder as current working directory. If you're working in a project that contains `appscript` as a submodule, you need to change to that folder.
+
+```bash
+% PWD
+/home/user/src/asu/appscript # You can run the script
+
+% PWD
+/home/user/src/asu # Change directory first
+% cd appscript # You can run the script
+```
+
 ## Run the unit tests
 
 Run the script at `scripts/unit-tests.sh`, relative to the base directory for this skill.
