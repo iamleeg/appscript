@@ -20,11 +20,12 @@
 #import "ASBridgeSupportFunction.h"
 #import "ASBridgeSupportConstant.h"
 #import "ASBridgeSupportEnumeration.h"
+#import "ASBridgeSupportStruct.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
 /// The parsed contents of a BridgeSupport XML document, providing access to C functions,
-/// constants, and enumeration values described therein.
+/// constants, enumeration values, and struct definitions described therein.
 @interface ASBridgeSupportDocument : NSObject
 
 /// All C functions declared in the document.
@@ -36,10 +37,15 @@ NS_ASSUME_NONNULL_BEGIN
 /// All enumeration constants declared in the document (excludes entries marked ignore='true').
 @property (nonatomic, readonly, copy) NSArray<ASBridgeSupportEnumeration *> *enumerations;
 
+/// All struct definitions declared in the document, keyed by canonical name.
+/// Includes zero-field (opaque) structs.
+@property (nonatomic, readonly, copy) NSArray<ASBridgeSupportStruct *> *structs;
+
 /// Designated initializer.
 - (instancetype)initWithFunctions:(NSArray<ASBridgeSupportFunction *> *)functions
                         constants:(NSArray<ASBridgeSupportConstant *> *)constants
-                     enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations NS_DESIGNATED_INITIALIZER;
+                     enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations
+                          structs:(NSArray<ASBridgeSupportStruct *> *)structs NS_DESIGNATED_INITIALIZER;
 
 - (instancetype)init NS_UNAVAILABLE;
 
@@ -51,6 +57,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Returns the enumeration constant with the given name, or nil if no such enumeration exists in the document.
 - (nullable ASBridgeSupportEnumeration *)enumerationNamed:(NSString *)name;
+
+/// Returns the struct with the given canonical name, or nil if no such struct exists in the document.
+- (nullable ASBridgeSupportStruct *)structNamed:(NSString *)canonicalName;
 
 @end
 

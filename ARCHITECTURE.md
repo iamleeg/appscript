@@ -260,6 +260,11 @@ AppScript doesn't provide the arithmetic operators. Instead, the AppScript runti
 - (NSNumber *)numberBySubtracting:(NSNumber *)other;
 - (NSNumber *)numberByMultiplyingBy:(NSNumber *)other;
 - (NSNumber *)numberByDividingBy:(NSNumber *)other;
+- (NSNumber *)negated;
+- (NSNumber *)rounded;
+- (NSNumber *)floored;
+- (NSNumber *)numberMaximumOfSelfAnd:(NSNumber *)other;
+- (NSNumber *)numberMinimumOfSelfAnd:(NSNumber *)other;
 @end
 ```
 
@@ -317,6 +322,31 @@ The `NSNumber (AppScriptArithmetic)` category provides:
 @interface NSNumber (AppScriptArithmetic)
 - (NSNumber *)negated;
 @end
+```
+
+### Rounding and clamping
+
+AppScript does not provide the `round()`, `floor()`, `MAX()`, or `MIN()` C functions/macros. These are unavailable via BridgeSupport (they are compiler intrinsics or macros, absent from `libSystem.bridgesupport`). The `NSNumber (AppScriptArithmetic)` category provides equivalents:
+
+```objc
+@interface NSNumber (AppScriptArithmetic)
+/// Rounds to nearest integer; half-values round away from zero (round() semantics).
+- (NSNumber *)rounded;
+/// Rounds toward -infinity (floor() semantics).
+- (NSNumber *)floored;
+/// Returns the larger of the receiver and other (fmax() semantics).
+- (NSNumber *)numberMaximumOfSelfAnd:(NSNumber *)other;
+/// Returns the smaller of the receiver and other (fmin() semantics).
+- (NSNumber *)numberMinimumOfSelfAnd:(NSNumber *)other;
+@end
+```
+
+All four methods operate on the `double` representation of each operand and return a `double`-typed `NSNumber`.
+
+```appscript
+id pixelX = [rawX rounded]                          // round to nearest pixel
+id safeHeight = [height numberMinimumOfSelfAnd: @800] // clamp to max 800pt
+id paneSize = [requestedSize numberMaximumOfSelfAnd: @100] // clamp to min 100pt
 ```
 
 ### Logical operators

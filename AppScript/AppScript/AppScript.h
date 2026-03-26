@@ -28,3 +28,6 @@ FOUNDATION_EXPORT const unsigned char AppScriptVersionString[];
 #import <AppScript/NSNumber+AppScriptBitwise.h>
 #import <AppScript/ASLoader.h>
 #import <AppScript/ASUncaughtExceptionHandler.h>
+#import <AppScript/ASBridgeSupportStructField.h>
+#import <AppScript/ASBridgeSupportStruct.h>
+#import <AppScript/ASStructValue.h>

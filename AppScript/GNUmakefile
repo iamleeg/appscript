@@ -34,6 +34,9 @@ AppScript_OBJC_FILES = \
 	AppScript/ASBridgeSupportFunction.m \
 	AppScript/ASBridgeSupportInstaller.m \
 	AppScript/ASBridgeSupportParser.m \
+	AppScript/ASBridgeSupportStruct.m \
+	AppScript/ASBridgeSupportStructField.m \
+	AppScript/ASStructValue.m \
 	AppScript/ASCategoryDefinitionNode.m \
 	AppScript/ASClassDefinitionNode.m \
 	AppScript/ASDictionaryLiteralNode.m \
@@ -81,6 +84,9 @@ AppScript_HEADER_FILES = \
 	ASBridgeSupportFunction.h \
 	ASBridgeSupportInstaller.h \
 	ASBridgeSupportParser.h \
+	ASBridgeSupportStruct.h \
+	ASBridgeSupportStructField.h \
+	ASStructValue.h \
 	ASCategoryDefinitionNode.h \
 	ASClassDefinitionNode.h \
 	ASDictionaryLiteralNode.h \
@@ -126,6 +132,8 @@ AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASBoxerTests.m \
 	AppScriptTests/ASBridgeSupportInstallerTests.m \
 	AppScriptTests/ASBridgeSupportParserTests.m \
+	AppScriptTests/ASBridgeSupportStructTests.m \
+	AppScriptTests/ASStructValueTests.m \
 	AppScriptTests/ASInterpreterTests.m \
 	AppScriptTests/ASLexerTests.m \
 	AppScriptTests/ASLoaderTests.m \

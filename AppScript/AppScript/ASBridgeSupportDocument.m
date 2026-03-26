@@ -22,12 +22,14 @@
 
 - (instancetype)initWithFunctions:(NSArray<ASBridgeSupportFunction *> *)functions
                         constants:(NSArray<ASBridgeSupportConstant *> *)constants
-                     enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations {
+                     enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations
+                          structs:(NSArray<ASBridgeSupportStruct *> *)structs {
     self = [super init];
     if (self) {
-        _functions = [functions copy];
-        _constants = [constants copy];
+        _functions    = [functions copy];
+        _constants    = [constants copy];
         _enumerations = [enumerations copy];
+        _structs      = [structs copy];
     }
     return self;
 }
@@ -54,6 +56,15 @@
     for (ASBridgeSupportEnumeration *enumeration in _enumerations) {
         if ([enumeration.name isEqualToString:name]) {
             return enumeration;
+        }
+    }
+    return nil;
+}
+
+- (nullable ASBridgeSupportStruct *)structNamed:(NSString *)canonicalName {
+    for (ASBridgeSupportStruct *s in _structs) {
+        if ([s.canonicalName isEqualToString:canonicalName]) {
+            return s;
         }
     }
     return nil;

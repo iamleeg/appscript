@@ -21,6 +21,8 @@
 #import "ASBridgeSupportFunction.h"
 #import "ASBridgeSupportConstant.h"
 #import "ASBridgeSupportEnumeration.h"
+#import "ASBridgeSupportStruct.h"
+#import "ASStructValue.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -483,6 +485,11 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
 
     // Register the class pair with the runtime.
     objc_registerClassPair(proxyClass);
+
+    // Register struct definitions so ASStructValue can dispatch field accessors.
+    for (ASBridgeSupportStruct *s in document.structs) {
+        [ASStructValue registerStruct:s];
+    }
 
     return YES;
 }

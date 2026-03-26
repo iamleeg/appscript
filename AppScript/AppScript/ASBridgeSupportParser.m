@@ -17,8 +17,107 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "ASBridgeSupportParser.h"
+#import "ASBridgeSupportStructField.h"
+#import "ASBridgeSupportStruct.h"
 
 NSString * const ASBridgeSupportParserErrorDomain = @"ASBridgeSupportParserErrorDomain";
+
+// ---------------------------------------------------------------------------
+// Name-mapping table: imported struct name → canonical name
+// Add new entries here only; do not add mapping logic elsewhere.
+// ---------------------------------------------------------------------------
+
+static NSString *ASApplyStructNameMapping(NSString *importedName) {
+    static NSDictionary<NSString *, NSString *> *sMapping = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        sMapping = @{ @"_NSRange": @"NSRange" };
+    });
+    NSString *mapped = sMapping[importedName];
+    return mapped ?: importedName;
+}
+
+// ---------------------------------------------------------------------------
+// Struct type-encoding parser
+// Parses a BridgeSupport type64 string of the form:
+//   {StructName="field1"typeEnc1"field2"typeEnc2...}
+// Outputs the imported name and an ordered array of ASBridgeSupportStructField objects.
+// typeEnc can be a single encoding character (d, Q, etc.) or a nested struct
+// encoding {NestedName} or {NestedName=...}.
+// ---------------------------------------------------------------------------
+
+static void ASParseStructTypeEncoding(NSString *typeEncoding,
+                                      NSString * __autoreleasing _Nullable *outImportedName,
+                                      NSMutableArray<ASBridgeSupportStructField *> * __autoreleasing _Nullable *outFields) {
+    if (outImportedName) *outImportedName = nil;
+    if (outFields)       *outFields       = nil;
+
+    const char *s = typeEncoding.UTF8String;
+    if (!s || s[0] != '{') return;
+
+    const char *p = s + 1;
+
+    // Extract imported struct name (up to '=' or '}').
+    const char *nameStart = p;
+    while (*p && *p != '=' && *p != '}') { p++; }
+    if (p == nameStart) return; // empty name
+
+    NSString *importedName = [[NSString alloc] initWithBytes:nameStart
+                                                      length:(NSUInteger)(p - nameStart)
+                                                    encoding:NSUTF8StringEncoding];
+    if (outImportedName) *outImportedName = importedName;
+
+    NSMutableArray<ASBridgeSupportStructField *> *fields = [NSMutableArray array];
+
+    if (*p == '=') {
+        p++; // skip '='
+
+        while (*p && *p != '}') {
+            if (*p == '"') {
+                // Parse field name
+                p++; // skip opening '"'
+                const char *fieldNameStart = p;
+                while (*p && *p != '"') { p++; }
+                NSString *fieldName = [[NSString alloc] initWithBytes:fieldNameStart
+                                                               length:(NSUInteger)(p - fieldNameStart)
+                                                             encoding:NSUTF8StringEncoding];
+                if (*p == '"') p++; // skip closing '"'
+
+                // Parse field type encoding
+                NSString *fieldType = nil;
+                if (*p == '{') {
+                    // Nested struct — capture up to matching '}'
+                    const char *typeStart = p;
+                    int depth = 0;
+                    while (*p) {
+                        if (*p == '{')      depth++;
+                        else if (*p == '}') {
+                            depth--;
+                            if (depth == 0) { p++; break; }
+                        }
+                        p++;
+                    }
+                    fieldType = [[NSString alloc] initWithBytes:typeStart
+                                                         length:(NSUInteger)(p - typeStart)
+                                                       encoding:NSUTF8StringEncoding];
+                } else if (*p && *p != '"' && *p != '}') {
+                    // Single-character type encoding
+                    fieldType = [[NSString alloc] initWithBytes:p length:1 encoding:NSUTF8StringEncoding];
+                    p++;
+                }
+
+                if (fieldName.length > 0 && fieldType.length > 0) {
+                    [fields addObject:[[ASBridgeSupportStructField alloc] initWithName:fieldName
+                                                                          typeEncoding:fieldType]];
+                }
+            } else {
+                p++; // skip unexpected character
+            }
+        }
+    }
+
+    if (outFields) *outFields = fields;
+}
 
 // ---------------------------------------------------------------------------
 // Private SAX delegate
@@ -29,6 +128,7 @@ NSString * const ASBridgeSupportParserErrorDomain = @"ASBridgeSupportParserError
 @property (nonatomic, readonly) NSMutableArray<ASBridgeSupportFunction *> *functions;
 @property (nonatomic, readonly) NSMutableArray<ASBridgeSupportConstant *> *constants;
 @property (nonatomic, readonly) NSMutableArray<ASBridgeSupportEnumeration *> *enumerations;
+@property (nonatomic, readonly) NSMutableArray<ASBridgeSupportStruct *> *structs;
 
 // Per-function parsing state
 @property (nonatomic, copy, nullable) NSString *currentFunctionName;
@@ -48,9 +148,10 @@ NSString * const ASBridgeSupportParserErrorDomain = @"ASBridgeSupportParserError
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _functions = [NSMutableArray array];
-        _constants = [NSMutableArray array];
+        _functions    = [NSMutableArray array];
+        _constants    = [NSMutableArray array];
         _enumerations = [NSMutableArray array];
+        _structs      = [NSMutableArray array];
     }
     return self;
 }
@@ -130,8 +231,23 @@ didStartElement:(NSString *)elementName
                                                        value:value];
             [self.enumerations addObject:enumeration];
         }
+
+    } else if ([elementName isEqualToString:@"struct"]) {
+        NSString *typeEncoding = [self typeFromAttributes:attributeDict];
+        if (!typeEncoding) return;
+
+        NSString *importedName = nil;
+        NSMutableArray<ASBridgeSupportStructField *> *fields = nil;
+        ASParseStructTypeEncoding(typeEncoding, &importedName, &fields);
+        if (!importedName) return;
+
+        NSString *canonicalName = ASApplyStructNameMapping(importedName);
+        ASBridgeSupportStruct *s = [[ASBridgeSupportStruct alloc]
+                                    initWithCanonicalName:canonicalName
+                                    fields:fields ?: @[]];
+        [self.structs addObject:s];
     }
-    // All other elements (struct, opaque, cftype, depends_on, class,
+    // All other elements (opaque, cftype, depends_on, class,
     // informal_protocol, function_alias, signatures, etc.) are silently ignored.
 }
 
@@ -196,7 +312,8 @@ didStartElement:(NSString *)elementName
 
     return [[ASBridgeSupportDocument alloc] initWithFunctions:delegate.functions
                                                     constants:delegate.constants
-                                                 enumerations:delegate.enumerations];
+                                                 enumerations:delegate.enumerations
+                                                      structs:delegate.structs];
 }
 
 - (nullable ASBridgeSupportDocument *)parseURL:(NSURL *)url error:(NSError **)error {
