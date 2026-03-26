@@ -28,8 +28,8 @@
 | Code | 68 | 6 | 5 |
 | Compile | 8 | 14 | 11 |
 | Test | 15 | 48 | 37 |
-| Postmortem | 10 | | |
-| Total | 131 | 94+ | 100 |
+| Postmortem | 10 | 10 | 10 |
+| Total | 131 | 104 | 100 |
 
 ## Defects Injected
 
