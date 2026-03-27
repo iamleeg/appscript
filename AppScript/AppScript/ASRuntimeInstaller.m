@@ -34,6 +34,19 @@
 NSString * const ASRuntimeInstallerErrorDomain = @"ASRuntimeInstallerErrorDomain";
 
 // ---------------------------------------------------------------------------
+// ASWeakPropertyBox — wraps a __weak reference for use with associated objects.
+// Stored with OBJC_ASSOCIATION_RETAIN_NONATOMIC so the box is owned; the
+// __weak ivar inside is zeroed by ARC when the referent is deallocated.
+// ---------------------------------------------------------------------------
+
+@interface ASWeakPropertyBox : NSObject
+@property (nonatomic, weak) id value;
+@end
+
+@implementation ASWeakPropertyBox
+@end
+
+// ---------------------------------------------------------------------------
 // Associated-object keys
 // ---------------------------------------------------------------------------
 
@@ -619,9 +632,11 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     BOOL isReadonly = [modifiers containsObject:@"readonly"];
     BOOL isCopy = [modifiers containsObject:@"copy"];
     BOOL isWeak = [modifiers containsObject:@"weak"];
-    objc_AssociationPolicy policy = isWeak
-        ? OBJC_ASSOCIATION_ASSIGN
-        : (isCopy ? OBJC_ASSOCIATION_COPY_NONATOMIC : OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // Weak properties use ASWeakPropertyBox retained by OBJC_ASSOCIATION_RETAIN_NONATOMIC.
+    // The box's __weak ivar is zeroed by ARC when the referent is deallocated.
+    objc_AssociationPolicy policy = isCopy
+        ? OBJC_ASSOCIATION_COPY_NONATOMIC
+        : OBJC_ASSOCIATION_RETAIN_NONATOMIC;
 
     // Register the property with ObjC runtime metadata.
     // Each objc_property_attribute_t has a single-character `name` (the attribute code)
@@ -661,9 +676,18 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     // --- Getter ---
     SEL getterSel = NSSelectorFromString(propertyName);
     if (methodMap[propertyName] == nil) {
-        IMP getterIMP = imp_implementationWithBlock(^id(id blockSelf) {
-            return objc_getAssociatedObject(blockSelf, (__bridge const void *)keyObject);
-        });
+        IMP getterIMP;
+        if (isWeak) {
+            getterIMP = imp_implementationWithBlock(^id(id blockSelf) {
+                ASWeakPropertyBox *box = objc_getAssociatedObject(blockSelf,
+                                             (__bridge const void *)keyObject);
+                return box.value;  // nil if never set or referent was deallocated
+            });
+        } else {
+            getterIMP = imp_implementationWithBlock(^id(id blockSelf) {
+                return objc_getAssociatedObject(blockSelf, (__bridge const void *)keyObject);
+            });
+        }
         class_addMethod(cls, getterSel, getterIMP, "@@:");
     }
 
@@ -679,11 +703,23 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     if (methodMap[setterName] == nil) {
         SEL setterSel = NSSelectorFromString(setterName);
 
-        // Capture policy and keyObject in a block; capture by value.
-        objc_AssociationPolicy capturedPolicy = policy;
-        IMP setterIMP = imp_implementationWithBlock(^void(id blockSelf, id value) {
-            objc_setAssociatedObject(blockSelf, (__bridge const void *)keyObject, value, capturedPolicy);
-        });
+        IMP setterIMP;
+        if (isWeak) {
+            setterIMP = imp_implementationWithBlock(^void(id blockSelf, id value) {
+                ASWeakPropertyBox *box = [ASWeakPropertyBox new];
+                box.value = value;
+                objc_setAssociatedObject(blockSelf,
+                                         (__bridge const void *)keyObject,
+                                         box,
+                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            });
+        } else {
+            // Capture policy and keyObject in a block; capture by value.
+            objc_AssociationPolicy capturedPolicy = policy;
+            setterIMP = imp_implementationWithBlock(^void(id blockSelf, id value) {
+                objc_setAssociatedObject(blockSelf, (__bridge const void *)keyObject, value, capturedPolicy);
+            });
+        }
         class_addMethod(cls, setterSel, setterIMP, "v@:@");
     }
 }

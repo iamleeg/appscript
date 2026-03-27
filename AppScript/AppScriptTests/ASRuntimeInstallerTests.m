@@ -52,6 +52,22 @@ static ASMethodNode *zeroArgMethodNamed(NSString *selectorName, NSString *return
                                                column:1];
 }
 
+/// Build a class definition node with a single weak property.
+static ASClassDefinitionNode *classWithWeakPropertyNamed(NSString *className,
+                                                          NSString *propertyName) {
+    ASPropertyNode *weakProp = [[ASPropertyNode alloc] initWithPropertyName:propertyName
+                                                                   modifiers:@[@"weak"]
+                                                                        line:1
+                                                                      column:1];
+    return [[ASClassDefinitionNode alloc] initWithClassName:className
+                                             superclassName:@"NSObject"
+                                              protocolNames:@[]
+                                                 properties:@[weakProp]
+                                                    methods:@[]
+                                                       line:1
+                                                     column:1];
+}
+
 /// Build a simple class definition node for a class with NSObject as superclass.
 static ASClassDefinitionNode *simpleClassNamed(NSString *className,
                                                 NSArray<ASMethodNode *> *methods) {
@@ -356,6 +372,105 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
     XCTAssertEqualObjects(returned, @"hello from category",
                           @"The category method should return the value defined in its body");
+}
+
+// ---------------------------------------------------------------------------
+// 10–13. Weak property semantics: zeroing weak references via ASWeakPropertyBox.
+// ---------------------------------------------------------------------------
+
+- (void)test_weakProperty_getterReturnsValueWhileTargetIsAlive {
+    NSString *className = uniqueClassName(@"ASTestWeakAlive");
+    ASClassDefinitionNode *classDef = classWithWeakPropertyNamed(className, @"delegate");
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classDef]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+    XCTAssertTrue(result, @"Installing the class should succeed");
+    XCTAssertNil(error);
+
+    Class installedClass = NSClassFromString(className);
+    id instance = [[installedClass alloc] init];
+    NSObject *target = [[NSObject alloc] init];
+
+    SEL setter = NSSelectorFromString(@"setDelegate:");
+    SEL getter = NSSelectorFromString(@"delegate");
+
+    XCTAssertTrue([instance respondsToSelector:setter], @"Should respond to -setDelegate:");
+    XCTAssertTrue([instance respondsToSelector:getter], @"Should respond to -delegate");
+
+    ((void (*)(id, SEL, id))objc_msgSend)(instance, setter, target);
+    id retrieved = ((id (*)(id, SEL))objc_msgSend)(instance, getter);
+    XCTAssertEqual(retrieved, target,
+                   @"Weak property getter should return the target while it is alive");
+}
+
+- (void)test_weakProperty_getterReturnsNilAfterTargetDeallocated {
+    NSString *className = uniqueClassName(@"ASTestWeakDealloc");
+    ASClassDefinitionNode *classDef = classWithWeakPropertyNamed(className, @"delegate");
+
+    NSError *error = nil;
+    [self.installer installNodes:@[classDef] scriptPath:@"test.appscript" error:&error];
+
+    Class installedClass = NSClassFromString(className);
+    id instance = [[installedClass alloc] init];
+
+    SEL setter = NSSelectorFromString(@"setDelegate:");
+    SEL getter = NSSelectorFromString(@"delegate");
+
+    @autoreleasepool {
+        NSObject *target = [[NSObject alloc] init];
+        ((void (*)(id, SEL, id))objc_msgSend)(instance, setter, target);
+        id retrieved = ((id (*)(id, SEL))objc_msgSend)(instance, getter);
+        XCTAssertNotNil(retrieved, @"Should be non-nil while target is alive");
+        // `target` is released here when the autoreleasepool block exits.
+    }
+
+    id afterDealloc = ((id (*)(id, SEL))objc_msgSend)(instance, getter);
+    XCTAssertNil(afterDealloc,
+                 @"Weak property getter must return nil after the target has been deallocated");
+}
+
+- (void)test_weakProperty_owningObjectDeallocatesNormally {
+    NSString *className = uniqueClassName(@"ASTestWeakOwnerDealloc");
+    ASClassDefinitionNode *classDef = classWithWeakPropertyNamed(className, @"delegate");
+
+    NSError *error = nil;
+    [self.installer installNodes:@[classDef] scriptPath:@"test.appscript" error:&error];
+
+    Class installedClass = NSClassFromString(className);
+    NSObject *target = [[NSObject alloc] init];
+    __weak NSObject *weakTarget = target;
+
+    @autoreleasepool {
+        id instance = [[installedClass alloc] init];
+        SEL setter = NSSelectorFromString(@"setDelegate:");
+        ((void (*)(id, SEL, id))objc_msgSend)(instance, setter, target);
+        // `instance` is released here; weak property must not have retained `target`.
+    }
+
+    XCTAssertNotNil(weakTarget,
+                    @"Target should still be alive — weak property must not have retained it");
+    XCTAssertNotNil(target, @"Target object should be intact after owner dealloc");
+}
+
+- (void)test_weakProperty_settingNilIsHandledSafely {
+    NSString *className = uniqueClassName(@"ASTestWeakNil");
+    ASClassDefinitionNode *classDef = classWithWeakPropertyNamed(className, @"delegate");
+
+    NSError *error = nil;
+    [self.installer installNodes:@[classDef] scriptPath:@"test.appscript" error:&error];
+
+    Class installedClass = NSClassFromString(className);
+    id instance = [[installedClass alloc] init];
+
+    SEL setter = NSSelectorFromString(@"setDelegate:");
+    SEL getter = NSSelectorFromString(@"delegate");
+
+    XCTAssertNoThrow(((void (*)(id, SEL, id))objc_msgSend)(instance, setter, nil),
+                     @"Setting a weak property to nil should not crash");
+    id result = ((id (*)(id, SEL))objc_msgSend)(instance, getter);
+    XCTAssertNil(result, @"Getter should return nil after property is set to nil");
 }
 
 @end
