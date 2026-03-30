@@ -78,31 +78,12 @@ dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
 
 Scripts can then call `[ASFoundation NSMakeRect:0 :0 :800 :600]` and similar.
 
-## Comparison with other scripting languages for Objective-C
+## Project goals
 
-Several other languages provide scripting over Objective-C or GNUstep runtimes. AppScript occupies a different position from each of them.
+AppScript has two intended audiences:
 
-### Objective-Smalltalk
-
-[Objective-Smalltalk](http://objective.st) is a full Smalltalk dialect that compiles to native Objective-C and integrates deeply with Cocoa. It is a general-purpose language suitable for building complete applications or frameworks on top of Cocoa — you can write an entire macOS app in Objective-Smalltalk and ship it. The language has its own syntax, type system, and semantics; learning it means learning Smalltalk. You can use Objective-ST as a scripting language just as you can AppScript.
-
-AppScript is narrower in scope: it is explicitly a subset of Objective-C, not a new language. The goal is to let an Objective-C developer move a method or class into a script file without learning new idioms. AppScript is not intended for building entire applications; it is intended for rapid prototyping of Objective-C code that will eventually be rewritten in Objective-C or Swift.
-
-### StepTalk
-
-[StepTalk](https://github.com/nickhealthy/StepTalk) is a scripting framework for GNUstep that embeds Smalltalk as a scripting language in GNUstep applications. Like Objective-Smalltalk it is a general-purpose Smalltalk environment. StepTalk is well suited to extending GNUstep applications with user-scriptable behaviour — end users can write scripts that drive the application without touching its source code.
-
-AppScript serves a different audience: the application developer. An AppScript script is a first-class part of the application's source code, written and maintained by the same people who write the Objective-C. The syntax is deliberately kept close to Objective-C so that reviewing, refactoring, and eventually replacing a script is as low-friction as possible.
-
-### Summary
-
-| | AppScript | Objective-Smalltalk | StepTalk |
-|---|---|---|---|
-| **Syntax** | Objective-C subset | Smalltalk | Smalltalk |
-| **Primary use** | Rapid prototyping by the developer | Full application development | End-user scripting of GNUstep apps |
-| **Platform** | macOS | macOS / iOS | GNUstep |
-| **Intended lifespan of a script** | Temporary — migrated to ObjC/Swift | Permanent | Permanent |
-| **Learning curve for ObjC developer** | Minimal | Moderate | Moderate |
+1. Objective-C developers who want to quickly iterate on ideas using a simple but powerful subset of the language. You can distribute apps written wholly or partially in AppScript, or incrementally port to Objective-C. **Note**: to distribute an app on macOS, you should copy your AppScript to the app bundle and ensure you sign your app.
+2. Citizen developers who want to access the power of Cocoa without having to learn all of C's sharp edges.
 
 ## Project structure
 
@@ -122,10 +103,6 @@ LICENSES/                Third-party licence texts
 - **Language reference**: [ARCHITECTURE.md](ARCHITECTURE.md) — complete description of AppScript syntax and semantics.
 - **Coding standards**: [CODING_STANDARDS.md](CODING_STANDARDS.md) — engineering practices for contributors.
 - **Framework API** (DocC): build the `AppScript` scheme with *Product → Build Documentation* to browse the embedded API reference, including articles on loading scripts, defining classes, BridgeSupport integration, and runtime implementation details.
-
-## Upcoming features
-
-- Debugging support
 
 ## Licence
 

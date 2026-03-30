@@ -89,6 +89,18 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 @end
 
 // ---------------------------------------------------------------------------
+// Protocols used by auto-conformance tests.
+// ---------------------------------------------------------------------------
+
+@protocol ASTestAutoConformProtocol <NSObject>
+- (NSString *)autoMethod;
+@end
+
+@protocol ASTestPropertyConformProtocol <NSObject>
+@property (nonatomic, strong) NSString *label;
+@end
+
+// ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
 
@@ -335,6 +347,47 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 }
 
 // ---------------------------------------------------------------------------
+// 8b. A class declared with a protocol conformance responds YES to
+//     conformsToProtocol: at both the instance and class level.
+// ---------------------------------------------------------------------------
+
+- (void)test_installNodes_protocolConformance_conformsToProtocolReturnsYES {
+    NSString *className = uniqueClassName(@"ASTestProtoConforms");
+
+    // Force ASTestBoolProtocol into the ObjC runtime's protocol table so that
+    // objc_getProtocol() can find it and class_addProtocol() can register it.
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestBoolProtocol);
+
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+                                       initWithClassName:className
+                                          superclassName:@"NSObject"
+                                           protocolNames:@[@"ASTestBoolProtocol"]
+                                              properties:@[]
+                                                 methods:@[]
+                                                    line:1
+                                                  column:1];
+
+    NSError *error = nil;
+    BOOL installed = [self.installer installNodes:@[classDef]
+                                       scriptPath:@"test.appscript"
+                                            error:&error];
+    XCTAssertTrue(installed, @"Installation should succeed");
+    XCTAssertNil(error, @"No error should be set");
+
+    Class installedClass = NSClassFromString(className);
+    XCTAssertNotNil(installedClass, @"Class must be registered in the ObjC runtime");
+
+    // Instance-level check
+    id instance = [[installedClass alloc] init];
+    XCTAssertTrue([instance conformsToProtocol:@protocol(ASTestBoolProtocol)],
+                  @"Instance should conform to ASTestBoolProtocol");
+
+    // Class-level check
+    XCTAssertTrue([installedClass conformsToProtocol:@protocol(ASTestBoolProtocol)],
+                  @"Class object should also conform to ASTestBoolProtocol");
+}
+
+// ---------------------------------------------------------------------------
 // 9. A category definition installs its methods on an existing class.
 // ---------------------------------------------------------------------------
 
@@ -471,6 +524,92 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
                      @"Setting a weak property to nil should not crash");
     id result = ((id (*)(id, SEL))objc_msgSend)(instance, getter);
     XCTAssertNil(result, @"Getter should return nil after property is set to nil");
+}
+
+// ---------------------------------------------------------------------------
+// Auto-conformance tests: ASAddMatchingProtocolsToClass
+// ---------------------------------------------------------------------------
+
+// 14. A class whose methods satisfy a protocol's required interface is automatically
+//     conformed to that protocol after installation.
+- (void)test_installClass_withMatchingProtocolMethods_autoConformsToProtocol {
+    // Ensure the protocol is registered in the ObjC runtime.
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestAutoConformProtocol);
+
+    NSString *className = uniqueClassName(@"ASTestAutoConform");
+    ASMethodNode *method = zeroArgMethodNamed(@"autoMethod", @"auto");
+    ASClassDefinitionNode *classDef = simpleClassNamed(className, @[method]);
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classDef]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+    XCTAssertTrue(result, @"Installation should succeed");
+    XCTAssertNil(error, @"No error should be set");
+
+    Class installedClass = NSClassFromString(className);
+    XCTAssertNotNil(installedClass, @"Class must be registered");
+
+    id instance = [[installedClass alloc] init];
+    XCTAssertTrue([instance conformsToProtocol:@protocol(ASTestAutoConformProtocol)],
+                  @"Instance should auto-conform to ASTestAutoConformProtocol because all required methods are present");
+}
+
+// 15. A class that does NOT implement all of a protocol's required methods must NOT
+//     be auto-conformed to that protocol.
+- (void)test_installClass_withoutAllProtocolMethods_doesNotConform {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestAutoConformProtocol);
+
+    NSString *className = uniqueClassName(@"ASTestNoAutoConform");
+    // Install a class with no methods — autoMethod is missing.
+    ASClassDefinitionNode *classDef = simpleClassNamed(className, @[]);
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classDef]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+    XCTAssertTrue(result, @"Installation should succeed");
+    XCTAssertNil(error, @"No error should be set");
+
+    Class installedClass = NSClassFromString(className);
+    XCTAssertNotNil(installedClass, @"Class must be registered");
+
+    id instance = [[installedClass alloc] init];
+    XCTAssertFalse([instance conformsToProtocol:@protocol(ASTestAutoConformProtocol)],
+                   @"Instance must NOT conform to ASTestAutoConformProtocol when autoMethod is absent");
+}
+
+// 16. A class with a synthesized property satisfying a property protocol is auto-conformed.
+- (void)test_installClass_withMatchingPropertyProtocol_autoConforms {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestPropertyConformProtocol);
+
+    NSString *className = uniqueClassName(@"ASTestPropertyConform");
+    ASPropertyNode *labelProp = [[ASPropertyNode alloc] initWithPropertyName:@"label"
+                                                                    modifiers:@[@"strong"]
+                                                                         line:1
+                                                                       column:1];
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+                                       initWithClassName:className
+                                          superclassName:@"NSObject"
+                                           protocolNames:@[]
+                                              properties:@[labelProp]
+                                                 methods:@[]
+                                                    line:1
+                                                  column:1];
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classDef]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+    XCTAssertTrue(result, @"Installation should succeed");
+    XCTAssertNil(error, @"No error should be set");
+
+    Class installedClass = NSClassFromString(className);
+    XCTAssertNotNil(installedClass, @"Class must be registered");
+
+    id instance = [[installedClass alloc] init];
+    XCTAssertTrue([instance conformsToProtocol:@protocol(ASTestPropertyConformProtocol)],
+                  @"Instance should auto-conform to ASTestPropertyConformProtocol because getter and setter are synthesized");
 }
 
 @end

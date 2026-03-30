@@ -310,6 +310,62 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
 }
 
 // ---------------------------------------------------------------------------
+// ASAddMatchingProtocolsToClass — auto-conforms an AppScript class to any
+// ObjC protocol whose required instance methods are all present on the class.
+//
+// This runs after sentinels are installed so that class_getInstanceMethod
+// finds the sentinel IMP for each AppScript-defined selector.
+//
+// Skips protocols with 0 required instance methods (pure marker protocols —
+// matching them for every class is misleading).
+// ---------------------------------------------------------------------------
+
+static void ASAddMatchingProtocolsToClass(Class cls) {
+    unsigned int totalProtocolCount = 0;
+    Protocol * __unsafe_unretained *allProtocols = objc_copyProtocolList(&totalProtocolCount);
+    if (allProtocols == NULL) {
+        return;
+    }
+
+    for (unsigned int i = 0; i < totalProtocolCount; i++) {
+        Protocol *proto = allProtocols[i];
+
+        // Skip if already conforms.
+        if (class_conformsToProtocol(cls, proto)) {
+            continue;
+        }
+
+        // Get required instance methods.
+        unsigned int methodCount = 0;
+        struct objc_method_description *methods =
+            protocol_copyMethodDescriptionList(proto, YES, YES, &methodCount);
+
+        // Skip protocols with no required instance methods.
+        if (methodCount == 0) {
+            if (methods) free(methods);
+            continue;
+        }
+
+        // Check whether every required method selector is present on cls.
+        BOOL allPresent = YES;
+        for (unsigned int j = 0; j < methodCount; j++) {
+            SEL sel = methods[j].name;
+            if (class_getInstanceMethod(cls, sel) == NULL) {
+                allPresent = NO;
+                break;
+            }
+        }
+        free(methods);
+
+        if (allPresent) {
+            class_addProtocol(cls, proto);
+        }
+    }
+
+    free(allProtocols);
+}
+
+// ---------------------------------------------------------------------------
 // Private implementation
 // ---------------------------------------------------------------------------
 
@@ -496,7 +552,11 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
         [self installSentinelForMethodNode:methodNode onClass:newClass];
     }
 
-    // 10. Record in the global AppScript class registry.
+    // 10. Auto-conform to any ObjC protocol whose required instance methods are all
+    //     present on this class (sentinels installed in step 9 satisfy the check).
+    ASAddMatchingProtocolsToClass(newClass);
+
+    // 11. Record in the global AppScript class registry.
     NSValue *classValue = [NSValue valueWithNonretainedObject:newClass];
     dispatch_sync(ASRegisteredClassesQueue, ^{
         [ASRegisteredClassValues addObject:classValue];
@@ -568,6 +628,17 @@ static NSString * ASPropertyKeyForClassAndName(NSString *className, NSString *pr
     objc_setAssociatedObject(existingClass, &ASMethodMapKey,
                              [methodMap copy],
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    // Auto-conform to matching protocols, but only for AppScript-registered classes.
+    // Avoid mutating conformance on arbitrary Cocoa classes.
+    NSValue *existingClassValue = [NSValue valueWithNonretainedObject:existingClass];
+    __block BOOL isRegistered = NO;
+    dispatch_sync(ASRegisteredClassesQueue, ^{
+        isRegistered = [ASRegisteredClassValues containsObject:existingClassValue];
+    });
+    if (isRegistered) {
+        ASAddMatchingProtocolsToClass(existingClass);
+    }
 
     return YES;
 }
