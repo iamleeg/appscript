@@ -371,6 +371,86 @@ id either = [a or:b]  // YES
 id flipped = [a not]  // NO
 ```
 
+### Bitwise operators
+
+AppScript does not provide the `&`, `|`, `^`, and `~` C bitwise operators. Instead, `NSNumber (AppScriptBitwise)` provides:
+
+```objc
+@interface NSNumber (AppScriptBitwise)
+/// Bitwise OR of the receiver and other (both treated as unsigned long long).
+- (NSNumber *)bitwiseOr:(NSNumber *)other;
+/// Bitwise AND of the receiver and other.
+- (NSNumber *)bitwiseAnd:(NSNumber *)other;
+/// Bitwise XOR of the receiver and other.
+- (NSNumber *)bitwiseXor:(NSNumber *)other;
+/// Bitwise NOT of the receiver (one's complement).
+- (NSNumber *)bitwiseNot;
+@end
+```
+
+All four methods operate on the `unsigned long long` representation of each operand and return an `unsigned long long`-typed `NSNumber`. This makes them suitable for composing bitmasks such as `NSViewAutoresizingMask` or `NSWindowStyleMask`:
+
+```appscript
+id widthSizable  = 2   // NSViewWidthSizable
+id heightSizable = 16  // NSViewHeightSizable
+id mask = [widthSizable bitwiseOr:heightSizable]  // 18
+[view setAutoresizingMask:mask]
+
+// Multi-level chaining for window style masks:
+id titled      = @1
+id closable    = @2
+id resizable   = @8
+id styleMask   = [[titled bitwiseOr:closable] bitwiseOr:resizable]
+```
+
+### C struct values and BridgeSupport
+
+AppScript preserves the all-objects invariant for C structs by boxing them into `ASStructValue` objects. Once BridgeSupport has been loaded for the relevant framework, struct field access works via ordinary message sends.
+
+#### Loading BridgeSupport for struct access
+
+Before using any method that receives or returns a C struct (e.g. `NSRect`, `NSSize`, `CGPoint`), the host application must load BridgeSupport for the relevant framework. This is mandatory — without it the runtime cannot box struct arguments correctly and will crash:
+
+```objc
+// In AppDelegate.applicationDidFinishLaunching: — call BEFORE loadScriptsWithError:
+NSError *error = nil;
+[NSBundle loadBridgeSupportForFramework:@"Foundation" error:&error];
+[NSBundle loadBridgeSupportForFramework:@"AppKit"     error:&error];
+```
+
+#### Accessing struct fields
+
+Once BridgeSupport is loaded, methods that return a struct produce an `ASStructValue`. Field access is via message sends whose selector matches the C field name:
+
+```appscript
+// NSRect → origin (CGPoint) and size (CGSize) fields
+id bounds = [self bounds]               // returns ASStructValue for CGRect
+id sz     = [bounds size]               // returns ASStructValue for CGSize
+id w      = [sz width]                  // returns NSNumber (double)
+id h      = [sz height]                 // returns NSNumber (double)
+
+// Chained:
+id width = [[[self bounds] size] width]
+```
+
+Field names match the names in the C struct definition: `origin`, `size` for `CGRect`; `x`, `y` for `CGPoint`; `width`, `height` for `CGSize`; `location`, `length` for `NSRange`.
+
+#### Passing structs from ObjC into AppScript methods
+
+When ObjC code calls a method on an AppScript class that takes a struct argument (e.g. `initWithFrame:(NSRect)frame`), AppScript must know the correct method signature to box the argument correctly. AppScript looks for the signature in the protocols the class conforms to. If the method is not declared in a protocol, AppScript falls back to a synthetic all-`id` signature, which misboxes struct arguments and causes a crash.
+
+**Rule**: every method on an AppScript class that accepts or returns a C struct must be declared in the class's ObjC interop protocol with the correct types:
+
+```objc
+// LibrarySidebarViewProtocol.h — protocol must include initWithFrame:
+@protocol LibrarySidebarViewProtocol <NSObject>
+- (instancetype)initWithFrame:(NSRect)frameRect;  // declares NSRect so AppScript boxes it correctly
+@property (nonatomic, strong, readonly) NSOutlineView *outlineView;
+@end
+```
+
+Without this declaration the `methodSignatureForSelector:` override returns `@:@` (all-id) and the NSRect bytes are misread as an object pointer, causing an `EXC_BAD_ACCESS` crash in `objc_retain`.
+
 ### BridgeSupport integration
 
 AppScript provides access to C functions and constants declared in Apple's BridgeSupport metadata, while preserving the language's all-objects-are-`id` invariant.
