@@ -113,6 +113,36 @@
     XCTAssertEqualObjects(classNode.protocolNames[1], @"NSCoding");
 }
 
+- (void)test_parseTokens_weakProperty_storesWeakModifier {
+    // "weak" is a keyword token, not an identifier. The property modifier loop
+    // must accept it so that weak delegate properties parse without hanging.
+    NSString *source = @"@class Foo : NSObject\n@property (weak) delegate\n@end";
+    NSArray<ASASTNode *> *nodes = [self parseSource:source];
+
+    XCTAssertEqual(nodes.count, 1U);
+    ASClassDefinitionNode *classNode = (ASClassDefinitionNode *)nodes[0];
+    XCTAssertEqual(classNode.properties.count, 1U);
+
+    ASPropertyNode *prop = classNode.properties[0];
+    XCTAssertEqualObjects(prop.propertyName, @"delegate");
+    XCTAssertEqual(prop.modifiers.count, 1U);
+    XCTAssertEqualObjects(prop.modifiers[0], @"weak");
+}
+
+- (void)test_parseTokens_classWithSameNameProtocol_storesProtocolName {
+    // The AppScript interop pattern uses the same name for the class and its
+    // protocol (e.g. @class Paper : NSObject <Paper>). Verify the parser stores
+    // the protocol name without confusion.
+    NSString *source = @"@class Foo : NSObject <Foo>\n@end";
+    NSArray<ASASTNode *> *nodes = [self parseSource:source];
+
+    XCTAssertEqual(nodes.count, 1U);
+    ASClassDefinitionNode *classNode = (ASClassDefinitionNode *)nodes[0];
+    XCTAssertEqualObjects(classNode.className, @"Foo");
+    XCTAssertEqual(classNode.protocolNames.count, 1U);
+    XCTAssertEqualObjects(classNode.protocolNames[0], @"Foo");
+}
+
 // ---------------------------------------------------------------------------
 // 4. Class with a property
 // ---------------------------------------------------------------------------

@@ -417,7 +417,8 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
                 }
                 return nil;
             }
-            if ([state currentIs:ASTokenTypeIdentifier]) {
+            if ([state currentIs:ASTokenTypeIdentifier] ||
+                [state currentIs:ASTokenTypeKwWeak]) {
                 [modifiers addObject:[state consume].text];
             }
             if ([state currentIs:ASTokenTypeComma]) {
