@@ -23,6 +23,7 @@
 #import "ASPropertyNode.h"
 #import "ASInterpreter.h"
 #import "ASBoxer.h"
+#import "ASNull.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -181,7 +182,7 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
     NSMutableArray *arguments = [NSMutableArray arrayWithCapacity:paramCount];
     for (NSUInteger i = 0; i < paramCount; i++) {
         id boxed = [ASBoxer boxedArgumentAtIndex:i fromInvocation:invocation];
-        [arguments addObject:boxed ?: [NSNull null]];
+        [arguments addObject:boxed ?: [ASNull null]];
     }
 
     // Evaluate the method body via the interpreter.

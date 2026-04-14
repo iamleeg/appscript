@@ -1002,6 +1002,24 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
 // Message send: [ receiver selector ]
 // ---------------------------------------------------------------------------
 
+// Returns YES for token types that can serve as a selector keyword name.
+// ObjC selectors may use any identifier word, including AppScript contextual
+// keywords such as `id`, `weak`, `constant`, and `return`.  Structural
+// keywords (@class, @end, …) and special-receiver tokens (self, super, _cmd)
+// are intentionally excluded because they carry distinct parse semantics.
+static BOOL ASTokenIsKeywordPart(ASToken *tok) {
+    switch (tok.type) {
+        case ASTokenTypeIdentifier:
+        case ASTokenTypeKwId:
+        case ASTokenTypeKwWeak:
+        case ASTokenTypeKwConstant:
+        case ASTokenTypeKwReturn:
+            return YES;
+        default:
+            return NO;
+    }
+}
+
 - (nullable ASMessageSendNode *)parseMessageSend:(ASParseState *)state
                                            error:(NSError **)error {
     ASToken *lbToken = [state consume]; // [
@@ -1020,7 +1038,7 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
     NSMutableArray<NSString *> *selectorParts = [NSMutableArray array];
     NSMutableArray<ASASTNode *> *arguments = [NSMutableArray array];
 
-    if ([state currentIs:ASTokenTypeIdentifier]) {
+    if (ASTokenIsKeywordPart([state current])) {
         NSString *firstPart = [state consume].text;
         [state skipNewlines];
 
@@ -1040,9 +1058,9 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
 
             // Additional keyword:arg pairs — supports both named (key:arg) and
             // unnamed (:arg) parts, e.g. [obj NSMakeRect:x :y :w :h].
-            while ([state currentIs:ASTokenTypeIdentifier] || [state currentIs:ASTokenTypeColon]) {
+            while (ASTokenIsKeywordPart([state current]) || [state currentIs:ASTokenTypeColon]) {
                 NSString *nextPart;
-                if ([state currentIs:ASTokenTypeIdentifier]) {
+                if (ASTokenIsKeywordPart([state current])) {
                     nextPart = [state consume].text;
                     if (![state currentIs:ASTokenTypeColon]) {
                         if (error) {
