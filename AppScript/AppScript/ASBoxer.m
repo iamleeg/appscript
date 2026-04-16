@@ -243,17 +243,18 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
                 ASStructValue *sv = (ASStructValue *)object;
                 memcpy(outBytes, sv.bytes.bytes, sv.bytes.length);
                 return YES;
+            } else if ([object isKindOfClass:[NSValue class]]) {
+                [object getValue:outBytes];
+                return YES;
             }
-            [object getValue:outBytes];
-            return YES;
+            return NO;
         }
         default: {
             if ([object isKindOfClass:[ASStructValue class]]) {
                 ASStructValue *sv = (ASStructValue *)object;
                 memcpy(outBytes, sv.bytes.bytes, sv.bytes.length);
                 return YES;
-            }
-            if ([object isKindOfClass:[NSValue class]]) {
+            } else if ([object isKindOfClass:[NSValue class]]) {
                 [object getValue:outBytes];
                 return YES;
             }
