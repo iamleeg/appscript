@@ -20,6 +20,7 @@
 #import "ASBridgeSupportParser.h"
 #import "ASBridgeSupportInstaller.h"
 #import "ASBridgeSupportDocument.h"
+#import <dlfcn.h>
 
 NSString * const ASBridgeSupportLoadingErrorDomain = @"ASBridgeSupportLoadingErrorDomain";
 
@@ -58,6 +59,16 @@ NSString * const ASBridgeSupportLoadingErrorDomain = @"ASBridgeSupportLoadingErr
             }];
         }
         return NO;
+    }
+
+    // --- Load companion dylib (if present) ---
+    // Inline C functions (e.g. NSMakeRect, NSMakeSize) have symbols only in the
+    // companion .dylib alongside the .bridgesupport file, not in the framework
+    // binary itself.  dlopen it so dlsym() can resolve those symbols at install time.
+    NSURL *companionDylibURL = [[bridgeSupportURL URLByDeletingPathExtension]
+                                    URLByAppendingPathExtension:@"dylib"];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:companionDylibURL.path]) {
+        dlopen(companionDylibURL.path.UTF8String, RTLD_GLOBAL | RTLD_NODELETE);
     }
 
     // --- Parse ---
