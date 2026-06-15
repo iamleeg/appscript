@@ -2,5 +2,6 @@
   "database": "dolt",
   "backend": "dolt",
   "dolt_mode": "server",
-  "dolt_database": "appscript"
+  "dolt_database": "appscript",
+  "project_id": "f20556d9-4889-4f7b-b2f3-008669c01768"
 }
