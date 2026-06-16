@@ -17,6 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import "ASBoxer.h"
+#import "ASNull.h"
 #import "ASStructValue.h"
 
 // ---------------------------------------------------------------------------
@@ -165,8 +166,8 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
 
     switch (typeEncoding[0]) {
         case '@': {
-            // Pass the id through directly
-            id __unsafe_unretained obj = object;
+            // Convert the AppScript nil sentinel ([ASNull null]) to ObjC nil at the boundary.
+            id __unsafe_unretained obj = ([object isKindOfClass:[ASNull class]]) ? nil : object;
             memcpy(outBytes, &obj, sizeof(id));
             return YES;
         }
