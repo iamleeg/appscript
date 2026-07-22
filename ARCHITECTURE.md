@@ -21,12 +21,15 @@ Single-line comments begin with `//` and extend to the end of the line. Block co
 
 Each statement must be presented on its own line, there are no semicolon statement separators and no continuation characters. It's an error to split a statement across multiple lines, or to put multiple statements on the same line. The only exception occurs when a statement includes a block literal, discussed in Blocks below.
 
-Number literals (both floating-point and integer), and the BOOL values YES and NO, are automatically boxed into `NSNumber` instances:
+Number literals (both floating-point and integer), and the BOOL values YES and NO, are automatically boxed into `NSNumber` instances. The `@` prefix may optionally be used on number literals to match Objective-C syntax, though they are boxed automatically regardless:
 
 ```appscript
 id flag = NO // Equivalent to Objective-C [NSNumber numberWithBool: NO]
 id pi = 3.14 // Equivalent to Objective-C [NSNumber numberWithDouble: 3.14]
+id boxed = @42 // Equivalent to Objective-C @42
 ```
+
+The `nil` literal is supported and represents the absence of an object, exactly as in Objective-C.
 
 String literals, array literals, and dictionary literals use the same syntax as Objective-C, including the `@` prefix. Objective-C selectors are represented as string literals.
 
@@ -81,6 +84,7 @@ The following categories are included in the AppScript framework to bridge commo
 
 | Category | Method | Equivalent C function | Notes |
 |---|---|---|---|
+| `NSArray (AppScriptBlocks)` | `-as_sortedArrayUsingBlock:` | N/A | Bridges block-based sorting. The block must return an `NSNumber` wrapping an `NSComparisonResult`. |
 | `NSString (AppScriptRuntime)` | `-as_class` | `NSClassFromString()` | Returns the `Class` as `id`; returns `nil` for unknown names. |
 | `NSURL (AppScriptFileReading)` | `-as_stringContents` | `+[NSString stringWithContentsOfURL:encoding:error:]` | UTF-8; returns `nil` on error instead of using an out-parameter. |
 
