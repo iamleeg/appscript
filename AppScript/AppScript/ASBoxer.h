@@ -33,7 +33,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Boxes the value in the given NSInvocation argument at the given index into an Objective-C object.
 ///
 /// Uses the argument's type encoding from the invocation's `methodSignature` to determine the
-/// correct boxing strategy. Supported type encodings: `@` (id), `B` (BOOL), `c` (char / BOOL),
+/// correct boxing strategy. Supported type encodings: `@` (id), `^@` (id *, e.g. `NSError **`,
+/// boxed as `ASOutObject`), `B` (BOOL), `c` (char / BOOL),
 /// `i` (int), `l` (long), `q` (long long), `I` (unsigned int), `L` (unsigned long),
 /// `Q` (unsigned long long), `f` (float), `d` (double), `*` (C string), `v` (void, returns
 /// `NSNull`). For unknown or struct types, returns an `NSValue` wrapping the raw bytes.
@@ -46,6 +47,31 @@ NS_ASSUME_NONNULL_BEGIN
 ///   not possible for the given encoding.
 + (nullable id)boxedArgumentAtIndex:(NSUInteger)argumentIndex
                      fromInvocation:(NSInvocation *)invocation;
+
+/// Writes back the value of an `ASOutObject` into an object out-parameter (`^@`, such as `NSError **`)
+/// of an `NSInvocation` after an AppScript method finishes executing.
+///
+/// If the argument at `argumentIndex` does not have a `^@` type encoding, if the caller passed a
+/// `NULL` pointer, or if `object` is not an `ASOutObject`, this method does nothing.
+///
+/// - Parameters:
+///   - object: The boxed argument object (expected to be an `ASOutObject` for `^@` arguments).
+///   - argumentIndex: Zero-based index into the method's logical argument list. Maps to
+///     `NSInvocation` index `argumentIndex + 2`.
+///   - invocation: The invocation whose out-parameter pointer should be updated.
++ (void)writeBackObject:(nullable id)object
+        atArgumentIndex:(NSUInteger)argumentIndex
+           toInvocation:(NSInvocation *)invocation;
+
+/// Returns whether the argument at the given logical index in the signature is an object
+/// out-parameter (`^@`, e.g. `NSError **`).
+///
+/// - Parameters:
+///   - argumentIndex: Zero-based index into the method's logical argument list.
+///   - signature: The method signature to inspect.
+/// - Returns: `YES` if the argument's stripped type encoding starts with `^@`; `NO` otherwise.
++ (BOOL)isObjectOutParameterAtIndex:(NSUInteger)argumentIndex
+                        inSignature:(NSMethodSignature *)signature;
 
 /// Unboxes an Objective-C object into the argument slot at the given index of an NSInvocation.
 ///

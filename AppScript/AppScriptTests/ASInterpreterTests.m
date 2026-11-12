@@ -19,6 +19,7 @@
 #import <XCTest/XCTest.h>
 #import <AppScript/ASInterpreter.h>
 #import <AppScript/ASNull.h>
+#import <AppScript/ASOutObject.h>
 #import <AppScript/ASASTNode.h>
 #import <AppScript/ASReturnNode.h>
 #import <AppScript/ASVariableDeclarationNode.h>
@@ -49,6 +50,19 @@
 @end
 
 @implementation ASSuperTestSub
+@end
+
+@interface ASOutErrorHelper : NSObject
++ (BOOL)failWithError:(NSError **)error;
+@end
+
+@implementation ASOutErrorHelper
++ (BOOL)failWithError:(NSError **)error {
+    if (error) {
+        *error = [NSError errorWithDomain:@"ASOutErrorHelperDomain" code:77 userInfo:nil];
+    }
+    return NO;
+}
 @end
 
 // ---------------------------------------------------------------------------
@@ -1182,6 +1196,38 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
     XCTAssertTrue([appscriptOnly containsString:@"  at "],
                   @"ASErrorCallStackKey must still contain AppScript frame lines, got: %@",
                   appscriptOnly);
+}
+
+// ---------------------------------------------------------------------------
+// 53. Outbound message send with ASOutObject captures NSError ** out-parameter
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateMessageSend_withASOutObject_populatesValue {
+    // body:
+    //   id errBox = [ASOutObject outObject]
+    //   [ASOutErrorHelper failWithError: errBox]
+    //   return [errBox value]
+    ASMessageSendNode *makeBox = messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]);
+    ASVariableDeclarationNode *declBox = varDeclNode(@"errBox", makeBox);
+    ASMessageSendNode *callFail = messageSendNode(identNode(@"ASOutErrorHelper"),
+                                                  @[@"failWithError"],
+                                                  @[identNode(@"errBox")]);
+    ASMessageSendNode *getVal = messageSendNode(identNode(@"errBox"), @[@"value"], @[]);
+    NSArray<ASASTNode *> *body = @[declBox, callFail, returnNode(getVal)];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
+                                            selector:@"test"
+                                           arguments:@[]
+                                      parameterNames:@[]
+                                          scriptPath:@"test.appscript"];
+
+    XCTAssertNotNil(result, @"ASOutObject should capture the NSError * written by +failWithError:");
+    XCTAssertTrue([result isKindOfClass:[NSError class]]);
+    NSError *err = (NSError *)result;
+    XCTAssertEqualObjects(err.domain, @"ASOutErrorHelperDomain");
+    XCTAssertEqual(err.code, 77);
 }
 
 @end

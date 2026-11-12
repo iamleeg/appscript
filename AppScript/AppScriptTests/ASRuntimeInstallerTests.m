@@ -26,6 +26,9 @@
 #import <AppScript/ASReturnNode.h>
 #import <AppScript/ASStringLiteralNode.h>
 #import <AppScript/ASIdentifierNode.h>
+#import <AppScript/ASMessageSendNode.h>
+#import <AppScript/ASNumberLiteralNode.h>
+#import <AppScript/ASOutObject.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -98,6 +101,10 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
 @protocol ASTestPropertyConformProtocol <NSObject>
 @property (nonatomic, strong) NSString *label;
+@end
+
+@protocol ASTestOutErrorProtocol <NSObject>
+- (BOOL)saveData:(NSString *)data error:(NSError **)error;
 @end
 
 // ---------------------------------------------------------------------------
@@ -610,6 +617,80 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
     id instance = [[installedClass alloc] init];
     XCTAssertTrue([instance conformsToProtocol:@protocol(ASTestPropertyConformProtocol)],
                   @"Instance should auto-conform to ASTestPropertyConformProtocol because getter and setter are synthesized");
+}
+
+// ---------------------------------------------------------------------------
+// 17–18. NSError ** out-parameter handling in AppScript-implemented methods
+// ---------------------------------------------------------------------------
+
+- (void)test_installClass_methodWithNSErrorOutParam_writesBackErrorAndDoesNotCrash {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestOutErrorProtocol);
+
+    NSString *className = uniqueClassName(@"ASTestOutError");
+
+    // Build AppScript body for `- saveData: data error: outErr`:
+    //   id err = [NSError errorWithDomain: @"ASTestErrorDomain" code: 42 userInfo: nil]
+    //   [outErr setValue: err]
+    //   return NO
+    ASMessageSendNode *makeErr = [[ASMessageSendNode alloc]
+        initWithReceiver:[[ASIdentifierNode alloc] initWithName:@"NSError" line:1 column:1]
+           selectorParts:@[@"errorWithDomain", @"code", @"userInfo"]
+               arguments:@[
+                   [[ASStringLiteralNode alloc] initWithValue:@"ASTestErrorDomain" line:1 column:1],
+                   [[ASNumberLiteralNode alloc] initWithValue:@42 line:1 column:1],
+                   [[ASIdentifierNode alloc] initWithName:@"nil" line:1 column:1],
+               ]
+                    line:1
+                  column:1];
+    ASMessageSendNode *setVal = [[ASMessageSendNode alloc]
+        initWithReceiver:[[ASIdentifierNode alloc] initWithName:@"outErr" line:2 column:1]
+           selectorParts:@[@"setValue"]
+               arguments:@[makeErr]
+                    line:2
+                  column:1];
+    ASReturnNode *retNo = [[ASReturnNode alloc]
+        initWithValue:[[ASIdentifierNode alloc] initWithName:@"NO" line:3 column:1]
+                 line:3
+               column:1];
+
+    ASMethodNode *saveMethod = [[ASMethodNode alloc]
+        initWithSelectorParts:@[@"saveData", @"error"]
+               parameterNames:@[@"data", @"outErr"]
+                         body:@[setVal, retNo]
+                isClassMethod:NO
+                         line:1
+                       column:1];
+
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+        initWithClassName:className
+           superclassName:@"NSObject"
+            protocolNames:@[@"ASTestOutErrorProtocol"]
+               properties:@[]
+                  methods:@[saveMethod]
+                     line:1
+                   column:1];
+
+    NSError *installError = nil;
+    BOOL installed = [self.installer installNodes:@[classDef]
+                                       scriptPath:@"test.appscript"
+                                            error:&installError];
+    XCTAssertTrue(installed, @"Class installation should succeed");
+    XCTAssertNil(installError);
+
+    Class installedClass = NSClassFromString(className);
+    id<ASTestOutErrorProtocol> instance = [[installedClass alloc] init];
+
+    // 1. Call with non-NULL &callError — must not crash and must populate callError.
+    NSError *callError = nil;
+    BOOL ok = [instance saveData:@"hello" error:&callError];
+    XCTAssertFalse(ok, @"saveData:error: should return NO");
+    XCTAssertNotNil(callError, @"saveData:error: should write back the NSError via outErr");
+    XCTAssertEqualObjects(callError.domain, @"ASTestErrorDomain");
+    XCTAssertEqual(callError.code, 42);
+
+    // 2. Call with NULL error — must not crash and must treat [outErr setValue:...] as no-op.
+    BOOL okNull = [instance saveData:@"hello" error:nil];
+    XCTAssertFalse(okNull, @"saveData:error: with nil error pointer should still return NO safely");
 }
 
 @end

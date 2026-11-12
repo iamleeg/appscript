@@ -31,3 +31,4 @@ FOUNDATION_EXPORT const unsigned char AppScriptVersionString[];
 #import <AppScript/ASBridgeSupportStructField.h>
 #import <AppScript/ASBridgeSupportStruct.h>
 #import <AppScript/ASStructValue.h>
+#import <AppScript/ASOutObject.h>

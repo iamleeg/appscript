@@ -18,6 +18,11 @@
 
 #import <XCTest/XCTest.h>
 #import <AppScript/ASBoxer.h>
+#import <AppScript/ASOutObject.h>
+
+@protocol ASBoxerTestOutErrorProtocol <NSObject>
+- (BOOL)performOperationWithError:(NSError **)error;
+@end
 
 /// Tests for the ASBoxer utility class, covering boxing of arguments and return values as well
 /// as unboxing of Objective-C objects into NSInvocation argument and return-value slots.
@@ -226,6 +231,84 @@
     // Sending a class-level message to the result should work: it is a real Class.
     XCTAssertTrue([result isSubclassOfClass:[NSArray class]],
                    @"Boxing [NSArray class] should yield a Class that is a subclass of NSArray");
+}
+
+// ---------------------------------------------------------------------------
+// Object out-parameter ('^@', e.g. NSError **) boxing, unboxing, and write-back
+// ---------------------------------------------------------------------------
+
+- (void)test_isObjectOutParameterAtIndex_errorPointer_returnsYES {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^@"];
+    XCTAssertTrue([ASBoxer isObjectOutParameterAtIndex:0 inSignature:sig],
+                  @"^@ should be recognised as an object out-parameter");
+}
+
+- (void)test_isObjectOutParameterAtIndex_qualifiedOutErrorPointer_returnsYES {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:o^@"];
+    XCTAssertTrue([ASBoxer isObjectOutParameterAtIndex:0 inSignature:sig],
+                  @"o^@ (out-qualified id *) should be recognised as an object out-parameter");
+}
+
+- (void)test_isObjectOutParameterAtIndex_regularIdParameter_returnsNO {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:@"];
+    XCTAssertFalse([ASBoxer isObjectOutParameterAtIndex:0 inSignature:sig],
+                   @"@ (plain id) must not be treated as an object out-parameter");
+}
+
+- (void)test_boxedArgument_nonNullErrorPointer_returnsASOutObject {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^@"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+
+    NSError * __autoreleasing initialError = nil;
+    NSError * __autoreleasing *errPtr = &initialError;
+    [inv setArgument:&errPtr atIndex:2];
+
+    id boxed = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertNotNil(boxed, @"Boxing a non-NULL NSError ** should not return nil");
+    XCTAssertTrue([boxed isKindOfClass:[ASOutObject class]],
+                  @"Boxing a non-NULL NSError ** should return an ASOutObject");
+    XCTAssertNil(((ASOutObject *)boxed).value,
+                 @"Initial value of ASOutObject should match the nil pointed-to NSError *");
+}
+
+- (void)test_boxedArgument_nullErrorPointer_returnsASOutObjectWithNilValue {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^@"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+
+    NSError * __autoreleasing *errPtr = NULL;
+    [inv setArgument:&errPtr atIndex:2];
+
+    id boxed = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertNotNil(boxed, @"Boxing a NULL NSError ** should still return an ASOutObject so [outError setValue:...] is safe");
+    XCTAssertTrue([boxed isKindOfClass:[ASOutObject class]],
+                  @"Boxing a NULL NSError ** should return an ASOutObject");
+    XCTAssertNil(((ASOutObject *)boxed).value,
+                 @"ASOutObject for a NULL NSError ** should have a nil value");
+
+    // Writing back to an invocation with a NULL error pointer must be a safe no-op.
+    ((ASOutObject *)boxed).value = [NSError errorWithDomain:@"ASTestDomain" code:1 userInfo:nil];
+    XCTAssertNoThrow([ASBoxer writeBackObject:boxed atArgumentIndex:0 toInvocation:inv],
+                     @"writeBackObject on a NULL error pointer must not crash");
+}
+
+- (void)test_writeBackObject_updatesPointedToError {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^@"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+
+    NSError * __autoreleasing callerError = nil;
+    NSError * __autoreleasing *errPtr = &callerError;
+    [inv setArgument:&errPtr atIndex:2];
+
+    ASOutObject *outObj = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+    NSError *producedError = [NSError errorWithDomain:@"ASTestDomain" code:123 userInfo:nil];
+    outObj.value = producedError;
+
+    [ASBoxer writeBackObject:outObj atArgumentIndex:0 toInvocation:inv];
+
+    XCTAssertEqualObjects(callerError, producedError,
+                          @"writeBackObject:atArgumentIndex:toInvocation: should write ASOutObject.value into *errPtr");
 }
 
 @end

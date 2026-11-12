@@ -48,6 +48,7 @@ AppScript_OBJC_FILES = \
 	AppScript/ASMethodNode.m \
 	AppScript/ASNull.m \
 	AppScript/ASNumberLiteralNode.m \
+	AppScript/ASOutObject.m \
 	AppScript/ASParser.m \
 	AppScript/ASPropertyNode.m \
 	AppScript/ASReturnNode.m \
@@ -98,6 +99,7 @@ AppScript_HEADER_FILES = \
 	ASMethodNode.h \
 	ASNull.h \
 	ASNumberLiteralNode.h \
+	ASOutObject.h \
 	ASParser.h \
 	ASPropertyNode.h \
 	ASReturnNode.h \
@@ -137,6 +139,7 @@ AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASInterpreterTests.m \
 	AppScriptTests/ASLexerTests.m \
 	AppScriptTests/ASLoaderTests.m \
+	AppScriptTests/ASOutObjectTests.m \
 	AppScriptTests/ASParserStringEscapeTests.m \
 	AppScriptTests/ASParserTests.m \
 	AppScriptTests/ASRuntimeInstallerTests.m \

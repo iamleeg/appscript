@@ -97,6 +97,7 @@
 				ASMethodNode.h,
 				ASNull.h,
 				ASNumberLiteralNode.h,
+				ASOutObject.h,
 				ASParser.h,
 				ASPropertyNode.h,
 				ASReturnNode.h,

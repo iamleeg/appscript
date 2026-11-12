@@ -19,6 +19,7 @@
 #import "ASInterpreter.h"
 #import "ASScope.h"
 #import "ASNull.h"
+#import "ASOutObject.h"
 #import <objc/runtime.h>
 #import "ASBoxer.h"
 #import "ASRuntimeInstaller.h"
@@ -516,6 +517,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
                       code:ASErrorCodeUnrecognisedSelector
                       node:node
                    context:ctx];
+        __builtin_unreachable();
     }
 
     // Build and invoke the NSInvocation.
@@ -523,13 +525,36 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
     inv.target = receiver;
     inv.selector = sel;
 
-    for (NSUInteger i = 0; i < argValues.count; i++) {
+    // Scratch storage for object out-parameters (`^@`, e.g. `NSError **`).
+    // When an AppScript caller passes an ASOutObject to a native method expecting `id *`,
+    // we pass the address of the corresponding slot in `outObjectSlots` to the invocation,
+    // then copy the resulting object reference back into the ASOutObject after invoke.
+    NSUInteger argCount = argValues.count;
+    id __unsafe_unretained *outObjectSlots = NULL;
+    if (argCount > 0) {
+        outObjectSlots = (id __unsafe_unretained *)alloca(sizeof(id) * argCount);
+        memset(outObjectSlots, 0, sizeof(id) * argCount);
+    }
+
+    for (NSUInteger i = 0; i < argCount; i++) {
         id arg = argValues[i];
         // Unwrap ASNull (AppScript nil) to ObjC nil before native dispatch.
         if (arg == [ASNull null]) {
             arg = nil;
         }
-        [ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv];
+        if ([arg isKindOfClass:[ASOutObject class]] &&
+            [ASBoxer isObjectOutParameterAtIndex:i inSignature:sig]) {
+            ASOutObject *outObj = (ASOutObject *)arg;
+            id initialVal = outObj.value;
+            if ([initialVal isKindOfClass:[ASNull class]]) {
+                initialVal = nil;
+            }
+            outObjectSlots[i] = initialVal;
+            id __unsafe_unretained *slotPtr = &outObjectSlots[i];
+            [inv setArgument:&slotPtr atIndex:(NSInteger)(i + 2)];
+        } else {
+            [ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv];
+        }
     }
 
     if (isSuperSend) {
@@ -569,6 +594,16 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
         [inv invokeUsingIMP:imp];
     } else {
         [inv invoke];
+    }
+
+    // Copy any populated object out-parameters back into their ASOutObject wrappers.
+    for (NSUInteger i = 0; i < argCount; i++) {
+        id arg = argValues[i];
+        if ([arg isKindOfClass:[ASOutObject class]] &&
+            [ASBoxer isObjectOutParameterAtIndex:i inSignature:sig]) {
+            ASOutObject *outObj = (ASOutObject *)arg;
+            outObj.value = outObjectSlots[i];
+        }
     }
 
     return [ASBoxer boxedReturnValueFromInvocation:inv];

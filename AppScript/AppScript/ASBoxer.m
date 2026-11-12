@@ -18,6 +18,7 @@
 
 #import "ASBoxer.h"
 #import "ASNull.h"
+#import "ASOutObject.h"
 #import "ASStructValue.h"
 
 // ---------------------------------------------------------------------------
@@ -122,6 +123,21 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
         }
         case 'v': {
             return [NSNull null];
+        }
+        case '^': {
+            // Pointer type — check if it is a pointer to an Objective-C object (^@, e.g. NSError **).
+            // Always return an ASOutObject (even when ptr == NULL) so that AppScript code can
+            // unconditionally send `[outError setValue:...]` or forward `outError` to another
+            // Cocoa method without needing a nil check. When ptr == NULL, writeBackObject:...
+            // simply discards the stored value.
+            const char *pointedType = ASSkipTypeQualifiers(typeEncoding + 1);
+            if (pointedType && pointedType[0] == '@') {
+                id __autoreleasing *ptr = NULL;
+                memcpy(&ptr, bytes, sizeof(id *));
+                id initialValue = (ptr != NULL) ? *ptr : nil;
+                return [[ASOutObject alloc] initWithValue:initialValue];
+            }
+            return [NSValue valueWithBytes:bytes objCType:typeEncoding];
         }
         case '{': {
             // Struct — if the canonical name is registered with ASStructValue, return an
@@ -238,6 +254,21 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
             // void — nothing to write
             return YES;
         }
+        case '^': {
+            const char *pointedType = ASSkipTypeQualifiers(typeEncoding + 1);
+            if (pointedType && pointedType[0] == '@') {
+                if (object == nil || [object isKindOfClass:[ASNull class]]) {
+                    void *nullPtr = NULL;
+                    memcpy(outBytes, &nullPtr, sizeof(void *));
+                    return YES;
+                }
+            }
+            if ([object isKindOfClass:[NSValue class]]) {
+                [object getValue:outBytes];
+                return YES;
+            }
+            return NO;
+        }
         case '{': {
             // ASStructValue or NSValue containing a struct
             if ([object isKindOfClass:[ASStructValue class]]) {
@@ -287,6 +318,43 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
     [invocation getArgument:buffer atIndex:(NSInteger)invIndex];
 
     return ASBoxBytes(buffer, typeEncoding);
+}
+
++ (BOOL)isObjectOutParameterAtIndex:(NSUInteger)argumentIndex
+                        inSignature:(NSMethodSignature *)signature {
+    NSUInteger invIndex = argumentIndex + 2;
+    if (invIndex >= signature.numberOfArguments) {
+        return NO;
+    }
+    const char *typeEncoding = ASSkipTypeQualifiers([signature getArgumentTypeAtIndex:invIndex]);
+    if (!typeEncoding || typeEncoding[0] != '^') {
+        return NO;
+    }
+    const char *pointedType = ASSkipTypeQualifiers(typeEncoding + 1);
+    return (pointedType != NULL && pointedType[0] == '@');
+}
+
++ (void)writeBackObject:(nullable id)object
+        atArgumentIndex:(NSUInteger)argumentIndex
+           toInvocation:(NSInvocation *)invocation {
+    if (![object isKindOfClass:[ASOutObject class]]) {
+        return;
+    }
+    NSMethodSignature *sig = invocation.methodSignature;
+    if (![self isObjectOutParameterAtIndex:argumentIndex inSignature:sig]) {
+        return;
+    }
+    NSUInteger invIndex = argumentIndex + 2;
+    id __autoreleasing *ptr = NULL;
+    [invocation getArgument:&ptr atIndex:(NSInteger)invIndex];
+    if (ptr != NULL) {
+        ASOutObject *outObj = (ASOutObject *)object;
+        id val = outObj.value;
+        if ([val isKindOfClass:[ASNull class]]) {
+            val = nil;
+        }
+        *ptr = val;
+    }
 }
 
 + (void)unboxObject:(nullable id)object

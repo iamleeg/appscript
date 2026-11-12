@@ -196,6 +196,11 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
                                  parameterNames:methodNode.parameterNames
                                      scriptPath:scriptPath ?: @"<unknown>"];
 
+    // Write back any object out-parameters (e.g. NSError **) that were boxed into ASOutObject.
+    for (NSUInteger i = 0; i < paramCount; i++) {
+        [ASBoxer writeBackObject:arguments[i] atArgumentIndex:i toInvocation:invocation];
+    }
+
     // Unbox the result back into the invocation if the return type is non-void.
     const char *returnType = invocation.methodSignature.methodReturnType;
     if (returnType[0] != 'v') {
@@ -556,6 +561,17 @@ static void ASAddMatchingProtocolsToClass(Class cls) {
     // 10. Auto-conform to any ObjC protocol whose required instance methods are all
     //     present on this class (sentinels installed in step 9 satisfy the check).
     ASAddMatchingProtocolsToClass(newClass);
+
+    // 10b. Refresh sentinel type encodings in case auto-conformed protocols declare
+    //      more specific signatures (e.g. BOOL returns, struct args, or NSError ** out-params).
+    for (ASMethodNode *methodNode in classDef.methods) {
+        SEL sel = NSSelectorFromString(methodNode.selector);
+        Class targetClass = methodNode.isClassMethod ? object_getClass(newClass) : newClass;
+        const char *encoding = ASProtocolTypeEncodingForSelector(targetClass, sel);
+        if (encoding != NULL) {
+            class_replaceMethod(targetClass, sel, (IMP)_objc_msgForward, encoding);
+        }
+    }
 
     // 11. Record in the global AppScript class registry.
     NSValue *classValue = [NSValue valueWithNonretainedObject:newClass];

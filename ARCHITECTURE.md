@@ -455,6 +455,53 @@ When ObjC code calls a method on an AppScript class that takes a struct argument
 
 Without this declaration the `methodSignatureForSelector:` override returns `@:@` (all-id) and the NSRect bytes are misread as an object pointer, causing an `EXC_BAD_ACCESS` crash in `objc_retain`.
 
+### Object out-parameters (`NSError **`)
+
+Objective-C methods frequently report errors via an `NSError **` out-parameter (encoded in the Objective-C runtime as `^@` or `o^@`). Because AppScript has no bare pointers or address-of (`&`) / dereference (`*`) operators, the runtime bridges object out-parameters using the `ASOutObject` container class.
+
+#### Implementing a method with an `NSError **` parameter in AppScript
+
+When an Objective-C caller invokes an AppScript method whose signature declares an `NSError **` (or any `id *`) parameter, `ASBoxer` boxes the argument into an `ASOutObject` instance (even when the caller passes `NULL`).
+
+Inside the AppScript method body:
+- Send `-setValue:` to the `ASOutObject` parameter to assign an `NSError` that will be written back to the caller's `NSError **` pointer when the method returns (if the caller passed `NULL`, the write-back is safely ignored).
+- Or pass the `ASOutObject` parameter directly to another Cocoa method that expects an `NSError **`; any error populated by that inner call is automatically stored in the `ASOutObject` and written back to the outer caller.
+
+**Rule**: just like C struct parameters, every method on an AppScript class that accepts an `NSError **` (or `id *`) out-parameter must be declared in a protocol the class conforms to so the runtime installs the method with the `^@` parameter encoding rather than the synthetic all-`id` (`@`) fallback:
+
+```objc
+@protocol NotesStorageProtocol <NSObject>
+- (BOOL)saveNotes:(NSAttributedString *)notes forPaperURL:(NSURL *)paperURL error:(NSError **)error;
+@end
+```
+
+```appscript
+@class NotesStorage : NSObject <NotesStorageProtocol>
+
+- saveNotes: notes forPaperURL: paperURL error: outError {
+    id rtfURL = [self rtfFileURLForPaperURL: paperURL]
+    id options = @{ @"DocumentType": @"NSRTF" }
+    id range = [ASFoundation NSMakeRange: 0 : [notes length]]
+    id rtfData = [notes dataFromRange: range documentAttributes: options error: outError]
+    return [rtfData writeToURL: rtfURL atomically: YES error: outError]
+}
+
+@end
+```
+
+#### Capturing an `NSError **` when calling Cocoa methods from AppScript
+
+When calling an Objective-C method that takes an `NSError **` parameter from AppScript:
+- Pass `nil` if you want to ignore the error (unboxed as a `NULL` `NSError **` pointer).
+- Or create an `ASOutObject` via `[ASOutObject outObject]`, pass it as the `error:` argument, and read `[errBox value]` after the call:
+
+```appscript
+id errBox = [ASOutObject outObject]
+id fm = [NSFileManager defaultManager]
+id items = [fm contentsOfDirectoryAtPath: @"/nonexistent" error: errBox]
+id err = [errBox value] // holds the NSError instance on failure, or nil on success
+```
+
 ### BridgeSupport integration
 
 AppScript provides access to C functions and constants declared in Apple's BridgeSupport metadata, while preserving the language's all-objects-are-`id` invariant.
@@ -533,6 +580,7 @@ The same `ASBoxer` rules that govern AppScript method parameters apply to Bridge
 | `float`, `double`, `CGFloat` | `NSNumber` |
 | `BOOL` | `NSNumber` |
 | `char *` | `NSString` |
+| `id *` (e.g. `NSError **`) | `ASOutObject` |
 | struct (registered with `NSValue`) | `NSValue` |
 | `void` | `nil` |
 
