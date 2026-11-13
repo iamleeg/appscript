@@ -26,6 +26,7 @@
 #import "ASBoxer.h"
 #import "ASNull.h"
 #import "ASOutObject.h"
+#import "ASInterpreter.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -188,22 +189,26 @@ static NSString *ASResolveBridgeSupportTypeEncoding(NSString *rawEncoding) {
     NSMutableArray<NSValue *> *_allocatedStructFfiTypes;
 }
 @property (nonatomic, readonly) void *funcPtr;
+@property (nonatomic, copy, readonly) NSString *name;
 @property (nonatomic, copy, readonly) NSString *returnTypeEncoding;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *argTypeEncodings;
-- (nullable instancetype)initWithFuncPtr:(void *)funcPtr
-                      returnTypeEncoding:(NSString *)returnTypeEncoding
-                        argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings NS_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithName:(NSString *)name
+                               funcPtr:(void *)funcPtr
+                    returnTypeEncoding:(NSString *)returnTypeEncoding
+                      argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 - (nullable id)invokeWithBoxedArguments:(NSArray<id> *)boxedArgs;
 @end
 
 @implementation _ASFunctionInfo
 
-- (nullable instancetype)initWithFuncPtr:(void *)funcPtr
-                      returnTypeEncoding:(NSString *)returnTypeEncoding
-                        argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings {
+- (nullable instancetype)initWithName:(NSString *)name
+                               funcPtr:(void *)funcPtr
+                    returnTypeEncoding:(NSString *)returnTypeEncoding
+                      argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings {
     self = [super init];
     if (self) {
+        _name = [name copy];
         _funcPtr = funcPtr;
         _allocatedStructFfiTypes = [NSMutableArray array];
 
@@ -276,7 +281,18 @@ static NSString *ASResolveBridgeSupportTypeEncoding(NSString *rawEncoding) {
                         intoBytes:argBuf
                            ofSize:(NSUInteger)_argFfiTypes[i]->size
                      typeEncoding:enc]) {
-            return nil;
+            // No script location here: when called from AppScript, the interpreter
+            // re-raises this at the message send to the proxy class.
+            id argObject = ([boxedArg isKindOfClass:[ASNull class]] ||
+                            [boxedArg isKindOfClass:[NSNull class]]) ? nil : boxedArg;
+            ASRaiseRuntimeError([NSString stringWithFormat:
+                                 @"Cannot convert argument %lu of function '%@' from %@ to %@",
+                                 (unsigned long)(i + 1), _name,
+                                 argObject ? NSStringFromClass([argObject class]) : @"nil",
+                                 [ASBoxer displayNameForTypeEncoding:enc]],
+                                ASErrorCodeValueConversionFailed,
+                                nil,
+                                0);
         }
     }
 
@@ -470,9 +486,10 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
         }
 
         _ASFunctionInfo *info = [[_ASFunctionInfo alloc]
-            initWithFuncPtr:funcPtr
-         returnTypeEncoding:function.returnTypeEncoding
-           argTypeEncodings:function.argumentTypeEncodings];
+              initWithName:function.name
+                   funcPtr:funcPtr
+        returnTypeEncoding:function.returnTypeEncoding
+          argTypeEncodings:function.argumentTypeEncodings];
         if (info == nil) {
             // Unsupported type encoding in signature — skip silently.
             continue;

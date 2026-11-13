@@ -145,6 +145,34 @@ static Class ASFindLowestInstalledOverrideClass(Class startClass) {
     return Nil;
 }
 
+/// Raises ASErrorCodeValueConversionFailed for an AppScript method whose result cannot be
+/// converted to its declared C return type, located at the method's declaration.
+static void ASRaiseReturnValueConversionFailure(id _Nullable result,
+                                                const char *returnType,
+                                                Class methodClass,
+                                                NSString *selectorString,
+                                                BOOL isClassMethod,
+                                                NSString * _Nullable scriptPath,
+                                                ASMethodNode *methodNode) __attribute__((noreturn));
+static void ASRaiseReturnValueConversionFailure(id _Nullable result,
+                                                const char *returnType,
+                                                Class methodClass,
+                                                NSString *selectorString,
+                                                BOOL isClassMethod,
+                                                NSString * _Nullable scriptPath,
+                                                ASMethodNode *methodNode) {
+    id resultObject = [result isKindOfClass:[ASNull class]] ? nil : result;
+    ASRaiseRuntimeError([NSString stringWithFormat:
+                         @"Cannot convert the return value of %c[%@ %@] from %@ to %@",
+                         isClassMethod ? '+' : '-',
+                         NSStringFromClass(methodClass), selectorString,
+                         resultObject ? NSStringFromClass([resultObject class]) : @"nil",
+                         [ASBoxer displayNameForTypeEncoding:returnType]],
+                        ASErrorCodeValueConversionFailed,
+                        scriptPath ?: @"<unknown>",
+                        methodNode.lineNumber);
+}
+
 static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) {
     // When self is a class object (class-method dispatch), object_getClass(self) is the
     // metaclass — but the method map is stored on the class object itself, so use self
@@ -203,8 +231,10 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 
     // Unbox the result back into the invocation if the return type is non-void.
     const char *returnType = invocation.methodSignature.methodReturnType;
-    if (returnType[0] != 'v') {
-        [ASBoxer unboxObject:result intoReturnValueOfInvocation:invocation];
+    if (returnType[0] != 'v' &&
+        ![ASBoxer unboxObject:result intoReturnValueOfInvocation:invocation]) {
+        ASRaiseReturnValueConversionFailure(result, returnType, methodClass, selectorString,
+                                            isClassDispatch, scriptPath, methodNode);
     }
 }
 
@@ -420,6 +450,39 @@ static void ASAddMatchingProtocolsToClass(Class cls) {
         *outDefiningClass = methodClass;
     }
     return methodNode;
+}
+
++ (nullable id)checkedReturnValue:(nullable id)value
+                       ofSelector:(NSString *)selectorString
+                    definingClass:(Class)definingClass
+                    isClassMethod:(BOOL)isClassMethod {
+    Method m = isClassMethod ? class_getClassMethod(definingClass, NSSelectorFromString(selectorString))
+                             : class_getInstanceMethod(definingClass, NSSelectorFromString(selectorString));
+    const char *typeEncoding = m ? method_getTypeEncoding(m) : NULL;
+    if (typeEncoding == NULL) {
+        return value;
+    }
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:typeEncoding];
+    const char *returnType = sig.methodReturnType;
+    if (returnType[0] == 'v') {
+        return nil;
+    }
+    if (returnType[0] == '@') {
+        return value;
+    }
+
+    // Round-trip through the declared C type, exactly as forwarding through the
+    // ObjC runtime would (unbox into the return slot, then box what the caller sees).
+    NSUInteger size = sig.methodReturnLength;
+    void *buffer = alloca(size);
+    memset(buffer, 0, size);
+    if (![ASBoxer unboxObject:value intoBytes:buffer ofSize:size typeEncoding:returnType]) {
+        NSDictionary<NSString *, ASMethodNode *> *map = objc_getAssociatedObject(definingClass, &ASMethodMapKey);
+        ASRaiseReturnValueConversionFailure(value, returnType, definingClass, selectorString, isClassMethod,
+                                            objc_getAssociatedObject(definingClass, &ASScriptPathKey),
+                                            map[selectorString]);
+    }
+    return [ASBoxer boxedObjectFromBytes:buffer typeEncoding:returnType];
 }
 
 + (NSArray<Class> *)registeredClasses {

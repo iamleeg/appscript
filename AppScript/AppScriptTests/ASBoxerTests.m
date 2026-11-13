@@ -476,4 +476,147 @@
     XCTAssertEqualObjects(result, @"count", @"A SEL return value should box to its name");
 }
 
+// ---------------------------------------------------------------------------
+// Unboxing failure reporting
+// ---------------------------------------------------------------------------
+
+/// Returns an invocation of -[NSObject respondsToSelector:] on a string, ready for its SEL argument.
+- (NSInvocation *)respondsToSelectorInvocation {
+    NSString *target = @"abc";
+    NSMethodSignature *sig = [target methodSignatureForSelector:@selector(respondsToSelector:)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = target;
+    inv.selector = @selector(respondsToSelector:);
+    return inv;
+}
+
+- (void)test_unboxObjectIntoArgument_convertibleObject_returnsYES {
+    NSInvocation *inv = [self respondsToSelectorInvocation];
+    BOOL ok = [ASBoxer unboxObject:@"length" intoArgumentAtIndex:0 ofInvocation:inv];
+    XCTAssertTrue(ok, @"Unboxing a string into a SEL argument should report success");
+}
+
+- (void)test_unboxObjectIntoArgument_unconvertibleObject_returnsNO {
+    NSInvocation *inv = [self respondsToSelectorInvocation];
+    BOOL ok = [ASBoxer unboxObject:@42 intoArgumentAtIndex:0 ofInvocation:inv];
+    XCTAssertFalse(ok, @"Unboxing a number into a SEL argument should report failure");
+}
+
+- (void)test_unboxObjectIntoReturnValue_unconvertibleObject_returnsNO {
+    // -[NSInvocation selector] returns SEL
+    NSMethodSignature *sig = [NSInvocation instanceMethodSignatureForSelector:@selector(selector)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    BOOL ok = [ASBoxer unboxObject:@42 intoReturnValueOfInvocation:inv];
+    XCTAssertFalse(ok, @"Unboxing a number into a SEL return value should report failure");
+}
+
+- (void)test_unboxObjectIntoReturnValue_convertibleObject_returnsYES {
+    NSMethodSignature *sig = [NSInvocation instanceMethodSignatureForSelector:@selector(selector)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    BOOL ok = [ASBoxer unboxObject:@"count" intoReturnValueOfInvocation:inv];
+    XCTAssertTrue(ok, @"Unboxing a string into a SEL return value should report success");
+}
+
+- (void)test_displayNameForTypeEncoding_selector_returnsSEL {
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(SEL)], @"SEL");
+}
+
+- (void)test_displayNameForTypeEncoding_double_returnsDouble {
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(double)], @"double");
+}
+
+- (void)test_displayNameForTypeEncoding_underscoredStruct_returnsPublicStructName {
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(NSRange)], @"NSRange");
+}
+
+- (void)test_displayNameForTypeEncoding_struct_returnsStructName {
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(CGRect)], @"CGRect");
+}
+
+- (void)test_displayNameForTypeEncoding_qualifiedObject_ignoresQualifier {
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:"r@"], @"id");
+}
+
+- (void)test_displayNameForTypeEncoding_unknownEncoding_returnsEncoding {
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:"!"], @"!");
+}
+
+// ---------------------------------------------------------------------------
+// Accepted objects per C type (ARCHITECTURE.md "Conversion failures")
+// ---------------------------------------------------------------------------
+
+- (void)test_unboxObject_stringIntoInt_returnsNO {
+    int out = 7;
+    BOOL ok = [ASBoxer unboxObject:@"42" intoBytes:&out ofSize:sizeof(int) typeEncoding:@encode(int)];
+    XCTAssertFalse(ok, @"Only NSNumber may be unboxed into a scalar");
+    XCTAssertEqual(out, 7, @"Destination must not be overwritten on failure");
+}
+
+- (void)test_unboxObject_nilIntoInt_returnsNO {
+    int out = 7;
+    BOOL ok = [ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(int) typeEncoding:@encode(int)];
+    XCTAssertFalse(ok, @"nil must not be unboxed into a scalar as zero");
+    XCTAssertEqual(out, 7);
+}
+
+- (void)test_unboxObject_nilIntoBOOL_returnsNO {
+    BOOL out = YES;
+    BOOL ok = [ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(BOOL) typeEncoding:@encode(BOOL)];
+    XCTAssertFalse(ok, @"nil must not be unboxed into a BOOL as NO");
+}
+
+- (void)test_unboxObject_arrayIntoDouble_returnsNO {
+    double out = 1.5;
+    BOOL ok = [ASBoxer unboxObject:@[@1] intoBytes:&out ofSize:sizeof(double) typeEncoding:@encode(double)];
+    XCTAssertFalse(ok, @"An object without numeric accessors must be rejected, not raise");
+}
+
+- (void)test_unboxObject_numberIntoDouble_writesValue {
+    double out = 0;
+    BOOL ok = [ASBoxer unboxObject:@2.5 intoBytes:&out ofSize:sizeof(double) typeEncoding:@encode(double)];
+    XCTAssertTrue(ok);
+    XCTAssertEqual(out, 2.5);
+}
+
+- (void)test_unboxObject_numberIntoCString_returnsNO {
+    const char *out = "unchanged";
+    BOOL ok = [ASBoxer unboxObject:@42 intoBytes:&out ofSize:sizeof(char *) typeEncoding:@encode(char *)];
+    XCTAssertFalse(ok, @"Only NSString may be unboxed into a C string");
+}
+
+- (void)test_unboxObject_nilIntoCString_writesNULL {
+    const char *out = "unchanged";
+    BOOL ok = [ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(char *) typeEncoding:@encode(char *)];
+    XCTAssertTrue(ok, @"nil is a valid C string (NULL)");
+    XCTAssertTrue(out == NULL);
+}
+
+- (void)test_unboxObject_stringIntoClass_returnsNO {
+    Class out = [NSObject class];
+    BOOL ok = [ASBoxer unboxObject:@"NSString" intoBytes:&out ofSize:sizeof(Class) typeEncoding:@encode(Class)];
+    XCTAssertFalse(ok, @"A non-class object must not be reinterpreted as a Class");
+    XCTAssertEqual(out, [NSObject class]);
+}
+
+- (void)test_unboxObject_classIntoClass_writesClass {
+    Class out = Nil;
+    BOOL ok = [ASBoxer unboxObject:[NSString class] intoBytes:&out ofSize:sizeof(Class) typeEncoding:@encode(Class)];
+    XCTAssertTrue(ok);
+    XCTAssertEqual(out, [NSString class]);
+}
+
+- (void)test_unboxObject_nilIntoClass_writesNil {
+    Class out = [NSObject class];
+    BOOL ok = [ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(Class) typeEncoding:@encode(Class)];
+    XCTAssertTrue(ok, @"nil is a valid Class (Nil)");
+    XCTAssertTrue(out == Nil);
+}
+
+- (void)test_unboxObject_nilIntoStruct_returnsNO {
+    NSRange out = NSMakeRange(1, 2);
+    BOOL ok = [ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(NSRange) typeEncoding:@encode(NSRange)];
+    XCTAssertFalse(ok, @"nil must not be unboxed into a struct as all-zero");
+    XCTAssertEqual(out.location, (NSUInteger)1);
+}
+
 @end

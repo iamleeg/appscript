@@ -156,6 +156,11 @@ static NSMutableArray<ASCallFrame *> *ASCurrentCallStack(void) {
 
 NSString *const ASRuntimeErrorException = @"ASRuntimeErrorException";
 
+/// Private userInfo key marking an ASRuntimeErrorException raised without a script
+/// location (see ASRaiseRuntimeError). The interpreter re-raises such errors at the
+/// location of the message send during which they occurred.
+static NSString *const ASErrorUnlocatedKey = @"ASErrorUnlocated";
+
 NSString *const ASErrorMessageKey     = @"ASErrorMessage";
 NSString *const ASErrorScriptPathKey  = @"ASErrorScriptPath";
 NSString *const ASErrorLineKey        = @"ASErrorLine";
@@ -213,6 +218,13 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
                code:(ASErrorCode)code
                node:(nullable ASASTNode *)node
             context:(ASExecutionContext *)ctx NS_SWIFT_UNAVAILABLE("") __attribute__((noreturn));
+
+/// Invokes `inv` (through `imp` when non-NULL), re-raising any ASRuntimeErrorException
+/// that has no script location of its own at the location of `node`.
+- (void)invokeInvocation:(NSInvocation *)inv
+                usingIMP:(nullable IMP)imp
+             messageNode:(ASMessageSendNode *)node
+                 context:(ASExecutionContext *)ctx;
 
 @end
 
@@ -558,8 +570,16 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
             outObjectSlots[i] = initialVal;
             id __unsafe_unretained *slotPtr = &outObjectSlots[i];
             [inv setArgument:&slotPtr atIndex:(NSInteger)(i + 2)];
-        } else {
-            [ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv];
+        } else if (![ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv]) {
+            const char *expected = [sig getArgumentTypeAtIndex:i + 2];
+            [self reportError:[NSString stringWithFormat:
+                               @"Cannot convert argument %lu of '%@' from %@ to %@",
+                               (unsigned long)(i + 1), node.selector,
+                               arg ? NSStringFromClass([arg class]) : @"nil",
+                               [ASBoxer displayNameForTypeEncoding:expected]]
+                          code:ASErrorCodeValueConversionFailed
+                          node:node
+                       context:ctx];
         }
     }
 
@@ -585,21 +605,27 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
             // Direct AST dispatch: bypasses ObjC forwarding entirely.
             // Pass the current ASMessageSendNode as callSiteNode so the callee
             // frame records the line in this script where the super call was made.
-            return [self evaluateMethodBody:appScriptMethod.body
-                               withReceiver:receiver
-                              definingClass:appScriptDefiningClass
-                                   selector:node.selector
-                                  arguments:argValues
-                             parameterNames:appScriptMethod.parameterNames
-                                 scriptPath:ctx.scriptPath ?: @"<unknown>"
-                               callSiteNode:node];
+            id superResult = [self evaluateMethodBody:appScriptMethod.body
+                                         withReceiver:receiver
+                                        definingClass:appScriptDefiningClass
+                                             selector:node.selector
+                                            arguments:argValues
+                                       parameterNames:appScriptMethod.parameterNames
+                                           scriptPath:ctx.scriptPath ?: @"<unknown>"
+                                         callSiteNode:node];
+            // Apply the method's declared C return type, as a send through the ObjC
+            // runtime would, so super and normal sends return the same value.
+            return [ASRuntimeInstaller checkedReturnValue:superResult
+                                               ofSelector:node.selector
+                                            definingClass:appScriptDefiningClass
+                                            isClassMethod:class_isMetaClass(object_getClass(receiver))];
         }
         // Native ObjC super method: safe to invoke via IMP since there is no
         // AppScript forwarding stub in the superclass chain.
         IMP imp = method_getImplementation(foundMethod);
-        [inv invokeUsingIMP:imp];
+        [self invokeInvocation:inv usingIMP:imp messageNode:node context:ctx];
     } else {
-        [inv invoke];
+        [self invokeInvocation:inv usingIMP:NULL messageNode:node context:ctx];
     }
 
     // Copy any populated object out-parameters back into their ASOutObject wrappers.
@@ -903,13 +929,20 @@ static NSString *ASBuildHybridBacktrace(NSArray<ASCallFrame *> *appscriptStack) 
     return [lines componentsJoinedByString:@"\n"];
 }
 
-- (void)reportError:(NSString *)message
-               code:(ASErrorCode)code
-               node:(nullable ASASTNode *)node
-            context:(ASExecutionContext *)ctx {
-    NSString *path = ctx.scriptPath ?: @"<unknown>";
-    NSUInteger line = node ? node.lineNumber : 0;
-    NSUInteger col  = node ? node.columnNumber : 0;
+// ---------------------------------------------------------------------------
+// Runtime error construction
+// ---------------------------------------------------------------------------
+
+/// Builds an ASRuntimeErrorException carrying the location, call stacks and locals.
+/// `unlocated` adds ASErrorUnlocatedKey so the interpreter can attach a location.
+static NSException *ASMakeRuntimeErrorException(NSString *message,
+                                                ASErrorCode code,
+                                                NSString * _Nullable scriptPath,
+                                                NSUInteger line,
+                                                NSUInteger col,
+                                                NSDictionary *locals,
+                                                BOOL unlocated) {
+    NSString *path = scriptPath ?: @"<unknown>";
 
     NSString *baseReason = [NSString stringWithFormat:@"AppScript error at %@:%lu:%lu: %@",
                                                        path, (unsigned long)line,
@@ -920,8 +953,6 @@ static NSString *ASBuildHybridBacktrace(NSArray<ASCallFrame *> *appscriptStack) 
         : baseReason;
 
     // Build the AppScript-level call stack (innermost frame first = last in array).
-    // No copy needed: reportError: is noreturn — @finally cleanup runs after the raise,
-    // not during this iteration.
     NSMutableArray<NSString *> *frameLines = [NSMutableArray array];
     NSMutableArray<ASCallFrame *> *stack = ASCurrentCallStack();
     for (NSInteger i = (NSInteger)stack.count - 1; i >= 0; i--) {
@@ -936,8 +967,7 @@ static NSString *ASBuildHybridBacktrace(NSArray<ASCallFrame *> *appscriptStack) 
                   reason, hybridCallStackString];
     }
 
-    NSDictionary *locals = [ctx.currentScope allVisibleBindings];
-    NSDictionary *userInfo = @{
+    NSMutableDictionary *userInfo = [@{
         ASErrorMessageKey:          message,
         ASErrorScriptPathKey:       path,
         ASErrorLineKey:             @(line),
@@ -946,15 +976,61 @@ static NSString *ASBuildHybridBacktrace(NSArray<ASCallFrame *> *appscriptStack) 
         ASErrorLocalsKey:           locals,
         ASErrorCallStackKey:        callStackString,
         ASErrorHybridCallStackKey:  hybridCallStackString,
-    };
+    } mutableCopy];
+    if (unlocated) {
+        userInfo[ASErrorUnlocatedKey] = @YES;
+    }
+
+    return [NSException exceptionWithName:ASRuntimeErrorException
+                                   reason:reason
+                                 userInfo:userInfo];
+}
+
+void ASRaiseRuntimeError(NSString *message, ASErrorCode code,
+                         NSString * _Nullable scriptPath, NSUInteger line) {
+    [ASMakeRuntimeErrorException(message, code, scriptPath, line, 0, @{}, scriptPath == nil) raise];
+    __builtin_unreachable();
+}
+
+- (void)invokeInvocation:(NSInvocation *)inv
+                usingIMP:(nullable IMP)imp
+             messageNode:(ASMessageSendNode *)node
+                 context:(ASExecutionContext *)ctx {
+    @try {
+        if (imp) {
+            [inv invokeUsingIMP:imp];
+        } else {
+            [inv invoke];
+        }
+    } @catch (NSException *ex) {
+        // Runtime machinery below this send (e.g. BridgeSupport argument conversion)
+        // raises without a location; attach this send's location. Everything else
+        // propagates unchanged. Under ARC without -fobjc-arc-exceptions this path may
+        // leak objects, which is acceptable: the exception reports a fatal script error.
+        if ([ex.name isEqualToString:ASRuntimeErrorException] &&
+            [ex.userInfo[ASErrorUnlocatedKey] boolValue]) {
+            [self reportError:ex.userInfo[ASErrorMessageKey]
+                         code:(ASErrorCode)[ex.userInfo[ASErrorMessageCodeKey] integerValue]
+                         node:node
+                      context:ctx];
+        }
+        @throw;
+    }
+}
+
+- (void)reportError:(NSString *)message
+               code:(ASErrorCode)code
+               node:(nullable ASASTNode *)node
+            context:(ASExecutionContext *)ctx {
+    NSUInteger line = node ? node.lineNumber : 0;
+    NSUInteger col  = node ? node.columnNumber : 0;
+    NSDictionary *locals = [ctx.currentScope allVisibleBindings];
 
     // Callers are responsible for not swallowing this exception: an
     // ASRuntimeErrorException always represents a programming mistake in the
     // AppScript source under evaluation, and silently catching it will hide
     // that mistake from the developer.
-    [[NSException exceptionWithName:ASRuntimeErrorException
-                             reason:reason
-                           userInfo:userInfo] raise];
+    [ASMakeRuntimeErrorException(message, code, ctx.scriptPath, line, col, locals, NO) raise];
     // -[NSException raise] is noreturn; __builtin_unreachable() satisfies
     // the compiler's flow analysis for our __attribute__((noreturn)) declaration.
     __builtin_unreachable();

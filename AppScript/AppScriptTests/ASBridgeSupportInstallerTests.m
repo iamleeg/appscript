@@ -25,6 +25,7 @@
 #import <AppScript/ASBridgeSupportFunction.h>
 #import <AppScript/ASStructValue.h>
 #import <AppScript/ASBoxer.h>
+#import <AppScript/ASInterpreter.h>
 
 @interface ASBridgeSupportInstallerTests : XCTestCase
 @end
@@ -753,6 +754,37 @@ static NSInteger _ASTestCounter = 0;
 
     XCTAssertTrue(ok);
     XCTAssertNotNil(NSClassFromString([@"AS" stringByAppendingString:frameworkName]));
+}
+
+// ---------------------------------------------------------------------------
+// Argument conversion failures
+// ---------------------------------------------------------------------------
+
+- (void)test_installDocument_unconvertibleStructArgument_raisesValueConversionFailed {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='NSStringFromRange'>"
+                    @"<arg type64='{_NSRange=QQ}'/>"
+                    @"<retval type64='@'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [[[ASBridgeSupportInstaller alloc] init] installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSException *caught = nil;
+    @try {
+        [self callClassMethod:NSSelectorFromString(@"NSStringFromRange:") onClass:cls withArg:@"bogus"];
+    } @catch (NSException *ex) {
+        caught = ex;
+    }
+
+    XCTAssertEqualObjects(caught.name, ASRuntimeErrorException,
+                          @"An unconvertible argument should raise instead of skipping the call");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    XCTAssertEqualObjects(caught.userInfo[ASErrorScriptPathKey], @"<unknown>",
+                          @"A call from Objective-C has no script location");
 }
 
 @end

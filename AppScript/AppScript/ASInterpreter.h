@@ -146,7 +146,32 @@ typedef NS_ENUM(NSInteger, ASErrorCode) {
     /// requested selector. Check that the selector is spelled correctly and
     /// that the receiver is of the expected type.
     ASErrorCodeUnrecognisedSelector = 5,
+
+    /// An object could not be converted to the C type required by a method or
+    /// function signature: an argument of a message sent from AppScript, an
+    /// argument of a BridgeSupport function, or the return value of an
+    /// AppScript method called from Objective-C. The message is not sent (or the
+    /// function not called) rather than proceeding with a zeroed value.
+    ASErrorCodeValueConversionFailed = 6,
 };
+
+/// Raises an ``ASRuntimeErrorException`` from runtime code that has no AST node
+/// for the failure, such as the method-forwarding and BridgeSupport machinery.
+///
+/// When `scriptPath` is `nil`, the error has no script location of its own. If
+/// it was raised while ``ASInterpreter`` is sending a message, the interpreter
+/// re-raises it at the location of that message send; otherwise it reaches the
+/// caller with the path `"<unknown>"` and line `0`.
+///
+/// - Parameters:
+///   - message: Human-readable description, stored under ``ASErrorMessageKey``.
+///   - code: The error code, stored under ``ASErrorMessageCodeKey``.
+///   - scriptPath: Path of the `.appscript` file responsible, or `nil` if unknown.
+///   - line: 1-based line number in `scriptPath`, or `0` if unknown.
+FOUNDATION_EXPORT void ASRaiseRuntimeError(NSString *message,
+                                           ASErrorCode code,
+                                           NSString * _Nullable scriptPath,
+                                           NSUInteger line) __attribute__((noreturn));
 
 // ---------------------------------------------------------------------------
 

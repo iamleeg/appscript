@@ -20,6 +20,7 @@
 #import "ASNull.h"
 #import "ASOutObject.h"
 #import "ASStructValue.h"
+#import <objc/runtime.h>
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -210,6 +211,31 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
         object = nil;
     }
 
+    // Reject objects the C type does not accept (ARCHITECTURE.md, "Conversion failures")
+    // before any accessor is sent, so nothing is silently zeroed or reinterpreted.
+    switch (typeEncoding[0]) {
+        case 'B': case 'c': case 'C': case 's': case 'S': case 'i': case 'I':
+        case 'l': case 'L': case 'q': case 'Q': case 'f': case 'd':
+            // Scalars accept only NSNumber; nil has no scalar equivalent.
+            if (![object isKindOfClass:[NSNumber class]]) {
+                return NO;
+            }
+            break;
+        case '#':
+            // Class accepts class objects (whose class is a metaclass) or nil.
+            if (object != nil && !class_isMetaClass(object_getClass(object))) {
+                return NO;
+            }
+            break;
+        case '*':
+            if (object != nil && ![object isKindOfClass:[NSString class]]) {
+                return NO;
+            }
+            break;
+        default:
+            break;
+    }
+
     switch (typeEncoding[0]) {
         case '@': {
             // Convert the AppScript nil sentinel ([ASNull null]) to ObjC nil at the boundary.
@@ -303,8 +329,8 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
             return YES;
         }
         case '*': {
-            // NSString → const char *
-            const char *ptr = [object UTF8String];
+            // NSString → const char *; nil → NULL.
+            const char *ptr = object ? [(NSString *)object UTF8String] : NULL;
             memcpy(outBytes, &ptr, sizeof(const char *));
             return YES;
         }
@@ -448,7 +474,7 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
     }
 }
 
-+ (void)unboxObject:(nullable id)object
++ (BOOL)unboxObject:(nullable id)object
 intoArgumentAtIndex:(NSUInteger)argumentIndex
        ofInvocation:(NSInvocation *)invocation {
     NSMethodSignature *sig = invocation.methodSignature;
@@ -458,15 +484,17 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
     NSUInteger argSize = 0;
     NSGetSizeAndAlignment(typeEncoding, &argSize, NULL);
     if (argSize == 0) {
-        return;
+        return YES;
     }
 
     void *buffer = alloca(argSize);
     memset(buffer, 0, argSize);
 
-    if (ASUnboxIntoBytes(object, buffer, argSize, typeEncoding)) {
-        [invocation setArgument:buffer atIndex:(NSInteger)invIndex];
+    if (!ASUnboxIntoBytes(object, buffer, argSize, typeEncoding)) {
+        return NO;
     }
+    [invocation setArgument:buffer atIndex:(NSInteger)invIndex];
+    return YES;
 }
 
 + (nullable id)boxedReturnValueFromInvocation:(NSInvocation *)invocation {
@@ -489,25 +517,74 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
     return ASBoxBytes(buffer, typeEncoding);
 }
 
-+ (void)unboxObject:(nullable id)object
++ (BOOL)unboxObject:(nullable id)object
 intoReturnValueOfInvocation:(NSInvocation *)invocation {
     NSMethodSignature *sig = invocation.methodSignature;
     const char *typeEncoding = sig.methodReturnType;
 
     if (!typeEncoding || typeEncoding[0] == 'v') {
-        return;
+        return YES;
     }
 
     NSUInteger retSize = sig.methodReturnLength;
     if (retSize == 0) {
-        return;
+        return YES;
     }
 
     void *buffer = alloca(retSize);
     memset(buffer, 0, retSize);
 
-    if (ASUnboxIntoBytes(object, buffer, retSize, typeEncoding)) {
-        [invocation setReturnValue:buffer];
+    if (!ASUnboxIntoBytes(object, buffer, retSize, typeEncoding)) {
+        return NO;
+    }
+    [invocation setReturnValue:buffer];
+    return YES;
+}
+
++ (NSString *)displayNameForTypeEncoding:(const char *)typeEncoding {
+    const char *enc = ASSkipTypeQualifiers(typeEncoding);
+    if (!enc || enc[0] == '\0') {
+        return @"";
+    }
+    switch (enc[0]) {
+        case '@': return @"id";
+        case '#': return @"Class";
+        case ':': return @"SEL";
+        case 'B': return @"BOOL";
+        case 'c': return @"char";
+        case 'C': return @"unsigned char";
+        case 's': return @"short";
+        case 'S': return @"unsigned short";
+        case 'i': return @"int";
+        case 'I': return @"unsigned int";
+        case 'l': return @"long";
+        case 'L': return @"unsigned long";
+        case 'q': return @"long long";
+        case 'Q': return @"unsigned long long";
+        case 'f': return @"float";
+        case 'd': return @"double";
+        case '*': return @"char *";
+        case '^': return @"pointer";
+        case 'v': return @"void";
+        case '{': {
+            // {_NSRange=QQ} -> NSRange: the tag runs to '=' or '}'; drop leading underscores.
+            const char *start = enc + 1;
+            while (*start == '_') {
+                start++;
+            }
+            const char *end = start;
+            while (*end && *end != '=' && *end != '}') {
+                end++;
+            }
+            if (end > start) {
+                return [[NSString alloc] initWithBytes:start
+                                                length:(NSUInteger)(end - start)
+                                              encoding:NSUTF8StringEncoding];
+            }
+            return @(typeEncoding);
+        }
+        default:
+            return @(typeEncoding);
     }
 }
 

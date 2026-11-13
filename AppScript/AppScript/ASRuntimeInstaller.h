@@ -100,6 +100,28 @@ typedef NS_ENUM(NSInteger, ASRuntimeInstallerErrorCode) {
                                                       selector:(NSString *)selectorString
                                                  definingClass:(Class _Nullable * _Nullable)outDefiningClass;
 
+/// Passes an AppScript method's result through the C return type declared for it, as
+/// Objective-C dispatch would. Used for `[super ...]` sends, which evaluate the
+/// superclass's AppScript method directly instead of going through the ObjC runtime.
+///
+/// The return type comes from the method installed on `definingClass` (from a
+/// conforming protocol or a native superclass). `id` returns pass `value` through
+/// unchanged; `void` returns yield `nil`; any other type converts `value` to that
+/// type and boxes it again, so the caller sees what a normal message send would return.
+///
+/// - Parameters:
+///   - value: The object the AppScript method body returned. May be `nil`.
+///   - selectorString: The method's selector.
+///   - definingClass: The AppScript class that defines the method.
+///   - isClassMethod: `YES` for a class method, `NO` for an instance method.
+/// - Returns: The converted value.
+/// - Throws: Raises ``ASRuntimeErrorException`` with ``ASErrorCodeValueConversionFailed``
+///   at the method's declaration if `value` cannot be converted to the return type.
++ (nullable id)checkedReturnValue:(nullable id)value
+                       ofSelector:(NSString *)selectorString
+                    definingClass:(Class)definingClass
+                    isClassMethod:(BOOL)isClassMethod;
+
 @end
 
 NS_ASSUME_NONNULL_END

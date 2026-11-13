@@ -31,6 +31,9 @@
 #import <AppScript/ASNumberLiteralNode.h>
 #import <AppScript/ASArrayLiteralNode.h>
 #import <AppScript/ASDictionaryLiteralNode.h>
+#import <AppScript/ASBridgeSupportParser.h>
+#import <AppScript/ASBridgeSupportDocument.h>
+#import <AppScript/ASBridgeSupportInstaller.h>
 
 // ---------------------------------------------------------------------------
 // Concrete Objective-C class hierarchy used by super-dispatch tests.
@@ -50,6 +53,17 @@
 @end
 
 @implementation ASSuperTestSub
+@end
+
+/// Records whether -recordSelector: was ever called, to show a message was not sent.
+@interface ASSelectorRecorder : NSObject
+@property (nonatomic) BOOL called;
+- (void)recordSelector:(SEL)selector;
+@end
+@implementation ASSelectorRecorder
+- (void)recordSelector:(SEL)selector {
+    self.called = YES;
+}
 @end
 
 @interface ASOutErrorHelper : NSObject
@@ -1302,6 +1316,110 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
 
     XCTAssertEqualObjects(result, @YES,
                           @"Chained [[dict objectForKey:@\"missing\"] isNil] should return @YES");
+}
+
+// ---------------------------------------------------------------------------
+// Value conversion failures
+// ---------------------------------------------------------------------------
+
+- (void)test_messageSend_unconvertibleArgument_raisesValueConversionFailedAtSendLocation {
+    // body (line 7): [@"abc" respondsToSelector:42]
+    ASMessageSendNode *send = [[ASMessageSendNode alloc] initWithReceiver:stringNode(@"abc")
+                                                            selectorParts:@[@"respondsToSelector"]
+                                                                arguments:@[numberNode(@42)]
+                                                                     line:7
+                                                                   column:5];
+    NSException *ex = runAndCatch(self.interpreter, @[returnNode(send)]);
+
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException);
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    XCTAssertEqualObjects(ex.userInfo[ASErrorScriptPathKey], @"test.appscript");
+    XCTAssertEqualObjects(ex.userInfo[ASErrorLineKey], @7);
+    XCTAssertEqualObjects(ex.userInfo[ASErrorColumnKey], @5);
+    NSString *message = ex.userInfo[ASErrorMessageKey];
+    XCTAssertTrue([message hasPrefix:@"Cannot convert argument 1 of 'respondsToSelector:' from "], @"%@", message);
+    XCTAssertTrue([message hasSuffix:@" to SEL"], @"%@", message);
+}
+
+- (void)test_messageSend_unconvertibleArgument_doesNotSendMessage {
+    ASSelectorRecorder *recorder = [ASSelectorRecorder new];
+    ASMessageSendNode *send = messageSendNode(identNode(@"recorder"),
+                                              @[@"recordSelector"],
+                                              @[numberNode(@42)]);
+    NSArray<ASASTNode *> *body = @[returnNode(send)];
+    @try {
+        [self.interpreter evaluateMethodBody:body
+                                withReceiver:[NSObject new]
+                               definingClass:[NSObject class]
+                                    selector:@"test:"
+                                   arguments:@[recorder]
+                              parameterNames:@[@"recorder"]
+                                  scriptPath:@"test.appscript"];
+    } @catch (NSException *ex) {
+        // Expected; the assertion below is the point of this test.
+    }
+    XCTAssertFalse(recorder.called, @"A message whose argument cannot be converted must not be sent");
+}
+
+- (void)test_messageSend_unconvertibleBridgeSupportArgument_raisesAtSendLocation {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='NSStringFromRange'>"
+                    @"<arg type64='{_NSRange=QQ}'/>"
+                    @"<retval type64='@'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [[[ASBridgeSupportParser alloc] init]
+                                    parseData:[xml dataUsingEncoding:NSUTF8StringEncoding]
+                                    error:nil];
+    NSString *frameworkName = [NSString stringWithFormat:@"InterpConv%u", arc4random()];
+    [[[ASBridgeSupportInstaller alloc] init] installDocument:doc frameworkName:frameworkName error:nil];
+
+    // body (line 9): [AS<framework> NSStringFromRange:@"bogus"]
+    ASMessageSendNode *send = [[ASMessageSendNode alloc]
+                               initWithReceiver:identNode([@"AS" stringByAppendingString:frameworkName])
+                                  selectorParts:@[@"NSStringFromRange"]
+                                      arguments:@[stringNode(@"bogus")]
+                                           line:9
+                                         column:3];
+    NSException *ex = runAndCatch(self.interpreter, @[returnNode(send)]);
+
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException);
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    XCTAssertEqualObjects(ex.userInfo[ASErrorScriptPathKey], @"test.appscript");
+    XCTAssertEqualObjects(ex.userInfo[ASErrorLineKey], @9);
+    XCTAssertEqualObjects(ex.userInfo[ASErrorColumnKey], @3);
+    NSString *message = ex.userInfo[ASErrorMessageKey];
+    XCTAssertTrue([message hasPrefix:@"Cannot convert argument 1 of function 'NSStringFromRange' from "], @"%@", message);
+    XCTAssertTrue([message hasSuffix:@" to NSRange"], @"%@", message);
+}
+
+- (void)test_raiseRuntimeError_withLocation_raisesExceptionCarryingLocation {
+    NSException *caught = nil;
+    @try {
+        ASRaiseRuntimeError(@"boom", ASErrorCodeValueConversionFailed, @"thing.appscript", 12);
+    } @catch (NSException *ex) {
+        caught = ex;
+    }
+    XCTAssertEqualObjects(caught.name, ASRuntimeErrorException);
+    XCTAssertEqualObjects(caught.userInfo[ASErrorMessageKey], @"boom");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    XCTAssertEqualObjects(caught.userInfo[ASErrorScriptPathKey], @"thing.appscript");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorLineKey], @12);
+    XCTAssertTrue([caught.reason containsString:@"thing.appscript:12"],
+                  @"The reason should include the script location");
+}
+
+- (void)test_raiseRuntimeError_withoutLocation_reportsUnknownPath {
+    NSException *caught = nil;
+    @try {
+        ASRaiseRuntimeError(@"boom", ASErrorCodeValueConversionFailed, nil, 0);
+    } @catch (NSException *ex) {
+        caught = ex;
+    }
+    XCTAssertEqualObjects(caught.name, ASRuntimeErrorException);
+    XCTAssertEqualObjects(caught.userInfo[ASErrorScriptPathKey], @"<unknown>");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorLineKey], @0);
 }
 
 @end

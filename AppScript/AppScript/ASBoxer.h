@@ -84,12 +84,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// `UTF8String`; `NSValue` provides raw bytes for struct types.
 ///
 /// - Parameters:
-///   - object: The object to unbox. May be `nil`; the behaviour for nil depends on the type
-///     encoding (e.g. nil id sets a nil pointer, nil NSNumber is treated as zero).
+///   - object: The object to unbox. May be `nil`, which is accepted only for types with a natural
+///     null (`id`, `Class`, `SEL`, `char *`, pointers) and rejected for scalars and structs.
 ///   - argumentIndex: Zero-based index into the method's logical argument list. Maps to
 ///     `NSInvocation` index `argumentIndex + 2`.
 ///   - invocation: The invocation whose argument slot should be written.
-+ (void)unboxObject:(nullable id)object
+/// - Returns: `YES` if the object was converted and written; `NO` if it cannot be converted to the
+///   argument's type, in which case the argument slot is left unchanged.
++ (BOOL)unboxObject:(nullable id)object
 intoArgumentAtIndex:(NSUInteger)argumentIndex
        ofInvocation:(NSInvocation *)invocation;
 
@@ -112,8 +114,21 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
 /// - Parameters:
 ///   - object: The object to unbox and set as the invocation's return value. May be `nil`.
 ///   - invocation: The invocation whose return value slot should be written.
-+ (void)unboxObject:(nullable id)object
+/// - Returns: `YES` if the object was converted and written (or the return type is void); `NO` if
+///   it cannot be converted to the return type, in which case the return value is left unchanged.
++ (BOOL)unboxObject:(nullable id)object
 intoReturnValueOfInvocation:(NSInvocation *)invocation;
+
+/// Returns a human-readable name for an Objective-C type encoding, for use in error messages.
+///
+/// Type qualifiers are ignored. Common scalar encodings map to their C names (`double`, `BOOL`,
+/// `unsigned long long`, …), `@` to `id`, `#` to `Class`, `:` to `SEL`, and `^` to `pointer`.
+/// Struct encodings map to the struct's tag with any leading underscores removed
+/// (`{_NSRange=QQ}` becomes `NSRange`). Unrecognised encodings are returned unchanged.
+///
+/// - Parameter typeEncoding: An Objective-C runtime or BridgeSupport type encoding C string.
+/// - Returns: The display name.
++ (NSString *)displayNameForTypeEncoding:(const char *)typeEncoding;
 
 /// Boxes the raw value in `bytes` into an Objective-C object according to `typeEncoding`.
 ///
@@ -130,7 +145,9 @@ intoReturnValueOfInvocation:(NSInvocation *)invocation;
 /// to `typeEncoding`.
 ///
 /// Accepts both `ASStructValue` and `NSValue` when `typeEncoding` is a struct (`{...}`),
-/// verifying that the source struct's byte length matches `size`.
+/// verifying that the source struct's byte length matches `size`. Scalars accept only
+/// `NSNumber`, `char *` and `SEL` only `NSString`, and `Class` only class objects; `nil` is
+/// rejected for scalars and structs (see ARCHITECTURE.md, "Conversion failures").
 ///
 /// - Parameters:
 ///   - object: The Objective-C object to unbox.

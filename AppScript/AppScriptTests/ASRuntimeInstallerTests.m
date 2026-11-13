@@ -29,6 +29,10 @@
 #import <AppScript/ASMessageSendNode.h>
 #import <AppScript/ASNumberLiteralNode.h>
 #import <AppScript/ASOutObject.h>
+#import <AppScript/ASInterpreter.h>
+#import <AppScript/ASSuperNode.h>
+#import <AppScript/ASVariableDeclarationNode.h>
+#import <AppScript/ASNull.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -101,6 +105,14 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 
 @protocol ASTestPropertyConformProtocol <NSObject>
 @property (nonatomic, strong) NSString *label;
+@end
+
+@protocol ASTestSelectorReturnProtocol <NSObject>
+- (SEL)returnsSelector;
+@end
+
+@protocol ASTestVoidProtocol <NSObject>
+- (void)doNothing;
 @end
 
 @protocol ASTestOutErrorProtocol <NSObject>
@@ -813,6 +825,188 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
     NSRange result = [instance echoRange:NSMakeRange(12, 34)];
     XCTAssertEqual(result.location, (NSUInteger)12);
     XCTAssertEqual(result.length, (NSUInteger)34);
+}
+
+// ---------------------------------------------------------------------------
+// Return value conversion failures
+// ---------------------------------------------------------------------------
+
+- (void)test_installNodes_unconvertibleReturnValue_raisesAtMethodDeclaration {
+    // Ensure the protocol is emitted into the runtime so the installer can find it.
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestSelectorReturnProtocol);
+    NSString *className = uniqueClassName(@"ASTestBadReturn");
+
+    // Build (line 5): - returnsSelector { return 42 }
+    ASNumberLiteralNode *fortyTwo = [[ASNumberLiteralNode alloc] initWithValue:@42 line:6 column:12];
+    ASReturnNode *ret = [[ASReturnNode alloc] initWithValue:fortyTwo line:6 column:5];
+    ASMethodNode *method = [[ASMethodNode alloc] initWithSelectorParts:@[@"returnsSelector"]
+                                                        parameterNames:@[]
+                                                                  body:@[ret]
+                                                         isClassMethod:NO
+                                                                  line:5
+                                                                column:1];
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+                                       initWithClassName:className
+                                          superclassName:@"NSObject"
+                                           protocolNames:@[@"ASTestSelectorReturnProtocol"]
+                                              properties:@[]
+                                                 methods:@[method]
+                                                    line:1
+                                                  column:1];
+    XCTAssertTrue([self.installer installNodes:@[classDef] scriptPath:@"bad.appscript" error:nil]);
+
+    id instance = [[NSClassFromString(className) alloc] init];
+    NSException *caught = nil;
+    @try {
+        (void)((SEL (*)(id, SEL))objc_msgSend)(instance, @selector(returnsSelector));
+    } @catch (NSException *ex) {
+        caught = ex;
+    }
+
+    XCTAssertEqualObjects(caught.name, ASRuntimeErrorException,
+                          @"An unconvertible return value should raise instead of returning zero");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    XCTAssertEqualObjects(caught.userInfo[ASErrorScriptPathKey], @"bad.appscript");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorLineKey], @5);
+    NSString *message = caught.userInfo[ASErrorMessageKey];
+    NSString *expectedPrefix = [NSString stringWithFormat:
+                                @"Cannot convert the return value of -[%@ returnsSelector] from ", className];
+    XCTAssertTrue([message hasPrefix:expectedPrefix], @"%@", message);
+    XCTAssertTrue([message hasSuffix:@" to SEL"], @"%@", message);
+}
+
+// ---------------------------------------------------------------------------
+// Return value conversion for [super ...] dispatch to AppScript methods
+// ---------------------------------------------------------------------------
+
+/// Installs a class with one zero-argument instance method returning `value`,
+/// declared at `line`, conforming to `protocolName`.
+- (Class)installClassNamed:(NSString *)className
+                superclass:(NSString *)superclassName
+                  protocol:(nullable NSString *)protocolName
+                  selector:(NSString *)selector
+                      body:(NSArray<ASASTNode *> *)body
+                      line:(NSUInteger)line {
+    ASMethodNode *method = [[ASMethodNode alloc] initWithSelectorParts:@[selector]
+                                                        parameterNames:@[]
+                                                                  body:body
+                                                         isClassMethod:NO
+                                                                  line:line
+                                                                column:1];
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+                                       initWithClassName:className
+                                          superclassName:superclassName
+                                           protocolNames:protocolName ? @[protocolName] : @[]
+                                              properties:@[]
+                                                 methods:@[method]
+                                                    line:1
+                                                  column:1];
+    XCTAssertTrue([self.installer installNodes:@[classDef] scriptPath:@"super.appscript" error:nil]);
+    return NSClassFromString(className);
+}
+
+- (ASReturnNode *)returnNumber:(NSNumber *)n {
+    return [[ASReturnNode alloc] initWithValue:[[ASNumberLiteralNode alloc] initWithValue:n line:1 column:1]
+                                          line:1
+                                        column:1];
+}
+
+- (void)test_superSend_unconvertibleReturnValueOfAppScriptSuperclass_raisesAtSuperclassDeclaration {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestSelectorReturnProtocol);
+    NSString *baseName = uniqueClassName(@"ASTestSuperBase");
+    NSString *subName = uniqueClassName(@"ASTestSuperSub");
+
+    // Base (line 5): - returnsSelector { return 42 }
+    [self installClassNamed:baseName superclass:@"NSObject" protocol:@"ASTestSelectorReturnProtocol"
+                   selector:@"returnsSelector" body:@[[self returnNumber:@42]] line:5];
+
+    // Sub (line 20): - returnsSelector { id x = [super returnsSelector]  return @"description" }
+    ASMessageSendNode *superSend = [[ASMessageSendNode alloc] initWithReceiver:[[ASSuperNode alloc] initWithLine:21 column:12]
+                                                                 selectorParts:@[@"returnsSelector"]
+                                                                     arguments:@[]
+                                                                          line:21
+                                                                        column:12];
+    ASVariableDeclarationNode *decl = [[ASVariableDeclarationNode alloc] initWithVariableName:@"x"
+                                                                                  initializer:superSend
+                                                                                       isWeak:NO
+                                                                                   isConstant:NO
+                                                                                         line:21
+                                                                                       column:5];
+    ASReturnNode *ret = [[ASReturnNode alloc] initWithValue:[[ASStringLiteralNode alloc] initWithValue:@"description" line:22 column:12]
+                                                       line:22
+                                                     column:5];
+    Class sub = [self installClassNamed:subName superclass:baseName protocol:nil
+                               selector:@"returnsSelector" body:@[decl, ret] line:20];
+
+    NSException *caught = nil;
+    @try {
+        (void)((SEL (*)(id, SEL))objc_msgSend)([[sub alloc] init], @selector(returnsSelector));
+    } @catch (NSException *ex) {
+        caught = ex;
+    }
+
+    XCTAssertEqualObjects(caught.name, ASRuntimeErrorException,
+                          @"A super send must check the superclass method's typed return value");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    XCTAssertEqualObjects(caught.userInfo[ASErrorLineKey], @5, @"Location should be the superclass method's declaration");
+    NSString *message = caught.userInfo[ASErrorMessageKey];
+    NSString *expectedPrefix = [NSString stringWithFormat:
+                                @"Cannot convert the return value of -[%@ returnsSelector] from ", baseName];
+    XCTAssertTrue([message hasPrefix:expectedPrefix], @"%@", message);
+}
+
+- (void)test_checkedReturnValue_untypedMethod_returnsValueUnchanged {
+    Class cls = [self installClassNamed:uniqueClassName(@"ASTestUntyped") superclass:@"NSObject" protocol:nil
+                               selector:@"anything" body:@[[self returnNumber:@42]] line:3];
+    id value = @[@1];
+    id checked = [ASRuntimeInstaller checkedReturnValue:value
+                                                ofSelector:@"anything"
+                                             definingClass:cls
+                                             isClassMethod:NO];
+    XCTAssertEqual(checked, value, @"An id-returning method's value passes through untouched");
+}
+
+- (void)test_checkedReturnValue_typedMethod_returnsValueConvertedThroughReturnType {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestBoolProtocol);
+    Class cls = [self installClassNamed:uniqueClassName(@"ASTestTypedBool") superclass:@"NSObject"
+                               protocol:@"ASTestBoolProtocol" selector:@"returnsBool"
+                                   body:@[[self returnNumber:@7]] line:3];
+    id checked = [ASRuntimeInstaller checkedReturnValue:@7
+                                                ofSelector:@"returnsBool"
+                                             definingClass:cls
+                                             isClassMethod:NO];
+    XCTAssertEqualObjects(checked, @YES, @"A BOOL-returning method's value should come back as a BOOL");
+}
+
+- (void)test_checkedReturnValue_voidMethod_returnsNil {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestVoidProtocol);
+    Class cls = [self installClassNamed:uniqueClassName(@"ASTestTypedVoid") superclass:@"NSObject"
+                               protocol:@"ASTestVoidProtocol" selector:@"doNothing"
+                                   body:@[[self returnNumber:@7]] line:3];
+    id checked = [ASRuntimeInstaller checkedReturnValue:@7
+                                                ofSelector:@"doNothing"
+                                             definingClass:cls
+                                             isClassMethod:NO];
+    XCTAssertNil(checked, @"A void method yields nil, as it does through normal dispatch");
+}
+
+- (void)test_checkedReturnValue_unconvertibleValue_raisesAtDeclaration {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestSelectorReturnProtocol);
+    Class cls = [self installClassNamed:uniqueClassName(@"ASTestTypedSel") superclass:@"NSObject"
+                               protocol:@"ASTestSelectorReturnProtocol" selector:@"returnsSelector"
+                                   body:@[[self returnNumber:@42]] line:9];
+    NSException *caught = nil;
+    @try {
+        [ASRuntimeInstaller checkedReturnValue:@42
+                                    ofSelector:@"returnsSelector"
+                                 definingClass:cls
+                                 isClassMethod:NO];
+    } @catch (NSException *ex) {
+        caught = ex;
+    }
+    XCTAssertEqualObjects(caught.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    XCTAssertEqualObjects(caught.userInfo[ASErrorScriptPathKey], @"super.appscript");
+    XCTAssertEqualObjects(caught.userInfo[ASErrorLineKey], @9);
 }
 
 @end

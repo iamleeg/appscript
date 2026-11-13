@@ -78,7 +78,7 @@ id count = [array count] // Runtime converts return value into a NSNumber
 
 Selectors (`SEL`, type encoding `:`) are converted in both directions, wherever a value crosses between AppScript and Objective-C (message arguments and return values, AppScript methods called from Objective-C, and BridgeSupport functions and constants):
 
-- An `NSString` passed where a `SEL` is expected is converted with `NSSelectorFromString()`; `nil` becomes a `NULL` selector. Any other object is rejected and is not reinterpreted as a selector.
+- An `NSString` passed where a `SEL` is expected is converted with `NSSelectorFromString()`; `nil` becomes a `NULL` selector. Any other object is rejected (see Conversion failures below) and is not reinterpreted as a selector.
 - A `SEL` returned or passed to AppScript is converted to its name with `NSStringFromSelector()`; a `NULL` selector becomes `nil`.
 
 ```appscript
@@ -86,6 +86,33 @@ Selectors (`SEL`, type encoding `:`) are converted in both directions, wherever 
 id action = [toolbarItem action] // @"zoomIn:"
 id responds = [array respondsToSelector: @"objectAtIndex:"] // @YES
 ```
+
+#### Conversion failures
+
+Each C type accepts only the objects listed below. `nil` is accepted only where C has a natural null value; scalars and structs have none, so `nil` is rejected for them rather than treated as zero.
+
+| C type | Accepted objects | `nil` |
+|---|---|---|
+| `id` | Any object | Passed as `nil` |
+| `Class` | Class objects | Passed as `Nil` |
+| `SEL` | `NSString` (the selector name) | Passed as `NULL` |
+| `BOOL`, `char`, and integer and floating-point scalars | `NSNumber` | Rejected |
+| `char *` | `NSString` (passed as its UTF-8 representation) | Passed as `NULL` |
+| `id *` (e.g. `NSError **`) | `ASOutObject` | Passed as `NULL` |
+| Other pointers | `NSValue` wrapping a pointer | Passed as `NULL` |
+| Struct | `ASStructValue`, or `NSValue` holding a struct of the same size | Rejected |
+
+When the runtime cannot convert an object to the C type that the method signature requires (for example a number passed where a `SEL` is expected, a string passed for an `int`, `nil` passed for an `NSRect`, or a struct of the wrong size), it raises an `ASRuntimeErrorException` with error code `ASErrorCodeValueConversionFailed`. It never proceeds with a zeroed or reinterpreted value. Objective-C would reject such a mismatch at compile time, or produce undefined behaviour if forced through a cast; AppScript has no compile step, so the run-time error stands in for the compiler diagnostic.
+
+The error message names the method or function, which value could not be converted (argument number or return value), the class of the offending object (or `nil`), and the expected C type. The location reported depends on where the conversion happens:
+
+| Conversion | Reported location |
+|---|---|
+| Argument of a message an AppScript method sends to an Objective-C object | The message send in the script. The message is not sent. |
+| Argument of a BridgeSupport function called from AppScript | The message send to the `AS<Framework>` proxy class in the script. The function is not called. |
+| Return value of an AppScript method whose signature declares a C return type, however it is called: from Objective-C, from AppScript through normal message dispatch, or through `[super ...]` | The AppScript method's declaration, in its script. The exception propagates to the caller. |
+
+A BridgeSupport function called directly from Objective-C raises the same exception, without a script location.
 
 AppScript supports **only** Objective-C message sends. C functions, C operators, preprocessor macros, and inline expressions are not available. Every operation must be expressed as a message to an object. Where Objective-C programmers would normally reach for a C function, the AppScript runtime provides an equivalent message via a category on the relevant Foundation class. If no suitable method exists and the symbol is part of a BridgeSupport-covered framework, use the BridgeSupport proxy class instead (see below).
 
@@ -612,9 +639,12 @@ The same `ASBoxer` rules that govern AppScript method parameters apply to Bridge
 | `float`, `double`, `CGFloat` | `NSNumber` |
 | `BOOL` | `NSNumber` |
 | `char *` | `NSString` |
+| `SEL` | `NSString` (the selector name) |
 | `id *` (e.g. `NSError **`) | `ASOutObject` |
 | struct (e.g. `NSRange`, `CGRect`, `CGSize`, `CGPoint`) | `ASStructValue` (unboxes `ASStructValue` or `NSValue` on input) |
 | `void` | `nil` |
+
+An argument that cannot be converted to the function's C parameter type raises an `ASRuntimeErrorException` instead of calling the function; see Conversion failures above.
 
 Structs whose type encodings cannot be resolved (for example, an unexpanded bare struct reference not registered in BridgeSupport) are omitted or return `nil`.
 
