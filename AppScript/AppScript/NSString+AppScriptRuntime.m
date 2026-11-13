@@ -24,4 +24,8 @@
     return NSClassFromString(self);
 }
 
+- (nullable id)as_protocol {
+    return NSProtocolFromString(self);
+}
+
 @end

@@ -63,11 +63,15 @@ For a small set of commonly needed C functions that cannot easily be covered by 
 | Category | Method | Replaces |
 |---|---|---|
 | `NSString (AppScriptRuntime)` | `-as_class` | `NSClassFromString()` — returns the named `Class` as `id`, or `nil`. |
+| `NSString (AppScriptRuntime)` | `-as_protocol` | `NSProtocolFromString()` — returns the named `Protocol *` as `id`, or `nil`. |
 | `NSURL (AppScriptFileReading)` | `-as_stringContents` | `+[NSString stringWithContentsOfURL:encoding:error:]` — reads UTF-8, returns `nil` on error. |
 
 ```appscript
 id cls = [@"NSMutableArray" as_class]
 id array = [cls new]
+
+id proto = [@"NSCopying" as_protocol]
+id conforms = [array conformsToProtocol: proto]
 
 id url = [NSURL fileURLWithPath: @"/path/to/notes.txt"]
 id text = [url as_stringContents]

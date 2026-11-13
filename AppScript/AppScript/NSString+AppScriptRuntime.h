@@ -24,7 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 ///
 /// AppScript cannot call C functions directly. This category bridges the gap for
 /// the most commonly needed runtime introspection functions so AppScript code can
-/// look up classes and selectors by name without BridgeSupport.
+/// look up classes, protocols, and selectors by name without BridgeSupport.
 @interface NSString (AppScriptRuntime)
 
 /// Returns the Objective-C class with this string as its name, or `nil` if no
@@ -34,6 +34,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// is preserved — the caller receives a Class object and can send class-level
 /// messages to it directly.
 - (nullable id)as_class;
+
+/// Returns the Objective-C protocol with this string as its name, or `nil` if no
+/// such protocol exists. Equivalent to `NSProtocolFromString(self)`.
+///
+/// The return value is typed as `id` so AppScript's all-objects-are-`id` invariant
+/// is preserved — the caller receives a `Protocol *` object and can pass it to
+/// protocol introspection methods such as `-conformsToProtocol:`.
+- (nullable id)as_protocol;
 
 @end
 

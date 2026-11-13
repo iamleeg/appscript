@@ -45,4 +45,25 @@
     XCTAssertTrue([instance isKindOfClass:[NSMutableArray class]]);
 }
 
+- (void)test_as_protocol_knownProtocolName_returnsProtocol {
+    id result = [@"NSCopying" as_protocol];
+    XCTAssertNotNil(result, @"as_protocol should return a non-nil value for a known protocol name");
+    XCTAssertEqual(result, (id)@protocol(NSCopying),
+                   @"as_protocol should return the NSCopying protocol for the string 'NSCopying'");
+}
+
+- (void)test_as_protocol_unknownProtocolName_returnsNil {
+    id result = [@"NoSuchProtocolExistsInThisProcess_AppScript" as_protocol];
+    XCTAssertNil(result, @"as_protocol should return nil for an unknown protocol name");
+}
+
+- (void)test_as_protocol_resultCanBeUsedWithConformsToProtocol {
+    id proto = [@"NSCopying" as_protocol];
+    XCTAssertNotNil(proto);
+    XCTAssertTrue([@"hello" conformsToProtocol:proto],
+                  @"NSString instance should conform to NSCopying");
+    XCTAssertFalse([[NSObject new] conformsToProtocol:proto],
+                   @"Plain NSObject instance should not conform to NSCopying");
+}
+
 @end

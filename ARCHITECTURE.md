@@ -86,11 +86,15 @@ The following categories are included in the AppScript framework to bridge commo
 |---|---|---|---|
 | `NSArray (AppScriptBlocks)` | `-as_sortedArrayUsingBlock:` | N/A | Bridges block-based sorting. The block must return an `NSNumber` wrapping an `NSComparisonResult`. |
 | `NSString (AppScriptRuntime)` | `-as_class` | `NSClassFromString()` | Returns the `Class` as `id`; returns `nil` for unknown names. |
+| `NSString (AppScriptRuntime)` | `-as_protocol` | `NSProtocolFromString()` | Returns the `Protocol *` as `id`; returns `nil` for unknown names. |
 | `NSURL (AppScriptFileReading)` | `-as_stringContents` | `+[NSString stringWithContentsOfURL:encoding:error:]` | UTF-8; returns `nil` on error instead of using an out-parameter. |
 
 ```appscript
 id cls = [@"NSMutableArray" as_class]
 id instance = [cls new]
+
+id proto = [@"NSCopying" as_protocol]
+id conforms = [instance conformsToProtocol: proto]
 
 id url = [NSURL fileURLWithPath: @"/path/to/file.txt"]
 id contents = [url as_stringContents]
