@@ -581,10 +581,10 @@ The same `ASBoxer` rules that govern AppScript method parameters apply to Bridge
 | `BOOL` | `NSNumber` |
 | `char *` | `NSString` |
 | `id *` (e.g. `NSError **`) | `ASOutObject` |
-| struct (registered with `NSValue`) | `NSValue` |
+| struct (e.g. `NSRange`, `CGRect`, `CGSize`, `CGPoint`) | `ASStructValue` (unboxes `ASStructValue` or `NSValue` on input) |
 | `void` | `nil` |
 
-Structs that are not registered with `NSValue` produce a runtime error.
+Structs whose type encodings cannot be resolved (for example, an unexpanded bare struct reference not registered in BridgeSupport) are omitted or return `nil`.
 
 #### Limitations
 
