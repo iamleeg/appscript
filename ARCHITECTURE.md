@@ -76,6 +76,17 @@ id array = [NSMutableArray mutableArrayWithCapacity: n] // Runtime calls [n inte
 id count = [array count] // Runtime converts return value into a NSNumber
 ```
 
+Selectors (`SEL`, type encoding `:`) are converted in both directions, wherever a value crosses between AppScript and Objective-C (message arguments and return values, AppScript methods called from Objective-C, and BridgeSupport functions and constants):
+
+- An `NSString` passed where a `SEL` is expected is converted with `NSSelectorFromString()`; `nil` becomes a `NULL` selector. Any other object is rejected and is not reinterpreted as a selector.
+- A `SEL` returned or passed to AppScript is converted to its name with `NSStringFromSelector()`; a `NULL` selector becomes `nil`.
+
+```appscript
+[toolbarItem setAction: @"zoomIn:"] // Runtime passes @selector(zoomIn:)
+id action = [toolbarItem action] // @"zoomIn:"
+id responds = [array respondsToSelector: @"objectAtIndex:"] // @YES
+```
+
 AppScript supports **only** Objective-C message sends. C functions, C operators, preprocessor macros, and inline expressions are not available. Every operation must be expressed as a message to an object. Where Objective-C programmers would normally reach for a C function, the AppScript runtime provides an equivalent message via a category on the relevant Foundation class. If no suitable method exists and the symbol is part of a BridgeSupport-covered framework, use the BridgeSupport proxy class instead (see below).
 
 #### AppScript runtime categories

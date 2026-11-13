@@ -400,4 +400,80 @@
     XCTAssertEqual(outRange.location, (NSUInteger)1, @"Destination buffer must not be overwritten on size mismatch");
 }
 
+// ---------------------------------------------------------------------------
+// Selector (SEL, ':') boxing tests
+// ---------------------------------------------------------------------------
+
+- (void)test_boxedObjectFromBytes_selector_returnsSelectorName {
+    SEL sel = @selector(objectAtIndex:);
+    id boxed = [ASBoxer boxedObjectFromBytes:&sel typeEncoding:@encode(SEL)];
+    XCTAssertEqualObjects(boxed, @"objectAtIndex:",
+                          @"A SEL should box to an NSString holding the selector name");
+}
+
+- (void)test_boxedObjectFromBytes_nullSelector_returnsNil {
+    SEL sel = NULL;
+    id boxed = [ASBoxer boxedObjectFromBytes:&sel typeEncoding:@encode(SEL)];
+    XCTAssertNil(boxed, @"A NULL SEL should box to nil");
+}
+
+- (void)test_unboxObject_stringIntoSelectorBytes_writesSelector {
+    SEL out = NULL;
+    BOOL ok = [ASBoxer unboxObject:@"objectAtIndex:"
+                         intoBytes:&out
+                            ofSize:sizeof(SEL)
+                      typeEncoding:@encode(SEL)];
+    XCTAssertTrue(ok, @"Unboxing an NSString into a SEL slot should succeed");
+    XCTAssertEqual(out, @selector(objectAtIndex:),
+                   @"The SEL slot should hold the selector named by the string");
+}
+
+- (void)test_unboxObject_nilIntoSelectorBytes_writesNULL {
+    SEL out = @selector(description);
+    BOOL ok = [ASBoxer unboxObject:nil
+                         intoBytes:&out
+                            ofSize:sizeof(SEL)
+                      typeEncoding:@encode(SEL)];
+    XCTAssertTrue(ok, @"Unboxing nil into a SEL slot should succeed");
+    XCTAssertTrue(out == NULL, @"nil should unbox to a NULL SEL");
+}
+
+- (void)test_unboxObject_numberIntoSelectorBytes_returnsNO {
+    SEL out = @selector(description);
+    BOOL ok = [ASBoxer unboxObject:@42
+                         intoBytes:&out
+                            ofSize:sizeof(SEL)
+                      typeEncoding:@encode(SEL)];
+    XCTAssertFalse(ok, @"Only NSString or nil may be unboxed into a SEL slot");
+    XCTAssertEqual(out, @selector(description), @"Destination must not be overwritten on failure");
+}
+
+- (void)test_unboxObject_stringIntoSelectorArgument_invokesCorrectly {
+    // -[NSObject respondsToSelector:(SEL)aSelector]
+    NSString *target = @"abc";
+    NSMethodSignature *sig = [target methodSignatureForSelector:@selector(respondsToSelector:)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = target;
+    inv.selector = @selector(respondsToSelector:);
+
+    [ASBoxer unboxObject:@"length" intoArgumentAtIndex:0 ofInvocation:inv];
+    [inv invoke];
+
+    BOOL responds = NO;
+    [inv getReturnValue:&responds];
+    XCTAssertTrue(responds, @"respondsToSelector: should receive the SEL named by the string");
+}
+
+- (void)test_boxedReturnValue_selectorReturnType_returnsSelectorName {
+    // -[NSInvocation selector] returns SEL
+    NSMethodSignature *countSig = [@[] methodSignatureForSelector:@selector(count)];
+    NSInvocation *subject = [NSInvocation invocationWithMethodSignature:countSig];
+    subject.selector = @selector(count);
+
+    NSInvocation *inv = [self invokedInvocationForSelector:@selector(selector) onTarget:subject];
+    id result = [ASBoxer boxedReturnValueFromInvocation:inv];
+
+    XCTAssertEqualObjects(result, @"count", @"A SEL return value should box to its name");
+}
+
 @end

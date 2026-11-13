@@ -246,6 +246,24 @@ static NSException * _Nullable runAndCatch(ASInterpreter *interp,
                           @"[NSString string] should return an empty string");
 }
 
+- (void)test_evaluateMethodBody_stringLiteralForSelectorArgument_passesSelector {
+    // body: return [@"abc" respondsToSelector:@"length"]
+    ASMessageSendNode *send = messageSendNode(stringNode(@"abc"),
+                                              @[@"respondsToSelector"],
+                                              @[stringNode(@"length")]);
+    NSArray<ASASTNode *> *body = @[ returnNode(send) ];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
+                                           selector:@"test"
+                                          arguments:@[]
+                                     parameterNames:@[]
+                                         scriptPath:@"test.appscript"];
+    XCTAssertEqualObjects(result, @YES,
+                          @"A string literal passed for a SEL parameter should name the selector");
+}
+
 // ---------------------------------------------------------------------------
 // 5. Return self
 // ---------------------------------------------------------------------------

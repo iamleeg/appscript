@@ -60,6 +60,13 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             memcpy(&cls, bytes, sizeof(Class));
             return cls;
         }
+        case ':': {
+            // SEL — AppScript represents selectors as strings (e.g. @"objectAtIndex:").
+            // A NULL selector boxes to nil.
+            SEL sel = NULL;
+            memcpy(&sel, bytes, sizeof(SEL));
+            return sel ? NSStringFromSelector(sel) : nil;
+        }
         case 'B': {
             // BOOL (modern ObjC: _Bool, 1 byte)
             BOOL value = NO;
@@ -214,6 +221,19 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
             // Class pointer — same layout as id, pass through directly.
             Class __unsafe_unretained cls = object;
             memcpy(outBytes, &cls, sizeof(Class));
+            return YES;
+        }
+        case ':': {
+            // SEL — AppScript passes selectors as strings; nil becomes a NULL selector.
+            // Any other object is rejected rather than reinterpreted as SEL bytes.
+            SEL sel = NULL;
+            if (object != nil) {
+                if (![object isKindOfClass:[NSString class]]) {
+                    return NO;
+                }
+                sel = NSSelectorFromString((NSString *)object);
+            }
+            memcpy(outBytes, &sel, sizeof(SEL));
             return YES;
         }
         case 'B': {
