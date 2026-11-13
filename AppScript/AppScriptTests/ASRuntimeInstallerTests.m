@@ -33,6 +33,7 @@
 #import <AppScript/ASSuperNode.h>
 #import <AppScript/ASVariableDeclarationNode.h>
 #import <AppScript/ASNull.h>
+#import <AppScript/ASArrayLiteralNode.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -1007,6 +1008,31 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
     XCTAssertEqualObjects(caught.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
     XCTAssertEqualObjects(caught.userInfo[ASErrorScriptPathKey], @"super.appscript");
     XCTAssertEqualObjects(caught.userInfo[ASErrorLineKey], @9);
+}
+
+// ---------------------------------------------------------------------------
+// Lifetime of object return values through forwarding
+// ---------------------------------------------------------------------------
+
+- (void)test_forwardedObjectReturnValue_createdByScript_isStillValidForTheCaller {
+    // - makeArray { return @[ @"a", @"b" ] }
+    // The array is owned only by the forwarding machinery while the call returns, so it
+    // must still be alive when the Objective-C caller receives it.
+    ASArrayLiteralNode *literal = [[ASArrayLiteralNode alloc] initWithElements:@[
+        [[ASStringLiteralNode alloc] initWithValue:@"a" line:2 column:15],
+        [[ASStringLiteralNode alloc] initWithValue:@"b" line:2 column:20],
+    ] line:2 column:12];
+    ASReturnNode *ret = [[ASReturnNode alloc] initWithValue:literal line:2 column:5];
+    Class cls = [self installClassNamed:uniqueClassName(@"ASTestReturnsNewArray") superclass:@"NSObject"
+                               protocol:nil selector:@"makeArray" body:@[ret] line:1];
+    id receiver = [[cls alloc] init];
+
+    for (NSUInteger i = 0; i < 100; i++) {
+        @autoreleasepool {
+            NSArray *returned = ((id (*)(id, SEL))objc_msgSend)(receiver, NSSelectorFromString(@"makeArray"));
+            XCTAssertEqualObjects(returned, (@[@"a", @"b"]));
+        }
+    }
 }
 
 @end

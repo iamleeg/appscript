@@ -236,6 +236,13 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
         ASRaiseReturnValueConversionFailure(result, returnType, methodClass, selectorString,
                                             isClassDispatch, scriptPath, methodNode);
     }
+
+    // The invocation's return slot holds the object unretained, and ARC releases `result`
+    // when this function returns. Autorelease it so an object created by the script (and
+    // owned by nothing else, e.g. an array literal) outlives the call until the caller can
+    // retain it, as a conventional +0 Objective-C return value would.
+    __autoreleasing id returnedObject = result;
+    (void)returnedObject;
 }
 
 // ---------------------------------------------------------------------------
