@@ -199,20 +199,41 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
     NSMutableArray<NSString *> *protocols = [NSMutableArray array];
     if ([state currentIs:ASTokenTypeLeftAngle]) {
         [state consume]; // <
-        while (![state currentIs:ASTokenTypeRightAngle]) {
-            if ([state currentIs:ASTokenTypeEOF]) {
+        if (![state currentIs:ASTokenTypeIdentifier]) {
+            if (error) {
+                *error = [self errorForToken:[state current]
+                                        code:([state currentIs:ASTokenTypeEOF]
+                                              ? ASParserErrorUnexpectedEOF
+                                              : ASParserErrorUnexpectedToken)
+                                     message:@"Expected protocol name after '<'"];
+            }
+            return nil;
+        }
+        [protocols addObject:[state consume].text];
+        while ([state currentIs:ASTokenTypeComma]) {
+            [state consume]; // ,
+            if (![state currentIs:ASTokenTypeIdentifier]) {
                 if (error) {
-                    *error = [self unexpectedEOFError:[state current]
-                                             message:@"Unterminated protocol list"];
+                    *error = [self errorForToken:[state current]
+                                            code:([state currentIs:ASTokenTypeEOF]
+                                                  ? ASParserErrorUnexpectedEOF
+                                                  : ASParserErrorUnexpectedToken)
+                                         message:@"Expected protocol name after ','"];
                 }
                 return nil;
             }
-            if ([state currentIs:ASTokenTypeIdentifier]) {
-                [protocols addObject:[state consume].text];
+            [protocols addObject:[state consume].text];
+        }
+        if (![state currentIs:ASTokenTypeRightAngle]) {
+            if (error) {
+                if ([state currentIs:ASTokenTypeEOF]) {
+                    *error = [self unexpectedEOFError:[state current]
+                                             message:@"Unterminated protocol list"];
+                } else {
+                    *error = [self unexpectedTokenError:[state current]];
+                }
             }
-            if ([state currentIs:ASTokenTypeComma]) {
-                [state consume];
-            }
+            return nil;
         }
         [state consume]; // >
     }
@@ -420,9 +441,13 @@ NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
             if ([state currentIs:ASTokenTypeIdentifier] ||
                 [state currentIs:ASTokenTypeKwWeak]) {
                 [modifiers addObject:[state consume].text];
-            }
-            if ([state currentIs:ASTokenTypeComma]) {
+            } else if ([state currentIs:ASTokenTypeComma]) {
                 [state consume];
+            } else {
+                if (error) {
+                    *error = [self unexpectedTokenError:[state current]];
+                }
+                return nil;
             }
         }
         [state consume]; // )
@@ -1141,9 +1166,13 @@ static BOOL ASTokenIsKeywordPart(ASToken *tok) {
             }
             if ([state currentIs:ASTokenTypeIdentifier]) {
                 [params addObject:[state consume].text];
-            }
-            if ([state currentIs:ASTokenTypeComma]) {
+            } else if ([state currentIs:ASTokenTypeComma]) {
                 [state consume];
+            } else {
+                if (error) {
+                    *error = [self unexpectedTokenError:[state current]];
+                }
+                return nil;
             }
         }
         [state consume]; // )

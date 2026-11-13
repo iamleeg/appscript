@@ -134,7 +134,7 @@ Variables that aren't marked `constant` are automatically mutable by blocks that
 
 ### Defining classes
 
-Declare a class with the `@class` keyword, followed by the name of the class, then a colon, then the name of the superclass, then optionally any protocol conformances in angle brackets. A superclass is always required. A class with no explicit protocols omits the angle-bracket section entirely.
+Declare a class with the `@class` keyword, followed by the name of the class, then a colon, then the name of the superclass, then optionally any protocol conformances in angle brackets. Multiple protocol names inside the angle brackets are separated by commas (e.g. `<NSCopying, NSCoding>`). A superclass is always required. A class with no explicit protocols omits the angle-bracket section entirely.
 
 In subsequent lines, define properties, instance methods, and class methods. Complete the class definition with the word `@end` on its own line.
 

@@ -405,6 +405,79 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 }
 
 // ---------------------------------------------------------------------------
+// 8c. A class declared with multiple comma-separated protocols conforms to
+//     all of them and resolves method signatures across all listed protocols.
+// ---------------------------------------------------------------------------
+
+- (void)test_installNodes_multipleProtocols_conformsToAllAndResolvesSignatures {
+    NSString *className = uniqueClassName(@"ASTestMultiProto");
+
+    __attribute__((unused)) Protocol *_ensureBool = @protocol(ASTestBoolProtocol);
+    __attribute__((unused)) Protocol *_ensureAuto = @protocol(ASTestAutoConformProtocol);
+    __attribute__((unused)) Protocol *_ensureOut  = @protocol(ASTestOutErrorProtocol);
+
+    // Build `- returnsBool { return YES }` (from ASTestBoolProtocol)
+    ASIdentifierNode *yesNode = [[ASIdentifierNode alloc] initWithName:@"YES" line:1 column:1];
+    ASReturnNode *retYes = [[ASReturnNode alloc] initWithValue:yesNode line:1 column:1];
+    ASMethodNode *boolMethod = [[ASMethodNode alloc] initWithSelectorParts:@[@"returnsBool"]
+                                                            parameterNames:@[]
+                                                                      body:@[retYes]
+                                                             isClassMethod:NO
+                                                                      line:1
+                                                                    column:1];
+
+    // Build `- saveData: data error: outErr { return YES }` (from ASTestOutErrorProtocol)
+    ASMethodNode *saveMethod = [[ASMethodNode alloc] initWithSelectorParts:@[@"saveData", @"error"]
+                                                            parameterNames:@[@"data", @"outErr"]
+                                                                      body:@[retYes]
+                                                             isClassMethod:NO
+                                                                      line:2
+                                                                    column:1];
+
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+                                       initWithClassName:className
+                                          superclassName:@"NSObject"
+                                           protocolNames:@[@"ASTestBoolProtocol",
+                                                           @"ASTestAutoConformProtocol",
+                                                           @"ASTestOutErrorProtocol"]
+                                              properties:@[]
+                                                 methods:@[boolMethod, saveMethod]
+                                                    line:1
+                                                  column:1];
+
+    NSError *error = nil;
+    BOOL installed = [self.installer installNodes:@[classDef]
+                                       scriptPath:@"test.appscript"
+                                            error:&error];
+    XCTAssertTrue(installed, @"Installation with multiple protocols should succeed");
+    XCTAssertNil(error, @"No error should be set");
+
+    Class installedClass = NSClassFromString(className);
+    XCTAssertNotNil(installedClass, @"Class must be registered in the ObjC runtime");
+
+    id instance = [[installedClass alloc] init];
+    XCTAssertTrue([instance conformsToProtocol:@protocol(ASTestBoolProtocol)],
+                  @"Instance should conform to first protocol (ASTestBoolProtocol)");
+    XCTAssertTrue([instance conformsToProtocol:@protocol(ASTestAutoConformProtocol)],
+                  @"Instance should conform to second protocol (ASTestAutoConformProtocol)");
+    XCTAssertTrue([instance conformsToProtocol:@protocol(ASTestOutErrorProtocol)],
+                  @"Instance should conform to third protocol (ASTestOutErrorProtocol)");
+
+    XCTAssertTrue([installedClass conformsToProtocol:@protocol(ASTestBoolProtocol)]);
+    XCTAssertTrue([installedClass conformsToProtocol:@protocol(ASTestAutoConformProtocol)]);
+    XCTAssertTrue([installedClass conformsToProtocol:@protocol(ASTestOutErrorProtocol)]);
+
+    // Verify method signatures from multiple protocols are resolved properly
+    BOOL boolResult = ((BOOL (*)(id, SEL))objc_msgSend)(instance, @selector(returnsBool));
+    XCTAssertTrue(boolResult, @"-returnsBool from first protocol should unbox BOOL return");
+
+    NSError *outError = nil;
+    BOOL saveResult = [((id<ASTestOutErrorProtocol>)instance) saveData:@"payload" error:&outError];
+    XCTAssertTrue(saveResult, @"-saveData:error: from third protocol should unbox BOOL return");
+    XCTAssertNil(outError);
+}
+
+// ---------------------------------------------------------------------------
 // 9. A category definition installs its methods on an existing class.
 // ---------------------------------------------------------------------------
 

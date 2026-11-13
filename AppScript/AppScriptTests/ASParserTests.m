@@ -143,6 +143,109 @@
     XCTAssertEqualObjects(classNode.protocolNames[0], @"Foo");
 }
 
+- (void)test_parseTokens_classWithMultipleProtocolsIncludingClassName_storesAllProtocolNames {
+    NSString *source = @"@class Foo : NSObject <Proto1, Proto2, Foo>\n@end";
+    NSArray<ASASTNode *> *nodes = [self parseSource:source];
+
+    XCTAssertEqual(nodes.count, 1U);
+    ASClassDefinitionNode *classNode = (ASClassDefinitionNode *)nodes[0];
+    XCTAssertEqualObjects(classNode.className, @"Foo");
+    XCTAssertEqual(classNode.protocolNames.count, 3U);
+    XCTAssertEqualObjects(classNode.protocolNames[0], @"Proto1");
+    XCTAssertEqualObjects(classNode.protocolNames[1], @"Proto2");
+    XCTAssertEqualObjects(classNode.protocolNames[2], @"Foo");
+}
+
+- (void)test_parseTokens_unterminatedProtocolListAtNewline_returnsErrorWithoutHanging {
+    NSString *source = @"@class Foo : NSObject <Proto1, Proto2\n@end";
+    NSError *lexError = nil;
+    NSArray<ASToken *> *tokens = [self.lexer tokenize:source error:&lexError];
+    XCTAssertNil(lexError);
+    XCTAssertNotNil(tokens);
+
+    NSError *parseError = nil;
+    NSArray<ASASTNode *> *nodes = [self.parser parseTokens:tokens error:&parseError];
+    XCTAssertNil(nodes);
+    XCTAssertNotNil(parseError);
+    XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
+    XCTAssertEqual(parseError.code, ASParserErrorUnexpectedToken);
+}
+
+- (void)test_parseTokens_emptyProtocolBrackets_returnsError {
+    NSString *source = @"@class Foo : NSObject <>\n@end";
+    NSError *lexError = nil;
+    NSArray<ASToken *> *tokens = [self.lexer tokenize:source error:&lexError];
+    XCTAssertNil(lexError);
+    XCTAssertNotNil(tokens);
+
+    NSError *parseError = nil;
+    NSArray<ASASTNode *> *nodes = [self.parser parseTokens:tokens error:&parseError];
+    XCTAssertNil(nodes);
+    XCTAssertNotNil(parseError);
+    XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
+    XCTAssertEqual(parseError.code, ASParserErrorUnexpectedToken);
+}
+
+- (void)test_parseTokens_protocolsMissingComma_returnsError {
+    NSString *source = @"@class Foo : NSObject <Proto1 Proto2>\n@end";
+    NSError *lexError = nil;
+    NSArray<ASToken *> *tokens = [self.lexer tokenize:source error:&lexError];
+    XCTAssertNil(lexError);
+    XCTAssertNotNil(tokens);
+
+    NSError *parseError = nil;
+    NSArray<ASASTNode *> *nodes = [self.parser parseTokens:tokens error:&parseError];
+    XCTAssertNil(nodes);
+    XCTAssertNotNil(parseError);
+    XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
+    XCTAssertEqual(parseError.code, ASParserErrorUnexpectedToken);
+}
+
+- (void)test_parseTokens_protocolsTrailingComma_returnsError {
+    NSString *source = @"@class Foo : NSObject <Proto1, >\n@end";
+    NSError *lexError = nil;
+    NSArray<ASToken *> *tokens = [self.lexer tokenize:source error:&lexError];
+    XCTAssertNil(lexError);
+    XCTAssertNotNil(tokens);
+
+    NSError *parseError = nil;
+    NSArray<ASASTNode *> *nodes = [self.parser parseTokens:tokens error:&parseError];
+    XCTAssertNil(nodes);
+    XCTAssertNotNil(parseError);
+    XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
+    XCTAssertEqual(parseError.code, ASParserErrorUnexpectedToken);
+}
+
+- (void)test_parseTokens_unexpectedTokenInPropertyModifiers_returnsErrorWithoutHanging {
+    NSString *source = @"@class Foo : NSObject\n@property (strong : readonly) name\n@end";
+    NSError *lexError = nil;
+    NSArray<ASToken *> *tokens = [self.lexer tokenize:source error:&lexError];
+    XCTAssertNil(lexError);
+    XCTAssertNotNil(tokens);
+
+    NSError *parseError = nil;
+    NSArray<ASASTNode *> *nodes = [self.parser parseTokens:tokens error:&parseError];
+    XCTAssertNil(nodes);
+    XCTAssertNotNil(parseError);
+    XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
+    XCTAssertEqual(parseError.code, ASParserErrorUnexpectedToken);
+}
+
+- (void)test_parseTokens_unexpectedTokenInBlockParameters_returnsErrorWithoutHanging {
+    NSString *source = @"@class Foo : NSObject\n- run {\nid blk = ^(x : y) {\nreturn x\n}\n}\n@end";
+    NSError *lexError = nil;
+    NSArray<ASToken *> *tokens = [self.lexer tokenize:source error:&lexError];
+    XCTAssertNil(lexError);
+    XCTAssertNotNil(tokens);
+
+    NSError *parseError = nil;
+    NSArray<ASASTNode *> *nodes = [self.parser parseTokens:tokens error:&parseError];
+    XCTAssertNil(nodes);
+    XCTAssertNotNil(parseError);
+    XCTAssertEqualObjects(parseError.domain, ASParserErrorDomain);
+    XCTAssertEqual(parseError.code, ASParserErrorUnexpectedToken);
+}
+
 // ---------------------------------------------------------------------------
 // 4. Class with a property
 // ---------------------------------------------------------------------------
