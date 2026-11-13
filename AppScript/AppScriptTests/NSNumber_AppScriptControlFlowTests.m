@@ -66,4 +66,42 @@
     XCTAssertNil(result);
 }
 
+- (void)test_ifTrue_receiverIsTrue_executesBlockAndReturnsValue {
+    __block BOOL blockRan = NO;
+    id result = [@YES ifTrue:^id{ blockRan = YES; return @"executed"; }];
+    XCTAssertTrue(blockRan);
+    XCTAssertEqualObjects(result, @"executed");
+}
+
+- (void)test_ifTrue_receiverIsFalse_doesNotExecuteBlockAndReturnsNil {
+    __block BOOL blockRan = NO;
+    id result = [@NO ifTrue:^id{ blockRan = YES; return @"executed"; }];
+    XCTAssertFalse(blockRan);
+    XCTAssertNil(result);
+}
+
+- (void)test_ifTrue_blockIsNil_returnsNil {
+    id result = [@YES ifTrue:nil];
+    XCTAssertNil(result);
+}
+
+- (void)test_ifFalse_receiverIsFalse_executesBlockAndReturnsValue {
+    __block BOOL blockRan = NO;
+    id result = [@NO ifFalse:^id{ blockRan = YES; return @"executed"; }];
+    XCTAssertTrue(blockRan);
+    XCTAssertEqualObjects(result, @"executed");
+}
+
+- (void)test_ifFalse_receiverIsTrue_doesNotExecuteBlockAndReturnsNil {
+    __block BOOL blockRan = NO;
+    id result = [@YES ifFalse:^id{ blockRan = YES; return @"executed"; }];
+    XCTAssertFalse(blockRan);
+    XCTAssertNil(result);
+}
+
+- (void)test_ifFalse_blockIsNil_returnsNil {
+    id result = [@NO ifFalse:nil];
+    XCTAssertNil(result);
+}
+
 @end

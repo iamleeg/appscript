@@ -18,6 +18,7 @@
 
 #import <XCTest/XCTest.h>
 #import <AppScript/NSObject+AppScriptControlFlow.h>
+#import <AppScript/ASNull.h>
 
 @interface NSObject_AppScriptControlFlowTests : XCTestCase
 @end
@@ -89,6 +90,23 @@
                                 }
                             until:^id{ return counter >= 3 ? @YES : @NO; }];
     XCTAssertEqualObjects(result, @3);
+}
+
+- (void)test_isNil_onASNull_returnsYES {
+    XCTAssertEqualObjects([[ASNull null] isNil], @YES);
+}
+
+- (void)test_isNil_onNSObject_returnsNO {
+    XCTAssertEqualObjects([NSObject.new isNil], @NO);
+}
+
+- (void)test_isNil_onNSNull_returnsNO {
+    XCTAssertEqualObjects([[NSNull null] isNil], @NO);
+}
+
+- (void)test_isNil_onNSNumberZeroAndNO_returnsNO {
+    XCTAssertEqualObjects([@0 isNil], @NO);
+    XCTAssertEqualObjects([@NO isNil], @NO);
 }
 
 @end

@@ -33,6 +33,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// Returns the result of the last execution of aBlock.
 - (nullable id)do:(nullable id (^)(void))aBlock until:(nullable id (^)(void))testBlock;
 
+/// Reports whether the receiver is the nil object.
+///
+/// Returns `@NO` for every ordinary non-`nil` object.
+/// ``ASNull`` overrides this to return `@YES`, so in AppScript `[x isNil]` is
+/// `@YES` exactly when `x` holds `nil`. Combine with `-ifTrue:` / `-ifFalse:`
+/// on the result to branch on nil-ness.
+- (NSNumber *)isNil;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -1230,4 +1230,60 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
     XCTAssertEqual(err.code, 77);
 }
 
+// ---------------------------------------------------------------------------
+// 54. isNil evaluates to @YES on nil literal and nil variable, @NO on objects
+// ---------------------------------------------------------------------------
+
+- (void)test_evaluateExpression_isNilOnNilLiteralAndVariable_returnsYES {
+    // body:
+    //   id x = nil
+    //   return @[[nil isNil], [x isNil], [@"hello" isNil], [[NSNull null] isNil]]
+    ASVariableDeclarationNode *declX = varDeclNode(@"x", identNode(@"nil"));
+    ASMessageSendNode *nilLiteralCheck = messageSendNode(identNode(@"nil"), @[@"isNil"], @[]);
+    ASMessageSendNode *varCheck = messageSendNode(identNode(@"x"), @[@"isNil"], @[]);
+    ASMessageSendNode *strCheck = messageSendNode(stringNode(@"hello"), @[@"isNil"], @[]);
+    ASMessageSendNode *nsNullSend = messageSendNode(identNode(@"NSNull"), @[@"null"], @[]);
+    ASMessageSendNode *nsNullCheck = messageSendNode(nsNullSend, @[@"isNil"], @[]);
+    ASArrayLiteralNode *arr = [[ASArrayLiteralNode alloc] initWithElements:@[
+        nilLiteralCheck, varCheck, strCheck, nsNullCheck
+    ] line:1 column:1];
+    NSArray<ASASTNode *> *body = @[declX, returnNode(arr)];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
+                                            selector:@"test"
+                                           arguments:@[]
+                                      parameterNames:@[]
+                                          scriptPath:@"test.appscript"];
+
+    NSArray *expected = @[@YES, @YES, @NO, @NO];
+    XCTAssertEqualObjects(result, expected,
+                          @"isNil should return @YES for nil literal and nil variable, and @NO for NSString and NSNull");
+}
+
+- (void)test_evaluateExpression_isNilOnChainedNilReturn_returnsYES {
+    // body:
+    //   id dict = @{}
+    //   return [[dict objectForKey: @"missing"] isNil]
+    ASDictionaryLiteralNode *emptyDict = [[ASDictionaryLiteralNode alloc] initWithKeys:@[] values:@[] line:1 column:1];
+    ASVariableDeclarationNode *declDict = varDeclNode(@"dict", emptyDict);
+    ASMessageSendNode *lookup = messageSendNode(identNode(@"dict"),
+                                                @[@"objectForKey"],
+                                                @[stringNode(@"missing")]);
+    ASMessageSendNode *isNilSend = messageSendNode(lookup, @[@"isNil"], @[]);
+    NSArray<ASASTNode *> *body = @[declDict, returnNode(isNilSend)];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
+                                            selector:@"test"
+                                           arguments:@[]
+                                      parameterNames:@[]
+                                          scriptPath:@"test.appscript"];
+
+    XCTAssertEqualObjects(result, @YES,
+                          @"Chained [[dict objectForKey:@\"missing\"] isNil] should return @YES");
+}
+
 @end

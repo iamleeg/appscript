@@ -27,6 +27,20 @@ NS_ASSUME_NONNULL_BEGIN
 /// Returns the result of whichever block is executed, or nil if the executed block has no return value.
 - (nullable id)ifTrue:(nullable id (^)(void))trueBlock ifFalse:(nullable id (^)(void))falseBlock;
 
+/// Executes trueBlock if the receiver is non-zero; does nothing otherwise.
+///
+/// Equivalent to `[self ifTrue:trueBlock ifFalse:nil]`.
+/// - Parameter trueBlock: The block to run when the receiver is truthy.
+/// - Returns: The result of trueBlock if it ran, otherwise nil.
+- (nullable id)ifTrue:(nullable id (^)(void))trueBlock;
+
+/// Executes falseBlock if the receiver is zero; does nothing otherwise.
+///
+/// Equivalent to `[self ifTrue:nil ifFalse:falseBlock]`.
+/// - Parameter falseBlock: The block to run when the receiver is falsy.
+/// - Returns: The result of falseBlock if it ran, otherwise nil.
+- (nullable id)ifFalse:(nullable id (^)(void))falseBlock;
+
 @end
 
 NS_ASSUME_NONNULL_END

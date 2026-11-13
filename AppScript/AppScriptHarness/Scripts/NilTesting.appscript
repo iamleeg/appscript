@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// NilTesting.appscript — -isNil, -ifTrue: and -ifFalse: integration test
+// Copyright (C) 2026 Graham Lee
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+@class NilTestingTest : ASTestCase
+
+- runTests {
+    id result = [NSMutableArray array]
+
+    // The nil literal, an uninitialised variable and an explicit nil are all nil.
+    id unset
+    id explicitNil = nil
+    [result addObject:[nil isNil]]
+    [result addObject:[unset isNil]]
+    [result addObject:[explicitNil isNil]]
+
+    // Ordinary objects, NSNull, NO and 0 are not nil.
+    id obj = [NSObject new]
+    [result addObject:[obj isNil]]
+    [result addObject:[[NSNull null] isNil]]
+    [result addObject:[NO isNil]]
+    [result addObject:[0 isNil]]
+
+    // A nil returned from a native method is nil, both chained and stored.
+    id dict = [NSDictionary dictionary]
+    [result addObject:[[dict objectForKey:@"missing"] isNil]]
+    id missing = [dict objectForKey:@"missing"]
+    [result addObject:[missing isNil]]
+
+    // -ifTrue: runs its block only when the receiver is true.
+    id trueRan = @"not-run"
+    [[unset isNil] ifTrue:^{
+        trueRan = @"ifTrue-ran"
+    }]
+    id trueSkipped = @"not-run"
+    [[obj isNil] ifTrue:^{
+        trueSkipped = @"wrong"
+    }]
+    [result addObject:trueRan]
+    [result addObject:trueSkipped]
+
+    // -ifFalse: runs its block only when the receiver is false.
+    id falseRan = @"not-run"
+    [[obj isNil] ifFalse:^{
+        falseRan = @"ifFalse-ran"
+    }]
+    id falseSkipped = @"not-run"
+    [[unset isNil] ifFalse:^{
+        falseSkipped = @"wrong"
+    }]
+    [result addObject:falseRan]
+    [result addObject:falseSkipped]
+
+    // Single-branch conditionals return the block's result when it runs.
+    [result addObject:[YES ifTrue:^{
+        return @"true-value"
+    }]]
+    [result addObject:[NO ifFalse:^{
+        return @"false-value"
+    }]]
+
+    // Two-branch conditional on nil-ness.
+    [result addObject:[[unset isNil] ifTrue:^{
+        return @"nil-branch"
+    } ifFalse:^{
+        return @"wrong"
+    }]]
+
+    return result
+}
+
+@end

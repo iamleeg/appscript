@@ -49,6 +49,34 @@ id flag = YES
 
 The method executes the matching block and returns its result, or `nil` if the chosen block has no return value.
 
+When only one branch matters, use `-ifTrue:` or `-ifFalse:` instead of supplying an empty block:
+
+```appscript
+[flag ifTrue: ^{
+    [self doSomething]
+}]
+[flag ifFalse: ^{
+    [self doSomethingElse]
+}]
+```
+
+`-ifTrue:` is equivalent to `[flag ifTrue: trueBlock ifFalse: nil]`, and `-ifFalse:` to `[flag ifTrue: nil ifFalse: falseBlock]`. Each returns the block's result if it ran, or `nil` otherwise.
+
+## Testing for nil
+
+Send `-isNil` to any value to test whether it is AppScript `nil`. It returns `@YES` for `nil` (the `nil` literal, an uninitialised variable, a `nil` argument, or a `nil` returned from a method) and `@NO` for every other object, including `[NSNull null]`, `NO` and `0`. Combine it with the conditional methods:
+
+```appscript
+id album = [albumsByTitle objectForKey: title]
+[[album isNil] ifTrue: ^{
+    [self reportMissingAlbum: title]
+} ifFalse: ^{
+    [self playAlbum: album]
+}]
+```
+
+Sending `-isNil` directly to the result of another message send, such as `[[albumsByTitle objectForKey: title] isNil]`, works the same way as storing the result in a variable first.
+
 ## Loops
 
 Use `-[NSObject do:while:]` or `-[NSObject do:until:]` for iteration.

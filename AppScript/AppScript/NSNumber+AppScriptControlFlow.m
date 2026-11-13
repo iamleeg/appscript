@@ -34,4 +34,12 @@
     }
 }
 
+- (nullable id)ifTrue:(nullable id (^)(void))trueBlock {
+    return [self ifTrue:trueBlock ifFalse:nil];
+}
+
+- (nullable id)ifFalse:(nullable id (^)(void))falseBlock {
+    return [self ifTrue:nil ifFalse:falseBlock];
+}
+
 @end

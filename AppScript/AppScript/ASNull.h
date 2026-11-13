@@ -37,6 +37,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Unavailable. Use +null.
 - (instancetype)init NS_UNAVAILABLE;
 
+/// Reports whether the receiver is the nil object.
+///
+/// Overrides `-[NSObject isNil]`, which returns `@NO` for all other objects.
+- (NSNumber *)isNil;
+
 @end
 
 NS_ASSUME_NONNULL_END

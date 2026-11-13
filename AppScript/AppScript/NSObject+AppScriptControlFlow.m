@@ -53,4 +53,8 @@ static BOOL AppScriptIsFalsy(id _Nullable value) {
     return lastResult;
 }
 
+- (NSNumber *)isNil {
+    return @NO;
+}
+
 @end

@@ -41,4 +41,8 @@
     return @"<ASNull: nil>";
 }
 
+- (NSNumber *)isNil {
+    return @YES;
+}
+
 @end

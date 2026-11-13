@@ -27,7 +27,7 @@
     id selfConformsSecond = [self conformsToProtocol:codingProto]
 
     id unknownProto = [@"NoSuchProtocolExistsInThisProcess_AppScript" as_protocol]
-    id unknownIsNil = [unknownProto isKindOfClass:[ASNull class]]
+    id unknownIsNil = [unknownProto isNil]
     id unknownConforms = [self conformsToProtocol:unknownProto]
 
     id result = [NSMutableArray array]

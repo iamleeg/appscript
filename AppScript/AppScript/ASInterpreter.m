@@ -457,6 +457,12 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
         receiver = [ctx.currentScope valueForName:@"self"];
     } else {
         receiver = [self evaluateExpression:node.receiver context:ctx];
+        // A nested send (e.g. [[dict objectForKey:k] isNil]) can yield raw ObjC
+        // nil; normalise it to the AppScript nil value so it behaves the same as
+        // a nil stored in a variable.
+        if (receiver == nil) {
+            receiver = [ASNull null];
+        }
     }
 
     // Build selector from parts.

@@ -29,7 +29,7 @@ id pi = 3.14 // Equivalent to Objective-C [NSNumber numberWithDouble: 3.14]
 id boxed = @42 // Equivalent to Objective-C @42
 ```
 
-The `nil` literal is supported and represents the absence of an object, exactly as in Objective-C.
+The `nil` literal is supported and represents the absence of an object, exactly as in Objective-C. Test whether a value is `nil` with `[value isNil]` (see Control flow below).
 
 String literals, array literals, and dictionary literals use the same syntax as Objective-C, including the `@` prefix. Objective-C selectors are represented as string literals.
 
@@ -297,6 +297,10 @@ Implement conditional flow using this category that the AppScript runtime adds t
 @interface NSNumber (AppScriptControlFlow)
 /// Returns the result of whichever block is executed, or nil if the executed block has no return value.
 - (id)ifTrue:(id)(^)trueBlock ifFalse:(id)(^)falseBlock;
+/// Executes trueBlock only if the receiver is true. Equivalent to [self ifTrue: trueBlock ifFalse: nil].
+- (id)ifTrue:(id)(^)trueBlock;
+/// Executes falseBlock only if the receiver is false. Equivalent to [self ifTrue: nil ifFalse: falseBlock].
+- (id)ifFalse:(id)(^)falseBlock;
 @end
 ```
 
@@ -312,8 +316,21 @@ and this category that the AppScript runtime adds to the `NSObject` class:
 /// Might not run aBlock, if the condition is false on the first test.
 /// Returns the result of the last execution of aBlock, or nil if aBlock was never run or has no return value.
 - (id)do:(id)(^)aBlock while:(id)(^)testBlock;
+/// Returns @YES if the receiver is the `nil` object, @NO otherwise (including for [NSNull null]).
+- (NSNumber *)isNil;
 @end
 ```
+
+Test whether a value is `nil` by sending it `isNil`, and branch on the result:
+
+```appscript
+id album = [albumsByTitle objectForKey: title]
+[[album isNil] ifTrue: ^{
+    [self reportMissingAlbum: title]
+}]
+```
+
+Inside the runtime, AppScript `nil` is represented by the `ASNull` singleton, which overrides `isNil` to return `@YES`. A `nil` returned from a message send is treated as AppScript `nil` even when it is used directly as the receiver of another message, so `[[albumsByTitle objectForKey: title] isNil]` works without first storing the result in a variable. Scripts should use `isNil` rather than testing for the `ASNull` class directly.
 
 ### Unary minus
 
