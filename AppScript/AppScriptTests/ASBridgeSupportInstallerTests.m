@@ -18,10 +18,13 @@
 
 #import <XCTest/XCTest.h>
 #import <dlfcn.h>
+#import <AppKit/AppKit.h>
 #import <AppScript/ASBridgeSupportInstaller.h>
 #import <AppScript/ASBridgeSupportParser.h>
 #import <AppScript/ASBridgeSupportDocument.h>
 #import <AppScript/ASBridgeSupportFunction.h>
+#import <AppScript/ASStructValue.h>
+#import <AppScript/ASBoxer.h>
 
 @interface ASBridgeSupportInstallerTests : XCTestCase
 @end
@@ -420,11 +423,12 @@ static NSInteger _ASTestCounter = 0;
     [installer installDocument:doc frameworkName:frameworkName error:nil];
     Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
 
-    NSValue *result = [self callClassMethod:NSSelectorFromString(@"NSZeroRect") onClass:cls];
+    ASStructValue *result = [self callClassMethod:NSSelectorFromString(@"NSZeroRect") onClass:cls];
 
-    XCTAssertNotNil(result, @"NSZeroRect constant should be returned as NSValue");
-    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
-    NSRect rect = [result rectValue];
+    XCTAssertNotNil(result, @"NSZeroRect constant should be returned as ASStructValue");
+    XCTAssertTrue([result isKindOfClass:[ASStructValue class]]);
+    XCTAssertEqualObjects(result.canonicalName, @"CGRect");
+    NSRect rect = [[result asNSValue] rectValue];
     XCTAssertEqual(rect.origin.x, 0.0);
     XCTAssertEqual(rect.origin.y, 0.0);
     XCTAssertEqual(rect.size.width, 0.0);
@@ -432,7 +436,7 @@ static NSInteger _ASTestCounter = 0;
 }
 
 // ---------------------------------------------------------------------------
-// Geometry struct return functions
+// Geometry and range struct return & argument functions
 // ---------------------------------------------------------------------------
 
 - (void)test_installDocument_NSMakeRect_returnsNSValue {
@@ -474,8 +478,10 @@ static NSInteger _ASTestCounter = 0;
     [inv getReturnValue:&result];
 
     XCTAssertNotNil(result);
-    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
-    NSRect rect = [(NSValue *)result rectValue];
+    XCTAssertTrue([result isKindOfClass:[ASStructValue class]]);
+    ASStructValue *sv = (ASStructValue *)result;
+    XCTAssertEqualObjects(sv.canonicalName, @"CGRect");
+    NSRect rect = [[sv asNSValue] rectValue];
     XCTAssertEqual(rect.origin.x, 10.0);
     XCTAssertEqual(rect.origin.y, 20.0);
     XCTAssertEqual(rect.size.width, 300.0);
@@ -503,11 +509,12 @@ static NSInteger _ASTestCounter = 0;
     [installer installDocument:doc frameworkName:frameworkName error:nil];
     Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
 
-    NSValue *result = [self callClassMethod:NSSelectorFromString(@"NSMakeSize::") onClass:cls withArg:@(50.0) arg:@(75.0)];
+    ASStructValue *result = [self callClassMethod:NSSelectorFromString(@"NSMakeSize::") onClass:cls withArg:@(50.0) arg:@(75.0)];
 
     XCTAssertNotNil(result);
-    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
-    NSSize size = [result sizeValue];
+    XCTAssertTrue([result isKindOfClass:[ASStructValue class]]);
+    XCTAssertEqualObjects(result.canonicalName, @"CGSize");
+    NSSize size = [[result asNSValue] sizeValue];
     XCTAssertEqual(size.width, 50.0);
     XCTAssertEqual(size.height, 75.0);
 }
@@ -533,13 +540,200 @@ static NSInteger _ASTestCounter = 0;
     [installer installDocument:doc frameworkName:frameworkName error:nil];
     Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
 
-    NSValue *result = [self callClassMethod:NSSelectorFromString(@"NSMakePoint::") onClass:cls withArg:@(15.0) arg:@(25.0)];
+    ASStructValue *result = [self callClassMethod:NSSelectorFromString(@"NSMakePoint::") onClass:cls withArg:@(15.0) arg:@(25.0)];
 
     XCTAssertNotNil(result);
-    XCTAssertTrue([result isKindOfClass:[NSValue class]]);
-    NSPoint point = [result pointValue];
+    XCTAssertTrue([result isKindOfClass:[ASStructValue class]]);
+    XCTAssertEqualObjects(result.canonicalName, @"CGPoint");
+    NSPoint point = [[result asNSValue] pointValue];
     XCTAssertEqual(point.x, 15.0);
     XCTAssertEqual(point.y, 25.0);
+}
+
+- (void)test_installDocument_NSMakeRange_returnsASStructValueWithFieldAccessors {
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<struct name='NSRange' type64='{_NSRange=\"location\"Q\"length\"Q}'/>"
+                    @"<function name='NSMakeRange'>"
+                    @"<arg type64='Q'/>"
+                    @"<arg type64='Q'/>"
+                    @"<retval type64='{_NSRange=QQ}'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    ASStructValue *result = [self callClassMethod:NSSelectorFromString(@"NSMakeRange::")
+                                          onClass:cls
+                                          withArg:@(4)
+                                              arg:@(9)];
+
+    XCTAssertNotNil(result, @"NSMakeRange:: must return a non-nil ASStructValue");
+    XCTAssertTrue([result isKindOfClass:[ASStructValue class]]);
+    XCTAssertEqualObjects(result.canonicalName, @"NSRange");
+    NSRange range = [[result asNSValue] rangeValue];
+    XCTAssertEqual(range.location, (NSUInteger)4);
+    XCTAssertEqual(range.length, (NSUInteger)9);
+
+    NSNumber *loc = [result performSelector:@selector(location)];
+    NSNumber *len = [result performSelector:@selector(length)];
+    XCTAssertEqual(loc.unsignedIntegerValue, (NSUInteger)4);
+    XCTAssertEqual(len.unsignedIntegerValue, (NSUInteger)9);
+}
+
+- (void)test_installDocument_structArgumentFunctions_NSStringFromRange_NSEqualRanges_NSUnionRange {
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<struct name='NSRange' type64='{_NSRange=\"location\"Q\"length\"Q}'/>"
+                    @"<function name='NSMakeRange'>"
+                    @"<arg type64='Q'/><arg type64='Q'/>"
+                    @"<retval type64='{_NSRange=QQ}'/>"
+                    @"</function>"
+                    @"<function name='NSStringFromRange'>"
+                    @"<arg type64='{_NSRange=QQ}'/>"
+                    @"<retval type64='@'/>"
+                    @"</function>"
+                    @"<function name='NSEqualRanges'>"
+                    @"<arg type64='{_NSRange=QQ}'/><arg type64='{_NSRange=QQ}'/>"
+                    @"<retval type64='B'/>"
+                    @"</function>"
+                    @"<function name='NSUnionRange'>"
+                    @"<arg type64='{_NSRange=QQ}'/><arg type64='{_NSRange=QQ}'/>"
+                    @"<retval type64='{_NSRange=QQ}'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    ASStructValue *r1 = [self callClassMethod:NSSelectorFromString(@"NSMakeRange::") onClass:cls withArg:@(2) arg:@(5)];
+    ASStructValue *r2 = [self callClassMethod:NSSelectorFromString(@"NSMakeRange::") onClass:cls withArg:@(4) arg:@(6)];
+
+    NSString *str = [self callClassMethod:NSSelectorFromString(@"NSStringFromRange:") onClass:cls withArg:r1];
+    XCTAssertEqualObjects(str, @"{2, 5}");
+
+    NSNumber *eqSame = [self callClassMethod:NSSelectorFromString(@"NSEqualRanges::") onClass:cls withArg:r1 arg:r1];
+    NSNumber *eqDiff = [self callClassMethod:NSSelectorFromString(@"NSEqualRanges::") onClass:cls withArg:r1 arg:r2];
+    XCTAssertTrue(eqSame.boolValue);
+    XCTAssertFalse(eqDiff.boolValue);
+
+    ASStructValue *unioned = [self callClassMethod:NSSelectorFromString(@"NSUnionRange::") onClass:cls withArg:r1 arg:r2];
+    XCTAssertTrue([unioned isKindOfClass:[ASStructValue class]]);
+    NSRange unionRange = [[unioned asNSValue] rangeValue];
+    XCTAssertEqual(unionRange.location, (NSUInteger)2);
+    XCTAssertEqual(unionRange.length, (NSUInteger)8);
+}
+
+- (void)test_installDocument_structArgumentFunctions_NSInsetRect_NSEqualRects {
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='NSMakeRect'>"
+                    @"<arg type64='d'/><arg type64='d'/><arg type64='d'/><arg type64='d'/>"
+                    @"<retval type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/>"
+                    @"</function>"
+                    @"<function name='NSInsetRect'>"
+                    @"<arg type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/><arg type64='d'/><arg type64='d'/>"
+                    @"<retval type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/>"
+                    @"</function>"
+                    @"<function name='NSEqualRects'>"
+                    @"<arg type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/><arg type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/>"
+                    @"<retval type64='B'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSRect rawRect = NSMakeRect(0.0, 0.0, 100.0, 80.0);
+    ASStructValue *boxRect = [ASBoxer boxedObjectFromBytes:&rawRect typeEncoding:@encode(NSRect)];
+
+    NSMethodSignature *sig = [cls methodSignatureForSelector:NSSelectorFromString(@"NSInsetRect:::")];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.selector = NSSelectorFromString(@"NSInsetRect:::");
+    inv.target = cls;
+    id a0 = boxRect, a1 = @(10.0), a2 = @(5.0);
+    [inv setArgument:&a0 atIndex:2];
+    [inv setArgument:&a1 atIndex:3];
+    [inv setArgument:&a2 atIndex:4];
+    [inv invoke];
+    __unsafe_unretained ASStructValue *insetResult = nil;
+    [inv getReturnValue:&insetResult];
+
+    XCTAssertTrue([insetResult isKindOfClass:[ASStructValue class]]);
+    NSRect inset = [[insetResult asNSValue] rectValue];
+    XCTAssertTrue(NSEqualRects(inset, NSMakeRect(10.0, 5.0, 80.0, 70.0)));
+
+    NSNumber *eq = [self callClassMethod:NSSelectorFromString(@"NSEqualRects::") onClass:cls withArg:insetResult arg:insetResult];
+    XCTAssertTrue(eq.boolValue);
+}
+
+- (void)test_installDocument_endToEnd_NSMakeRange_to_NSAttributedString_dataFromRange {
+    NSBundle *foundationBundle = [NSBundle bundleWithIdentifier:@"com.apple.Foundation"];
+    NSURL *companionURL = [[[foundationBundle resourceURL]
+                             URLByAppendingPathComponent:@"BridgeSupport"]
+                             URLByAppendingPathComponent:@"Foundation.dylib"];
+    dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
+
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<struct name='NSRange' type64='{_NSRange=\"location\"Q\"length\"Q}'/>"
+                    @"<function name='NSMakeRange'>"
+                    @"<arg type64='Q'/><arg type64='Q'/>"
+                    @"<retval type64='{_NSRange=QQ}'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    ASBridgeSupportInstaller *installer = [[ASBridgeSupportInstaller alloc] init];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    [installer installDocument:doc frameworkName:frameworkName error:nil];
+    Class cls = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+
+    NSAttributedString *notes = [[NSAttributedString alloc] initWithString:@"My research notes"];
+    ASStructValue *range = [self callClassMethod:NSSelectorFromString(@"NSMakeRange::")
+                                         onClass:cls
+                                         withArg:@(0)
+                                             arg:@(notes.length)];
+
+    SEL dataSel = @selector(dataFromRange:documentAttributes:error:);
+    NSMethodSignature *sig = [notes methodSignatureForSelector:dataSel];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = notes;
+    inv.selector = dataSel;
+    NSDictionary *attrs = @{ NSDocumentTypeDocumentAttribute: NSRTFTextDocumentType };
+    [ASBoxer unboxObject:range intoArgumentAtIndex:0 ofInvocation:inv];
+    [ASBoxer unboxObject:attrs intoArgumentAtIndex:1 ofInvocation:inv];
+    [ASBoxer unboxObject:nil   intoArgumentAtIndex:2 ofInvocation:inv];
+    [inv invoke];
+
+    NSData *rtfData = [ASBoxer boxedReturnValueFromInvocation:inv];
+    XCTAssertNotNil(rtfData);
+    NSAttributedString *loaded = [[NSAttributedString alloc] initWithRTF:rtfData documentAttributes:nil];
+    XCTAssertEqualObjects(loaded.string, @"My research notes");
 }
 
 // ---------------------------------------------------------------------------

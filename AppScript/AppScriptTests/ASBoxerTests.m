@@ -19,6 +19,9 @@
 #import <XCTest/XCTest.h>
 #import <AppScript/ASBoxer.h>
 #import <AppScript/ASOutObject.h>
+#import <AppScript/ASStructValue.h>
+#import <AppScript/ASBridgeSupportStruct.h>
+#import <AppScript/ASBridgeSupportStructField.h>
 
 @protocol ASBoxerTestOutErrorProtocol <NSObject>
 - (BOOL)performOperationWithError:(NSError **)error;
@@ -309,6 +312,92 @@
 
     XCTAssertEqualObjects(callerError, producedError,
                           @"writeBackObject:atArgumentIndex:toInvocation: should write ASOutObject.value into *errPtr");
+}
+
+// ---------------------------------------------------------------------------
+// Struct boxing, unboxing, and byte-level API tests
+// ---------------------------------------------------------------------------
+
+- (void)test_boxedReturnValue_NSRange_returnsASStructValueWithCanonicalNameNSRange {
+    ASBridgeSupportStructField *loc = [[ASBridgeSupportStructField alloc] initWithName:@"location" typeEncoding:@"Q"];
+    ASBridgeSupportStructField *len = [[ASBridgeSupportStructField alloc] initWithName:@"length" typeEncoding:@"Q"];
+    ASBridgeSupportStruct *rangeStruct = [[ASBridgeSupportStruct alloc] initWithCanonicalName:@"NSRange"
+                                                                                       fields:@[loc, len]];
+    [ASStructValue registerStruct:rangeStruct];
+
+    NSString *str = @"hello world";
+    NSMethodSignature *sig = [str methodSignatureForSelector:@selector(rangeOfString:)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = str;
+    inv.selector = @selector(rangeOfString:);
+    NSString *needle = @"world";
+    [inv setArgument:&needle atIndex:2];
+    [inv invoke];
+
+    id boxed = [ASBoxer boxedReturnValueFromInvocation:inv];
+    XCTAssertTrue([boxed isKindOfClass:[ASStructValue class]],
+                  @"NSRange return value should be boxed as ASStructValue, got %@", [boxed class]);
+    ASStructValue *sv = (ASStructValue *)boxed;
+    XCTAssertEqualObjects(sv.canonicalName, @"NSRange");
+    NSRange extracted = [[sv asNSValue] rangeValue];
+    XCTAssertEqual(extracted.location, (NSUInteger)6);
+    XCTAssertEqual(extracted.length, (NSUInteger)5);
+}
+
+- (void)test_unboxObject_ASStructValueAndNSValueIntoNSRangeArgument_invokesCorrectly {
+    NSString *str = @"hello world";
+    NSMethodSignature *sig = [str methodSignatureForSelector:@selector(substringWithRange:)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = str;
+    inv.selector = @selector(substringWithRange:);
+
+    NSRange range = NSMakeRange(6, 5);
+    ASStructValue *sv = [[ASStructValue alloc] initWithBytes:&range
+                                                      length:sizeof(NSRange)
+                                               canonicalName:@"NSRange"
+                                         runtimeTypeEncoding:@(@encode(NSRange))];
+
+    [ASBoxer unboxObject:sv intoArgumentAtIndex:0 ofInvocation:inv];
+    [inv invoke];
+
+    __unsafe_unretained NSString *sub1 = nil;
+    [inv getReturnValue:&sub1];
+    XCTAssertEqualObjects(sub1, @"world");
+
+    // Also verify NSValue unboxing into the same NSRange argument slot.
+    NSValue *nsv = [NSValue valueWithRange:NSMakeRange(0, 5)];
+    [ASBoxer unboxObject:nsv intoArgumentAtIndex:0 ofInvocation:inv];
+    [inv invoke];
+
+    __unsafe_unretained NSString *sub2 = nil;
+    [inv getReturnValue:&sub2];
+    XCTAssertEqualObjects(sub2, @"hello");
+}
+
+- (void)test_boxedObjectFromBytes_and_unboxObjectIntoBytes_structAndSizeMismatch {
+    NSRect rect = NSMakeRect(10.0, 20.0, 30.0, 40.0);
+    id boxed = [ASBoxer boxedObjectFromBytes:&rect typeEncoding:@encode(NSRect)];
+    XCTAssertTrue([boxed isKindOfClass:[ASStructValue class]],
+                  @"boxedObjectFromBytes for NSRect should return ASStructValue");
+    ASStructValue *sv = (ASStructValue *)boxed;
+    XCTAssertEqualObjects(sv.canonicalName, @"CGRect");
+
+    NSRect outRect = NSZeroRect;
+    BOOL ok = [ASBoxer unboxObject:sv
+                         intoBytes:&outRect
+                            ofSize:sizeof(NSRect)
+                      typeEncoding:@encode(NSRect)];
+    XCTAssertTrue(ok, @"Unboxing CGRect ASStructValue into matching NSRect buffer should succeed");
+    XCTAssertTrue(NSEqualRects(rect, outRect));
+
+    // Size mismatch: trying to unbox a CGRect (32 bytes) into an NSRange (16 bytes) buffer must fail safely.
+    NSRange outRange = NSMakeRange(1, 2);
+    BOOL badOk = [ASBoxer unboxObject:sv
+                            intoBytes:&outRange
+                               ofSize:sizeof(NSRange)
+                         typeEncoding:@encode(NSRange)];
+    XCTAssertFalse(badOk, @"Unboxing a 32-byte CGRect into a 16-byte NSRange slot must return NO");
+    XCTAssertEqual(outRange.location, (NSUInteger)1, @"Destination buffer must not be overwritten on size mismatch");
 }
 
 @end

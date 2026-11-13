@@ -34,8 +34,30 @@ static dispatch_once_t  _ASStructRegistryOnce;
 static BOOL             _ASStructForwardingInstalled = NO;
 
 // ---------------------------------------------------------------------------
+// Helper: check whether every '{...}' in a struct encoding contains '='
+// and at least one field type character before '}'.
+// ---------------------------------------------------------------------------
+
+static BOOL ASIsCompleteStructEncoding(const char *enc) {
+    if (!enc || enc[0] != '{') return NO;
+    const char *p = enc;
+    while (*p) {
+        if (*p == '{') {
+            p++;
+            while (*p && *p != '=' && *p != '}') { p++; }
+            if (*p != '=') return NO;
+            p++; // skip '='
+            if (*p == '}' || *p == '\0') return NO;
+        } else {
+            p++;
+        }
+    }
+    return YES;
+}
+
+// ---------------------------------------------------------------------------
 // Helper: extract the canonical struct name from a type encoding.
-// e.g. "{CGPoint=dd}" -> "CGPoint", "{_NSRange=QQ}" -> "_NSRange", "{CGPoint}" -> "CGPoint"
+// e.g. "{CGPoint=dd}" -> "CGPoint", "{_NSRange=QQ}" -> "NSRange", "{CGPoint}" -> "CGPoint"
 // Returns nil if the encoding is not a struct.
 // ---------------------------------------------------------------------------
 
@@ -46,9 +68,10 @@ static NSString * _Nullable ASExtractStructName(NSString *typeEncoding) {
     const char *p = start;
     while (*p && *p != '=' && *p != '}') { p++; }
     if (p == start) return nil;
-    return [[NSString alloc] initWithBytes:start
-                                    length:(NSUInteger)(p - start)
-                                  encoding:NSUTF8StringEncoding];
+    NSString *rawName = [[NSString alloc] initWithBytes:start
+                                                 length:(NSUInteger)(p - start)
+                                               encoding:NSUTF8StringEncoding];
+    return [ASStructValue canonicalNameForImportedStructName:rawName];
 }
 
 // ---------------------------------------------------------------------------
@@ -65,8 +88,8 @@ static void ASSizeAndAlignForEncoding(NSString *typeEncoding,
     if ([typeEncoding hasPrefix:@"{"]) {
         // IMPORTANT: NSGetSizeAndAlignment throws NSInvalidArgumentException for bare struct
         // references like "{CGPoint}" because it tries to parse the struct name as type
-        // encoding characters. Only call it for full encodings that contain '='.
-        if ([typeEncoding containsString:@"="]) {
+        // encoding characters. Only call it for complete encodings where every '{' has '='.
+        if (ASIsCompleteStructEncoding(typeEncoding.UTF8String)) {
             NSUInteger size = 0, align = 0;
             NSGetSizeAndAlignment(typeEncoding.UTF8String, &size, &align);
             if (size > 0) {
@@ -122,8 +145,8 @@ static NSString *ASBuildRuntimeEncodingForFieldType(NSString *fieldTypeEncoding,
     if (![fieldTypeEncoding hasPrefix:@"{"]) {
         return fieldTypeEncoding; // primitive — return as-is
     }
-    // Check whether this is already a full encoding (contains '=').
-    if ([fieldTypeEncoding containsString:@"="]) {
+    // Check whether this is already a complete encoding.
+    if (ASIsCompleteStructEncoding(fieldTypeEncoding.UTF8String)) {
         return fieldTypeEncoding;
     }
     // Bare struct reference like "{CGPoint}" — resolve from registry.
@@ -327,6 +350,43 @@ static NSString *ASBuildRuntimeEncoding(ASBridgeSupportStruct *s,
         result = _ASStructRegistry[canonicalName];
     });
     return result;
+}
+
++ (NSString *)canonicalNameForImportedStructName:(NSString *)importedName {
+    static NSDictionary<NSString *, NSString *> *sMapping = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        sMapping = @{
+            @"_NSRange": @"NSRange",
+            @"_NSRect":  @"CGRect",
+            @"NSRect":   @"CGRect",
+            @"_NSSize":  @"CGSize",
+            @"NSSize":   @"CGSize",
+            @"_NSPoint": @"CGPoint",
+            @"NSPoint":  @"CGPoint",
+        };
+    });
+    NSString *mapped = sMapping[importedName];
+    return mapped ?: importedName;
+}
+
++ (NSString *)runtimeTypeEncodingForStructTypeEncoding:(NSString *)typeEncoding {
+    if (ASIsCompleteStructEncoding(typeEncoding.UTF8String)) {
+        return typeEncoding;
+    }
+    NSString *canonicalName = ASExtractStructName(typeEncoding);
+    if (!canonicalName) {
+        return typeEncoding;
+    }
+    [self _ensureRegistryInitialized];
+    __block NSString *resolved = nil;
+    dispatch_sync(_ASStructRegistryQueue, ^{
+        ASBridgeSupportStruct *s = _ASStructRegistry[canonicalName];
+        if (s) {
+            resolved = ASBuildRuntimeEncoding(s, _ASStructRegistry);
+        }
+    });
+    return resolved ?: typeEncoding;
 }
 
 // ---------------------------------------------------------------------------

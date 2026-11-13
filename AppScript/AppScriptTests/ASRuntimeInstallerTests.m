@@ -107,6 +107,16 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 - (BOOL)saveData:(NSString *)data error:(NSError **)error;
 @end
 
+@interface ASTestStructSuperclass : NSObject
+- (NSRange)echoRange:(NSRange)range;
+@end
+
+@implementation ASTestStructSuperclass
+- (NSRange)echoRange:(NSRange)range {
+    return NSMakeRange(0, 0);
+}
+@end
+
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
@@ -691,6 +701,45 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
     // 2. Call with NULL error — must not crash and must treat [outErr setValue:...] as no-op.
     BOOL okNull = [instance saveData:@"hello" error:nil];
     XCTAssertFalse(okNull, @"saveData:error: with nil error pointer should still return NO safely");
+}
+
+- (void)test_installClass_subclassOverridesNativeSuperclassStructMethod_withoutProtocol {
+    NSString *className = uniqueClassName(@"ASTestStructSubclass");
+
+    // Override `- echoRange: range { return range }` without adopting any protocol.
+    ASReturnNode *retRange = [[ASReturnNode alloc]
+        initWithValue:[[ASIdentifierNode alloc] initWithName:@"range" line:1 column:1]
+                 line:1
+               column:1];
+    ASMethodNode *echoMethod = [[ASMethodNode alloc]
+        initWithSelectorParts:@[@"echoRange"]
+               parameterNames:@[@"range"]
+                         body:@[retRange]
+                isClassMethod:NO
+                         line:1
+                       column:1];
+
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+        initWithClassName:className
+           superclassName:@"ASTestStructSuperclass"
+            protocolNames:@[]
+               properties:@[]
+                  methods:@[echoMethod]
+                     line:1
+                   column:1];
+
+    NSError *installError = nil;
+    BOOL installed = [self.installer installNodes:@[classDef]
+                                       scriptPath:@"test.appscript"
+                                            error:&installError];
+    XCTAssertTrue(installed);
+    XCTAssertNil(installError);
+
+    Class installedClass = NSClassFromString(className);
+    ASTestStructSuperclass *instance = [[installedClass alloc] init];
+    NSRange result = [instance echoRange:NSMakeRange(12, 34)];
+    XCTAssertEqual(result.location, (NSUInteger)12);
+    XCTAssertEqual(result.length, (NSUInteger)34);
 }
 
 @end

@@ -23,10 +23,14 @@
 #import "ASBridgeSupportEnumeration.h"
 #import "ASBridgeSupportStruct.h"
 #import "ASStructValue.h"
+#import "ASBoxer.h"
+#import "ASNull.h"
+#import "ASOutObject.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
+#include <ffi.h>
 
 // ---------------------------------------------------------------------------
 // Error domain
@@ -41,31 +45,252 @@ NSString * const ASBridgeSupportInstallerErrorDomain = @"ASBridgeSupportInstalle
 static char ASBridgeSupportMethodMapKey;
 
 // ---------------------------------------------------------------------------
-// Private container for per-function dispatch info
+// Helper: map an Objective-C / BridgeSupport type encoding string to ffi_type *
 // ---------------------------------------------------------------------------
 
-@interface _ASFunctionInfo : NSObject
+static const char *ASSkipQualifiers(const char *p) {
+    while (p && (*p == 'r' || *p == 'n' || *p == 'N' || *p == 'o' ||
+                 *p == 'O' || *p == 'R' || *p == 'V')) {
+        p++;
+    }
+    return p;
+}
+
+static ffi_type * _Nullable ASFfiTypeForEncodingCursor(const char **pPtr,
+                                                       NSMutableArray<NSValue *> *allocatedStructs) {
+    const char *p = ASSkipQualifiers(*pPtr);
+    if (!p || *p == '\0') {
+        return NULL;
+    }
+
+    char c = *p;
+    p++;
+    *pPtr = p;
+
+    switch (c) {
+        case 'v': return &ffi_type_void;
+        case 'c': return &ffi_type_schar;
+        case 'C': return &ffi_type_uchar;
+        case 'B': return &ffi_type_uint8;
+        case 's': return &ffi_type_sshort;
+        case 'S': return &ffi_type_ushort;
+        case 'i': return &ffi_type_sint32;
+        case 'I': return &ffi_type_uint32;
+        case 'l': return (sizeof(long) == 8) ? &ffi_type_sint64 : &ffi_type_sint32;
+        case 'L': return (sizeof(unsigned long) == 8) ? &ffi_type_uint64 : &ffi_type_uint32;
+        case 'q': return &ffi_type_sint64;
+        case 'Q': return &ffi_type_uint64;
+        case 'f': return &ffi_type_float;
+        case 'd': return &ffi_type_double;
+        case '@':
+        case '#':
+        case ':':
+        case '*': return &ffi_type_pointer;
+        case '^': {
+            // Advance past the pointed-to type encoding.
+            const char *sub = ASSkipQualifiers(*pPtr);
+            while (sub && *sub == '^') {
+                sub = ASSkipQualifiers(sub + 1);
+            }
+            if (sub && *sub == '{') {
+                int depth = 0;
+                while (*sub) {
+                    if (*sub == '{') depth++;
+                    else if (*sub == '}') {
+                        depth--;
+                        if (depth == 0) { sub++; break; }
+                    }
+                    sub++;
+                }
+            } else if (sub && *sub != '\0' && *sub != '}') {
+                sub++;
+            }
+            *pPtr = sub;
+            return &ffi_type_pointer;
+        }
+        case '{': {
+            // Skip struct tag name up to '=' or '}'
+            while (**pPtr && **pPtr != '=' && **pPtr != '}') {
+                (*pPtr)++;
+            }
+            if (**pPtr != '=') {
+                return NULL;
+            }
+            (*pPtr)++; // skip '='
+
+            NSMutableArray<NSValue *> *elements = [NSMutableArray array];
+            while (**pPtr && **pPtr != '}') {
+                // Skip optional quoted field name: "fieldName"
+                if (**pPtr == '"') {
+                    (*pPtr)++;
+                    while (**pPtr && **pPtr != '"') {
+                        (*pPtr)++;
+                    }
+                    if (**pPtr == '"') {
+                        (*pPtr)++;
+                    }
+                }
+                if (**pPtr == '}' || **pPtr == '\0') {
+                    break;
+                }
+                ffi_type *fieldType = ASFfiTypeForEncodingCursor(pPtr, allocatedStructs);
+                if (!fieldType) {
+                    return NULL;
+                }
+                [elements addObject:[NSValue valueWithPointer:fieldType]];
+            }
+            if (**pPtr != '}' || elements.count == 0) {
+                return NULL;
+            }
+            (*pPtr)++; // skip '}'
+
+            ffi_type *structType = calloc(1, sizeof(ffi_type));
+            ffi_type **elemsArray = calloc(elements.count + 1, sizeof(ffi_type *));
+            if (!structType || !elemsArray) {
+                free(structType);
+                free(elemsArray);
+                return NULL;
+            }
+            for (NSUInteger i = 0; i < elements.count; i++) {
+                elemsArray[i] = (ffi_type *)[elements[i] pointerValue];
+            }
+            elemsArray[elements.count] = NULL;
+
+            structType->size = 0;
+            structType->alignment = 0;
+            structType->type = FFI_TYPE_STRUCT;
+            structType->elements = elemsArray;
+
+            [allocatedStructs addObject:[NSValue valueWithPointer:structType]];
+            return structType;
+        }
+        default:
+            return NULL;
+    }
+}
+
+static NSString *ASResolveBridgeSupportTypeEncoding(NSString *rawEncoding) {
+    const char *skipped = ASSkipQualifiers(rawEncoding.UTF8String);
+    if (skipped && skipped[0] == '{') {
+        return [ASStructValue runtimeTypeEncodingForStructTypeEncoding:@(skipped)];
+    }
+    return rawEncoding;
+}
+
+// ---------------------------------------------------------------------------
+// Private container for per-function libffi dispatch info
+// ---------------------------------------------------------------------------
+
+@interface _ASFunctionInfo : NSObject {
+    ffi_cif _cif;
+    ffi_type *_returnFfiType;
+    ffi_type **_argFfiTypes;
+    NSMutableArray<NSValue *> *_allocatedStructFfiTypes;
+}
 @property (nonatomic, readonly) void *funcPtr;
 @property (nonatomic, copy, readonly) NSString *returnTypeEncoding;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *argTypeEncodings;
-- (instancetype)initWithFuncPtr:(void *)funcPtr
-             returnTypeEncoding:(NSString *)returnTypeEncoding
-                argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings NS_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithFuncPtr:(void *)funcPtr
+                      returnTypeEncoding:(NSString *)returnTypeEncoding
+                        argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
+- (nullable id)invokeWithBoxedArguments:(NSArray<id> *)boxedArgs;
 @end
 
 @implementation _ASFunctionInfo
 
-- (instancetype)initWithFuncPtr:(void *)funcPtr
-             returnTypeEncoding:(NSString *)returnTypeEncoding
-                argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings {
+- (nullable instancetype)initWithFuncPtr:(void *)funcPtr
+                      returnTypeEncoding:(NSString *)returnTypeEncoding
+                        argTypeEncodings:(NSArray<NSString *> *)argTypeEncodings {
     self = [super init];
     if (self) {
         _funcPtr = funcPtr;
-        _returnTypeEncoding = [returnTypeEncoding copy];
-        _argTypeEncodings   = [argTypeEncodings copy];
+        _allocatedStructFfiTypes = [NSMutableArray array];
+
+        NSString *resolvedRet = ASResolveBridgeSupportTypeEncoding(returnTypeEncoding);
+        _returnTypeEncoding = [resolvedRet copy];
+
+        const char *retCursor = _returnTypeEncoding.UTF8String;
+        _returnFfiType = ASFfiTypeForEncodingCursor(&retCursor, _allocatedStructFfiTypes);
+        if (!_returnFfiType) {
+            return nil;
+        }
+
+        NSUInteger argCount = argTypeEncodings.count;
+        NSMutableArray<NSString *> *resolvedArgs = [NSMutableArray arrayWithCapacity:argCount];
+        if (argCount > 0) {
+            _argFfiTypes = calloc(argCount, sizeof(ffi_type *));
+            if (!_argFfiTypes) {
+                return nil;
+            }
+        }
+
+        for (NSUInteger i = 0; i < argCount; i++) {
+            NSString *resolvedArg = ASResolveBridgeSupportTypeEncoding(argTypeEncodings[i]);
+            [resolvedArgs addObject:resolvedArg];
+            const char *argCursor = resolvedArg.UTF8String;
+            ffi_type *argFfi = ASFfiTypeForEncodingCursor(&argCursor, _allocatedStructFfiTypes);
+            if (!argFfi) {
+                return nil;
+            }
+            _argFfiTypes[i] = argFfi;
+        }
+        _argTypeEncodings = [resolvedArgs copy];
+
+        ffi_status status = ffi_prep_cif(&_cif,
+                                         FFI_DEFAULT_ABI,
+                                         (unsigned int)argCount,
+                                         _returnFfiType,
+                                         _argFfiTypes);
+        if (status != FFI_OK) {
+            return nil;
+        }
     }
     return self;
+}
+
+- (void)dealloc {
+    for (NSValue *val in _allocatedStructFfiTypes) {
+        ffi_type *st = (ffi_type *)[val pointerValue];
+        if (st) {
+            free(st->elements);
+            free(st);
+        }
+    }
+    free(_argFfiTypes);
+}
+
+- (nullable id)invokeWithBoxedArguments:(NSArray<id> *)boxedArgs {
+    NSUInteger argCount = _argTypeEncodings.count;
+    void **argValues = (argCount > 0) ? alloca(argCount * sizeof(void *)) : NULL;
+
+    for (NSUInteger i = 0; i < argCount; i++) {
+        NSUInteger argSize = MAX((NSUInteger)_argFfiTypes[i]->size, sizeof(void *));
+        void *argBuf = alloca(argSize);
+        memset(argBuf, 0, argSize);
+        argValues[i] = argBuf;
+
+        id boxedArg = (i < boxedArgs.count) ? boxedArgs[i] : nil;
+        const char *enc = _argTypeEncodings[i].UTF8String;
+        if (![ASBoxer unboxObject:boxedArg
+                        intoBytes:argBuf
+                           ofSize:(NSUInteger)_argFfiTypes[i]->size
+                     typeEncoding:enc]) {
+            return nil;
+        }
+    }
+
+    NSUInteger retBufSize = MAX((NSUInteger)_returnFfiType->size, sizeof(ffi_arg));
+    void *retBuffer = alloca(retBufSize);
+    memset(retBuffer, 0, retBufSize);
+
+    ffi_call(&_cif, FFI_FN(_funcPtr), retBuffer, argValues);
+
+    const char *retEnc = ASSkipQualifiers(_returnTypeEncoding.UTF8String);
+    if (!retEnc || retEnc[0] == 'v') {
+        return nil;
+    }
+    return [ASBoxer boxedObjectFromBytes:retBuffer typeEncoding:retEnc];
 }
 
 @end
@@ -75,26 +300,16 @@ static char ASBridgeSupportMethodMapKey;
 // ---------------------------------------------------------------------------
 
 static const char * const ASBridgeSupportTypeEncodings[] = {
-    "@@:",          // 0 args
-    "@@:@",         // 1 arg
-    "@@:@@",        // 2 args
-    "@@:@@@",       // 3 args
-    "@@:@@@@",      // 4 args
+    "@@:",              // 0 args
+    "@@:@",             // 1 arg
+    "@@:@@",            // 2 args
+    "@@:@@@",           // 3 args
+    "@@:@@@@",          // 4 args
+    "@@:@@@@@",         // 5 args
+    "@@:@@@@@@",        // 6 args
+    "@@:@@@@@@@",       // 7 args
+    "@@:@@@@@@@@",      // 8 args
 };
-
-// ---------------------------------------------------------------------------
-// Helper: unbox a single NSNumber/NSString/id argument to a typed C value.
-// The caller passes the expected BridgeSupport type encoding character.
-// ---------------------------------------------------------------------------
-
-static double    ASUnboxDouble(id obj)  { return [(NSNumber *)obj doubleValue]; }
-static float     ASUnboxFloat(id obj)   { return [(NSNumber *)obj floatValue]; }
-static int       ASUnboxInt(id obj)     { return [(NSNumber *)obj intValue]; }
-static long long ASUnboxLongLong(id obj){ return [(NSNumber *)obj longLongValue]; }
-static BOOL      ASUnboxBool(id obj)    { return [(NSNumber *)obj boolValue]; }
-static const char *ASUnboxCString(id obj) {
-    return (obj == nil || obj == [NSNull null]) ? NULL : [(NSString *)obj UTF8String];
-}
 
 // ---------------------------------------------------------------------------
 // Helper: read a C constant from a dlsym pointer and box it to an ObjC object.
@@ -103,184 +318,12 @@ static const char *ASUnboxCString(id obj) {
 
 static id ASBoxConstantSymbol(void *symPtr, NSString *typeEncoding) {
     if (symPtr == NULL || typeEncoding.length == 0) return nil;
-    char enc = (char)[typeEncoding characterAtIndex:0];
-    switch (enc) {
-        case 'd': return @(*(double *)symPtr);
-        case 'f': return @(*(float *)symPtr);
-        case 'i': return @(*(int *)symPtr);
-        case 'I': return @(*(unsigned int *)symPtr);
-        case 'l': return @(*(long *)symPtr);
-        case 'L': return @(*(unsigned long *)symPtr);
-        case 'q': return @(*(long long *)symPtr);
-        case 'Q': return @(*(unsigned long long *)symPtr);
-        case 's': return @(*(short *)symPtr);
-        case 'S': return @(*(unsigned short *)symPtr);
-        case 'c':
-        case 'B': return @((BOOL)(*(char *)symPtr));
-        case '@': return *((__unsafe_unretained id *)symPtr);
-        case '*': {
-            const char *s = *(const char **)symPtr;
-            return s ? @(s) : nil;
-        }
-        case '{': {
-            NSUInteger size = 0;
-            NSGetSizeAndAlignment([typeEncoding UTF8String], &size, NULL);
-            if (size > 0) {
-                return [NSValue valueWithBytes:symPtr objCType:[typeEncoding UTF8String]];
-            }
-            return nil;
-        }
-        default: return nil;
+    NSString *resolvedEncoding = ASResolveBridgeSupportTypeEncoding(typeEncoding);
+    const char *enc = ASSkipQualifiers(resolvedEncoding.UTF8String);
+    if (!enc || enc[0] == '\0' || enc[0] == 'v' || enc[0] == '^') {
+        return nil;
     }
-}
-
-// ---------------------------------------------------------------------------
-// Helper: call a C function pointer with the given boxed arguments.
-// Handles the common signatures needed for BridgeSupport-wrapped functions.
-// Returns the boxed result, or nil for void returns.
-// ---------------------------------------------------------------------------
-
-NS_INLINE BOOL ASTypeIsIntLike(NSString *t) {
-    return [t isEqualToString:@"i"] || [t isEqualToString:@"I"] ||
-           [t isEqualToString:@"l"] || [t isEqualToString:@"L"] ||
-           [t isEqualToString:@"s"] || [t isEqualToString:@"S"] ||
-           [t isEqualToString:@"c"] || [t isEqualToString:@"B"];
-}
-
-static id ASCallCFunction(void *funcPtr,
-                          NSString *ret,
-                          NSArray<NSString *> *argTypes,
-                          NSArray<id> *boxed) {
-    NSUInteger n = argTypes.count;
-
-    // ---- void return ----
-    if ([ret isEqualToString:@"v"]) {
-        if (n == 0) {
-            ((void (*)(void))funcPtr)();
-            return nil;
-        }
-        if (n == 1) {
-            NSString *a0 = argTypes[0];
-            if ([a0 isEqualToString:@"d"])  { ((void (*)(double))funcPtr)(ASUnboxDouble(boxed[0])); return nil; }
-            if ([a0 isEqualToString:@"f"])  { ((void (*)(float))funcPtr)(ASUnboxFloat(boxed[0])); return nil; }
-            if (ASTypeIsIntLike(a0))         { ((void (*)(int))funcPtr)(ASUnboxInt(boxed[0])); return nil; }
-            if ([a0 isEqualToString:@"q"] || [a0 isEqualToString:@"Q"]) {
-                ((void (*)(long long))funcPtr)(ASUnboxLongLong(boxed[0])); return nil;
-            }
-            if ([a0 isEqualToString:@"@"])  { ((void (*)(id))funcPtr)(boxed[0]); return nil; }
-            if ([a0 isEqualToString:@"*"])  { ((void (*)(const char *))funcPtr)(ASUnboxCString(boxed[0])); return nil; }
-            // Pointer types (^): pass as nil/NULL
-            if ([a0 hasPrefix:@"^"]) { ((void (*)(void *))funcPtr)(NULL); return nil; }
-        }
-    }
-
-    // ---- double return ----
-    if ([ret isEqualToString:@"d"]) {
-        if (n == 0) return @(((double (*)(void))funcPtr)());
-        if (n == 1) {
-            NSString *a0 = argTypes[0];
-            if ([a0 isEqualToString:@"d"]) return @(((double (*)(double))funcPtr)(ASUnboxDouble(boxed[0])));
-            if ([a0 isEqualToString:@"f"]) return @(((double (*)(float))funcPtr)(ASUnboxFloat(boxed[0])));
-            if (ASTypeIsIntLike(a0))        return @(((double (*)(int))funcPtr)(ASUnboxInt(boxed[0])));
-        }
-        if (n == 2) {
-            NSString *a0 = argTypes[0], *a1 = argTypes[1];
-            if ([a0 isEqualToString:@"d"] && [a1 isEqualToString:@"d"])
-                return @(((double (*)(double, double))funcPtr)(ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1])));
-        }
-        if (n == 3) {
-            NSString *a0 = argTypes[0], *a1 = argTypes[1], *a2 = argTypes[2];
-            if ([a0 isEqualToString:@"d"] && [a1 isEqualToString:@"d"] && [a2 isEqualToString:@"d"])
-                return @(((double (*)(double, double, double))funcPtr)(
-                    ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1]), ASUnboxDouble(boxed[2])));
-        }
-    }
-
-    // ---- float return ----
-    if ([ret isEqualToString:@"f"]) {
-        if (n == 0) return @(((float (*)(void))funcPtr)());
-        if (n == 1) {
-            NSString *a0 = argTypes[0];
-            if ([a0 isEqualToString:@"f"]) return @(((float (*)(float))funcPtr)(ASUnboxFloat(boxed[0])));
-            if ([a0 isEqualToString:@"d"]) return @((float)((float (*)(double))funcPtr)(ASUnboxDouble(boxed[0])));
-        }
-    }
-
-    // ---- int / long return (treat as int-width) ----
-    if (ASTypeIsIntLike(ret)) {
-        if (n == 0) return @(((int (*)(void))funcPtr)());
-        if (n == 1) {
-            NSString *a0 = argTypes[0];
-            if (ASTypeIsIntLike(a0)) return @(((int (*)(int))funcPtr)(ASUnboxInt(boxed[0])));
-            if ([a0 isEqualToString:@"d"]) return @((int)((int (*)(double))funcPtr)(ASUnboxDouble(boxed[0])));
-        }
-        if (n == 2) {
-            NSString *a0 = argTypes[0], *a1 = argTypes[1];
-            if (ASTypeIsIntLike(a0) && ASTypeIsIntLike(a1))
-                return @(((int (*)(int, int))funcPtr)(ASUnboxInt(boxed[0]), ASUnboxInt(boxed[1])));
-        }
-    }
-
-    // ---- long long / unsigned long long return ----
-    if ([ret isEqualToString:@"q"] || [ret isEqualToString:@"Q"]) {
-        if (n == 0) return @(((long long (*)(void))funcPtr)());
-        if (n == 1) {
-            NSString *a0 = argTypes[0];
-            if ([a0 isEqualToString:@"q"] || [a0 isEqualToString:@"Q"])
-                return @(((long long (*)(long long))funcPtr)(ASUnboxLongLong(boxed[0])));
-            if (ASTypeIsIntLike(a0))
-                return @(((long long (*)(int))funcPtr)(ASUnboxInt(boxed[0])));
-        }
-    }
-
-    // ---- id return ----
-    if ([ret isEqualToString:@"@"]) {
-        if (n == 0) return ((id (*)(void))funcPtr)();
-        if (n == 1 && [argTypes[0] isEqualToString:@"@"])
-            return ((id (*)(id))funcPtr)(boxed[0]);
-        if (n == 2 && [argTypes[0] isEqualToString:@"@"] && [argTypes[1] isEqualToString:@"@"])
-            return ((id (*)(id, id))funcPtr)(boxed[0], boxed[1]);
-    }
-
-    // ---- C string return ----
-    if ([ret isEqualToString:@"*"]) {
-        if (n == 0) {
-            const char *r = ((const char *(*)(void))funcPtr)();
-            return r ? @(r) : nil;
-        }
-        if (n == 1 && [argTypes[0] isEqualToString:@"*"]) {
-            const char *r = ((const char *(*)(const char *))funcPtr)(ASUnboxCString(boxed[0]));
-            return r ? @(r) : nil;
-        }
-    }
-
-    // Geometry struct returns — NSRect/NSSize/NSPoint (all args are double on macOS)
-    if ([ret hasPrefix:@"{CGRect"] || [ret hasPrefix:@"{_NSRect"]) {
-        if (n == 4 && [argTypes[0] isEqualToString:@"d"] && [argTypes[1] isEqualToString:@"d"]
-                   && [argTypes[2] isEqualToString:@"d"] && [argTypes[3] isEqualToString:@"d"]) {
-            NSRect r = ((NSRect (*)(double,double,double,double))funcPtr)(
-                ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1]),
-                ASUnboxDouble(boxed[2]), ASUnboxDouble(boxed[3]));
-            return [NSValue valueWithRect:r];
-        }
-    }
-    if ([ret hasPrefix:@"{CGSize"] || [ret hasPrefix:@"{_NSSize"]) {
-        if (n == 2 && [argTypes[0] isEqualToString:@"d"] && [argTypes[1] isEqualToString:@"d"]) {
-            NSSize s = ((NSSize (*)(double,double))funcPtr)(
-                ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1]));
-            return [NSValue valueWithSize:s];
-        }
-    }
-    if ([ret hasPrefix:@"{CGPoint"] || [ret hasPrefix:@"{_NSPoint"]) {
-        if (n == 2 && [argTypes[0] isEqualToString:@"d"] && [argTypes[1] isEqualToString:@"d"]) {
-            NSPoint p = ((NSPoint (*)(double,double))funcPtr)(
-                ASUnboxDouble(boxed[0]), ASUnboxDouble(boxed[1]));
-            return [NSValue valueWithPoint:p];
-        }
-    }
-
-    NSLog(@"ASBridgeSupportInstaller: unsupported C function signature ret=%@ args=%@", ret, argTypes);
-    return nil;
+    return [ASBoxer boxedObjectFromBytes:symPtr typeEncoding:enc];
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +350,12 @@ static void ASBridgeSupportForwardInvocationIMP(id self, SEL _cmd, NSInvocation 
         return;
     }
 
+    // Ensure the invocation retains its return value so ARC-managed objects returned by
+    // invokeWithBoxedArguments: stay alive until the caller reads the invocation result.
+    if (!invocation.argumentsRetained) {
+        [invocation retainArguments];
+    }
+
     // Extract the boxed id arguments (the method signature uses all-@ encoding).
     NSUInteger argCount = info.argTypeEncodings.count;
     NSMutableArray<id> *boxedArgs = [NSMutableArray arrayWithCapacity:argCount];
@@ -316,11 +365,8 @@ static void ASBridgeSupportForwardInvocationIMP(id self, SEL _cmd, NSInvocation 
         [boxedArgs addObject:boxedArg ?: [NSNull null]];
     }
 
-    // Call the C function and set the boxed result as the return value.
-    id result = ASCallCFunction(info.funcPtr,
-                                info.returnTypeEncoding,
-                                info.argTypeEncodings,
-                                boxedArgs);
+    // Call the C function via libffi and set the boxed result as the return value.
+    id result = [info invokeWithBoxedArguments:boxedArgs];
     [invocation setReturnValue:&result];
 }
 
@@ -394,6 +440,12 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
         return NO;
     }
 
+    // Register struct definitions first so ASStructValue can resolve bare struct
+    // type encodings when installing functions and constants below.
+    for (ASBridgeSupportStruct *s in document.structs) {
+        [ASStructValue registerStruct:s];
+    }
+
     // Build the method map: selector string → _ASFunctionInfo.
     NSMutableDictionary<NSString *, _ASFunctionInfo *> *methodMap = [NSMutableDictionary dictionary];
     Class metaclass = object_getClass(proxyClass);
@@ -406,7 +458,7 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
 
         NSUInteger argCount = function.argumentTypeEncodings.count;
         if (argCount >= (sizeof(ASBridgeSupportTypeEncodings) / sizeof(ASBridgeSupportTypeEncodings[0]))) {
-            // More than 4 arguments — not currently supported.
+            // More than 8 arguments — not currently supported.
             continue;
         }
 
@@ -417,16 +469,21 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
             continue;
         }
 
+        _ASFunctionInfo *info = [[_ASFunctionInfo alloc]
+            initWithFuncPtr:funcPtr
+         returnTypeEncoding:function.returnTypeEncoding
+           argTypeEncodings:function.argumentTypeEncodings];
+        if (info == nil) {
+            // Unsupported type encoding in signature — skip silently.
+            continue;
+        }
+
         // Build the ObjC selector: "funcName" (0 args), "funcName:" (1 arg), "funcName::" (2), etc.
         NSMutableString *selectorString = [NSMutableString stringWithString:function.name];
         for (NSUInteger i = 0; i < argCount; i++) {
             [selectorString appendString:@":"];
         }
 
-        _ASFunctionInfo *info = [[_ASFunctionInfo alloc]
-            initWithFuncPtr:funcPtr
-         returnTypeEncoding:function.returnTypeEncoding
-            argTypeEncodings:function.argumentTypeEncodings];
         methodMap[selectorString] = info;
 
         // Register a sentinel method on the metaclass so the ObjC runtime routes
@@ -485,11 +542,6 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
 
     // Register the class pair with the runtime.
     objc_registerClassPair(proxyClass);
-
-    // Register struct definitions so ASStructValue can dispatch field accessors.
-    for (ASBridgeSupportStruct *s in document.structs) {
-        [ASStructValue registerStruct:s];
-    }
 
     return YES;
 }

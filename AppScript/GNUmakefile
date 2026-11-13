@@ -21,6 +21,35 @@ include $(GNUSTEP_MAKEFILES)/common.make
 FRAMEWORK_NAME = AppScript
 AppScript_NEEDS_GUI = no
 ADDITIONAL_OBJCFLAGS = -fobjc-arc
+ADDITIONAL_CFLAGS = -w
+
+VPATH += \
+	../vendor/libffi/darwin_common/src \
+	../vendor/libffi/darwin_osx/src/aarch64 \
+	../vendor/libffi/darwin_osx/src/x86
+
+AppScript_INCLUDE_DIRS = \
+	-I../vendor/libffi/darwin_common/include \
+	-I../vendor/libffi/darwin_osx/include \
+	-I../vendor/libffi/darwin_osx/src/aarch64 \
+	-I../vendor/libffi/darwin_osx/src/x86
+
+AppScript_C_FILES = \
+	closures.c \
+	prep_cif.c \
+	raw_api.c \
+	types.c \
+	tramp.c \
+	ffi_arm64.c \
+	ffi64_x86_64.c \
+	ffiw64_x86_64.c
+
+LIBFFI_ASM_OBJS = \
+	$(GNUSTEP_OBJ_DIR)/AppScript.obj/sysv_arm64.S.o \
+	$(GNUSTEP_OBJ_DIR)/AppScript.obj/unix64_x86_64.S.o \
+	$(GNUSTEP_OBJ_DIR)/AppScript.obj/win64_x86_64.S.o
+
+AppScript_OBJ_FILES = $(LIBFFI_ASM_OBJS)
 
 AppScript_OBJC_FILES = \
 	AppScript/ASArrayLiteralNode.m \
@@ -123,6 +152,25 @@ AppScript_HEADER_FILES = \
 
 include $(GNUSTEP_MAKEFILES)/framework.make
 
+VPATH += \
+	../vendor/libffi/darwin_common/src \
+	../vendor/libffi/darwin_osx/src/aarch64 \
+	../vendor/libffi/darwin_osx/src/x86
+
+before-AppScript-all:: $(LIBFFI_ASM_OBJS)
+
+$(GNUSTEP_OBJ_DIR)/AppScript.obj/sysv_arm64.S.o: ../vendor/libffi/darwin_osx/src/aarch64/sysv_arm64.S
+	$(MKDIRS) $(dir $@)
+	$(CC) $< -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) $(AppScript_INCLUDE_DIRS) -o $@
+
+$(GNUSTEP_OBJ_DIR)/AppScript.obj/unix64_x86_64.S.o: ../vendor/libffi/darwin_osx/src/x86/unix64_x86_64.S
+	$(MKDIRS) $(dir $@)
+	$(CC) $< -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) $(AppScript_INCLUDE_DIRS) -o $@
+
+$(GNUSTEP_OBJ_DIR)/AppScript.obj/win64_x86_64.S.o: ../vendor/libffi/darwin_osx/src/x86/win64_x86_64.S
+	$(MKDIRS) $(dir $@)
+	$(CC) $< -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) $(AppScript_INCLUDE_DIRS) -o $@
+
 # ---------------------------------------------------------------------------
 # Test bundle target
 # ---------------------------------------------------------------------------
@@ -166,7 +214,7 @@ AppScriptTests_LIB_DIRS = \
 
 ADDITIONAL_BUNDLE_LIBS = $(AppScriptTests_BUNDLE_LIBS)
 ADDITIONAL_LIB_DIRS    = $(AppScriptTests_LIB_DIRS)
-ADDITIONAL_INCLUDE_DIRS = -I/usr/local/include
+ADDITIONAL_INCLUDE_DIRS += -I/usr/local/include $(AppScript_INCLUDE_DIRS)
 
 include $(GNUSTEP_MAKEFILES)/bundle.make
 
@@ -175,6 +223,7 @@ include $(GNUSTEP_MAKEFILES)/bundle.make
 # ---------------------------------------------------------------------------
 
 internal-check:: $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle
+	DYLD_FRAMEWORK_PATH=$(abspath $(GNUSTEP_BUILD_DIR)):$(DYLD_FRAMEWORK_PATH) \
 	DYLD_LIBRARY_PATH=/usr/local/lib:$(DYLD_LIBRARY_PATH) \
 	/usr/local/bin/xctest $(GNUSTEP_BUILD_DIR)/AppScriptTests.bundle
 
@@ -203,6 +252,11 @@ AppScriptHarness_LDFLAGS = \
 	-Wl,-headerpad_max_install_names
 
 include $(GNUSTEP_MAKEFILES)/application.make
+
+VPATH += \
+	../vendor/libffi/darwin_common/src \
+	../vendor/libffi/darwin_osx/src/aarch64 \
+	../vendor/libffi/darwin_osx/src/x86
 
 # ---------------------------------------------------------------------------
 # Post-build steps for AppScriptHarness.app:

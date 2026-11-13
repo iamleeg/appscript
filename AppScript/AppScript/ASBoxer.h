@@ -27,7 +27,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// `NSString`, `NSValue`). All methods are class methods; instances cannot be created.
 @interface ASBoxer : NSObject
 
-/// Unavailable. ASBoxer provides only class methods and cannot be instantiated.
+/// Unavailable.
+///
+/// You can't instantiate `NSBoxer`; use its class methods only.
 - (instancetype)init NS_UNAVAILABLE;
 
 /// Boxes the value in the given NSInvocation argument at the given index into an Objective-C object.
@@ -112,6 +114,34 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
 ///   - invocation: The invocation whose return value slot should be written.
 + (void)unboxObject:(nullable id)object
 intoReturnValueOfInvocation:(NSInvocation *)invocation;
+
+/// Boxes the raw value in `bytes` into an Objective-C object according to `typeEncoding`.
+///
+/// Struct encodings (`{...}`) are boxed into `ASStructValue` instances.
+///
+/// - Parameters:
+///   - bytes: Pointer to the raw value buffer.
+///   - typeEncoding: Objective-C runtime or BridgeSupport type encoding C string.
+/// - Returns: The boxed Objective-C object, or `nil` if boxing is not possible.
++ (nullable id)boxedObjectFromBytes:(const void *)bytes
+                       typeEncoding:(const char *)typeEncoding;
+
+/// Unboxes `object` into the caller-supplied buffer `outBytes` of `size` bytes according
+/// to `typeEncoding`.
+///
+/// Accepts both `ASStructValue` and `NSValue` when `typeEncoding` is a struct (`{...}`),
+/// verifying that the source struct's byte length matches `size`.
+///
+/// - Parameters:
+///   - object: The Objective-C object to unbox.
+///   - outBytes: Destination buffer of at least `size` bytes.
+///   - size: Size in bytes of the destination buffer.
+///   - typeEncoding: Objective-C runtime or BridgeSupport type encoding C string.
+/// - Returns: `YES` if unboxing succeeded; `NO` on type or size mismatch.
++ (BOOL)unboxObject:(nullable id)object
+          intoBytes:(void *)outBytes
+             ofSize:(NSUInteger)size
+       typeEncoding:(const char *)typeEncoding;
 
 @end
 

@@ -19,22 +19,17 @@
 #import "ASBridgeSupportParser.h"
 #import "ASBridgeSupportStructField.h"
 #import "ASBridgeSupportStruct.h"
+#import "ASStructValue.h"
 
 NSString * const ASBridgeSupportParserErrorDomain = @"ASBridgeSupportParserErrorDomain";
 
 // ---------------------------------------------------------------------------
 // Name-mapping table: imported struct name → canonical name
-// Add new entries here only; do not add mapping logic elsewhere.
+// Delegates to ASStructValue as the single source of truth.
 // ---------------------------------------------------------------------------
 
 static NSString *ASApplyStructNameMapping(NSString *importedName) {
-    static NSDictionary<NSString *, NSString *> *sMapping = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        sMapping = @{ @"_NSRange": @"NSRange" };
-    });
-    NSString *mapped = sMapping[importedName];
-    return mapped ?: importedName;
+    return [ASStructValue canonicalNameForImportedStructName:importedName];
 }
 
 // ---------------------------------------------------------------------------

@@ -76,6 +76,23 @@ NS_ASSUME_NONNULL_BEGIN
 /// Returns the registered `ASBridgeSupportStruct` for `canonicalName`, or nil if none.
 + (nullable ASBridgeSupportStruct *)registeredStructNamed:(NSString *)canonicalName;
 
+/// Maps an imported Objective-C or BridgeSupport struct tag name (e.g. @"_NSRange")
+/// to its canonical AppScript struct name (e.g. @"NSRange").
+///
+/// If no mapping exists for `importedName`, returns `importedName` unchanged.
+///
+/// - Parameter importedName: The raw struct tag name extracted from a type encoding.
+/// - Returns: The canonical AppScript struct name.
++ (NSString *)canonicalNameForImportedStructName:(NSString *)importedName;
+
+/// Resolves a struct type encoding (including bare struct references such as @"{CGSize}"
+/// or @"{CGRect={CGPoint}{CGSize}}") into a complete Objective-C runtime type encoding
+/// string suitable for `NSGetSizeAndAlignment` and `NSValue` (e.g. @"{CGSize=dd}").
+///
+/// - Parameter typeEncoding: A struct type encoding string beginning with `{`.
+/// - Returns: The resolved runtime type encoding string.
++ (NSString *)runtimeTypeEncodingForStructTypeEncoding:(NSString *)typeEncoding;
+
 @end
 
 NS_ASSUME_NONNULL_END

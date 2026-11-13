@@ -226,9 +226,10 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 /// if a selector coincides with a protocol method (e.g. isEqual: from <NSObject>),
 /// the protocol's primitive encoding (BOOL, NSUInteger, etc.) is what callers expect.
 static const char *ASProtocolTypeEncodingForSelector(Class cls, SEL selector) {
-    while (cls != Nil) {
+    Class cursor = cls;
+    while (cursor != Nil) {
         unsigned int protocolCount = 0;
-        Protocol * __unsafe_unretained *protocols = class_copyProtocolList(cls, &protocolCount);
+        Protocol * __unsafe_unretained *protocols = class_copyProtocolList(cursor, &protocolCount);
         for (unsigned int i = 0; i < protocolCount; i++) {
             struct objc_method_description desc =
                 protocol_getMethodDescription(protocols[i], selector, YES, YES);
@@ -243,7 +244,19 @@ static const char *ASProtocolTypeEncodingForSelector(Class cls, SEL selector) {
             }
         }
         if (protocols) free(protocols);
-        cls = class_getSuperclass(cls);
+        cursor = class_getSuperclass(cursor);
+    }
+
+    // Fall back to any native superclass method implementation (ignoring our own
+    // _objc_msgForward sentinels) so overrides of Cocoa superclass methods with
+    // struct or primitive parameters/returns inherit the real runtime signature.
+    cursor = cls;
+    while (cursor != Nil) {
+        Method m = class_getInstanceMethod(cursor, selector);
+        if (m != NULL && method_getImplementation(m) != (IMP)_objc_msgForward) {
+            return method_getTypeEncoding(m);
+        }
+        cursor = class_getSuperclass(cursor);
     }
     return NULL;
 }

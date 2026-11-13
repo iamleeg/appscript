@@ -259,4 +259,34 @@
     XCTAssertEqual(found.fields.count, 1u, @"First registration should be preserved");
 }
 
+// ---------------------------------------------------------------------------
+// Canonical struct name normalisation and runtime encoding helpers
+// ---------------------------------------------------------------------------
+
+- (void)test_canonicalNameForImportedStructName_normalisesFoundationStructTags {
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"_NSRange"], @"NSRange");
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"_NSRect"], @"CGRect");
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"NSRect"], @"CGRect");
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"_NSSize"], @"CGSize");
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"NSSize"], @"CGSize");
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"_NSPoint"], @"CGPoint");
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"NSPoint"], @"CGPoint");
+    XCTAssertEqualObjects([ASStructValue canonicalNameForImportedStructName:@"CustomStruct"], @"CustomStruct");
+}
+
+- (void)test_runtimeTypeEncodingForStructTypeEncoding_expandsBareStructReferences {
+    [self installXML:[self xmlWithStructElements:
+        @"<struct name='NSPoint' type64='{CGPoint=\"x\"d\"y\"d}'/>"
+        @"<struct name='NSSize'  type64='{CGSize=\"width\"d\"height\"d}'/>"
+        @"<struct name='NSRect'  type64='{CGRect=\"origin\"{CGPoint}\"size\"{CGSize}}'/>"
+    ]];
+
+    XCTAssertEqualObjects([ASStructValue runtimeTypeEncodingForStructTypeEncoding:@"{CGPoint}"],
+                          @"{CGPoint=dd}");
+    XCTAssertEqualObjects([ASStructValue runtimeTypeEncodingForStructTypeEncoding:@"{CGRect={CGPoint}{CGSize}}"],
+                          @"{CGRect={CGPoint=dd}{CGSize=dd}}");
+    XCTAssertEqualObjects([ASStructValue runtimeTypeEncodingForStructTypeEncoding:@"{_NSRange=QQ}"],
+                          @"{_NSRange=QQ}");
+}
+
 @end

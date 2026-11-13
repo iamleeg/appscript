@@ -72,6 +72,21 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             memcpy(&value, bytes, sizeof(signed char));
             return [NSNumber numberWithBool:(BOOL)value];
         }
+        case 'C': {
+            unsigned char value = 0;
+            memcpy(&value, bytes, sizeof(unsigned char));
+            return [NSNumber numberWithUnsignedChar:value];
+        }
+        case 's': {
+            short value = 0;
+            memcpy(&value, bytes, sizeof(short));
+            return [NSNumber numberWithShort:value];
+        }
+        case 'S': {
+            unsigned short value = 0;
+            memcpy(&value, bytes, sizeof(unsigned short));
+            return [NSNumber numberWithUnsignedShort:value];
+        }
         case 'i': {
             int value = 0;
             memcpy(&value, bytes, sizeof(int));
@@ -140,30 +155,31 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             return [NSValue valueWithBytes:bytes objCType:typeEncoding];
         }
         case '{': {
-            // Struct — if the canonical name is registered with ASStructValue, return an
-            // ASStructValue so field accessors (e.g. .width, .height) are available.
-            // Otherwise fall back to a plain NSValue.
+            // Struct — always box into ASStructValue using the canonical struct name
+            // and resolved runtime type encoding.
             NSString *typeEncodingString = @(typeEncoding);
             NSString *canonicalName = nil;
             const char *p = typeEncoding + 1; // skip '{'
             const char *nameStart = p;
             while (*p && *p != '=' && *p != '}') { p++; }
             if (p > nameStart) {
-                canonicalName = [[NSString alloc] initWithBytes:nameStart
-                                                         length:(NSUInteger)(p - nameStart)
-                                                       encoding:NSUTF8StringEncoding];
+                NSString *rawName = [[NSString alloc] initWithBytes:nameStart
+                                                             length:(NSUInteger)(p - nameStart)
+                                                           encoding:NSUTF8StringEncoding];
+                canonicalName = [ASStructValue canonicalNameForImportedStructName:rawName];
             }
-            if (canonicalName && [ASStructValue registeredStructNamed:canonicalName]) {
+            NSString *runtimeEnc = [ASStructValue runtimeTypeEncodingForStructTypeEncoding:typeEncodingString];
+            if ([runtimeEnc containsString:@"="]) {
                 NSUInteger structSize = 0;
-                NSGetSizeAndAlignment(typeEncoding, &structSize, NULL);
+                NSGetSizeAndAlignment(runtimeEnc.UTF8String, &structSize, NULL);
                 if (structSize > 0) {
                     return [[ASStructValue alloc] initWithBytes:bytes
                                                         length:structSize
-                                                  canonicalName:canonicalName
-                                            runtimeTypeEncoding:typeEncodingString];
+                                                  canonicalName:canonicalName ?: runtimeEnc
+                                            runtimeTypeEncoding:runtimeEnc];
                 }
             }
-            return [NSValue valueWithBytes:bytes objCType:typeEncoding];
+            return nil;
         }
         default: {
             // Unknown type — make a best-effort NSValue wrapping with the given type encoding
@@ -172,18 +188,25 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
     }
 }
 
-/// Unboxes `object` into `outBytes` (of size `size`) according to `typeEncoding`.
+/// Unboxes `object` into `outBytes` (of size `outSize`) according to `typeEncoding`.
 /// Returns YES if the unboxing succeeded.
-static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *typeEncoding) {
+static BOOL ASUnboxIntoBytes(id _Nullable object,
+                             void *outBytes,
+                             NSUInteger outSize,
+                             const char *typeEncoding) {
     typeEncoding = ASSkipTypeQualifiers(typeEncoding);
     if (!typeEncoding || typeEncoding[0] == '\0') {
         return NO;
     }
 
+    if ([object isKindOfClass:[ASNull class]] || [object isKindOfClass:[NSNull class]]) {
+        object = nil;
+    }
+
     switch (typeEncoding[0]) {
         case '@': {
             // Convert the AppScript nil sentinel ([ASNull null]) to ObjC nil at the boundary.
-            id __unsafe_unretained obj = ([object isKindOfClass:[ASNull class]]) ? nil : object;
+            id __unsafe_unretained obj = object;
             memcpy(outBytes, &obj, sizeof(id));
             return YES;
         }
@@ -202,6 +225,21 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
             // Treat char as BOOL
             signed char value = (signed char)[object boolValue];
             memcpy(outBytes, &value, sizeof(signed char));
+            return YES;
+        }
+        case 'C': {
+            unsigned char value = [object unsignedCharValue];
+            memcpy(outBytes, &value, sizeof(unsigned char));
+            return YES;
+        }
+        case 's': {
+            short value = [object shortValue];
+            memcpy(outBytes, &value, sizeof(short));
+            return YES;
+        }
+        case 'S': {
+            unsigned short value = [object unsignedShortValue];
+            memcpy(outBytes, &value, sizeof(unsigned short));
             return YES;
         }
         case 'i': {
@@ -255,13 +293,10 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
             return YES;
         }
         case '^': {
-            const char *pointedType = ASSkipTypeQualifiers(typeEncoding + 1);
-            if (pointedType && pointedType[0] == '@') {
-                if (object == nil || [object isKindOfClass:[ASNull class]]) {
-                    void *nullPtr = NULL;
-                    memcpy(outBytes, &nullPtr, sizeof(void *));
-                    return YES;
-                }
+            if (object == nil) {
+                void *nullPtr = NULL;
+                memcpy(outBytes, &nullPtr, sizeof(void *));
+                return YES;
             }
             if ([object isKindOfClass:[NSValue class]]) {
                 [object getValue:outBytes];
@@ -270,13 +305,28 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
             return NO;
         }
         case '{': {
-            // ASStructValue or NSValue containing a struct
+            // ASStructValue or NSValue containing a struct — verify the byte length matches outSize.
+            if (outSize == 0) {
+                return NO;
+            }
             if ([object isKindOfClass:[ASStructValue class]]) {
                 ASStructValue *sv = (ASStructValue *)object;
-                memcpy(outBytes, sv.bytes.bytes, sv.bytes.length);
+                if (sv.bytes.length != outSize) {
+                    return NO;
+                }
+                memcpy(outBytes, sv.bytes.bytes, outSize);
                 return YES;
             } else if ([object isKindOfClass:[NSValue class]]) {
-                [object getValue:outBytes];
+                NSValue *nsv = (NSValue *)object;
+                const char *valType = nsv.objCType;
+                NSUInteger valSize = 0;
+                if (valType && strchr(valType, '=') != NULL) {
+                    NSGetSizeAndAlignment(valType, &valSize, NULL);
+                }
+                if (valSize != outSize) {
+                    return NO;
+                }
+                [nsv getValue:outBytes];
                 return YES;
             }
             return NO;
@@ -284,6 +334,9 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
         default: {
             if ([object isKindOfClass:[ASStructValue class]]) {
                 ASStructValue *sv = (ASStructValue *)object;
+                if (outSize > 0 && sv.bytes.length != outSize) {
+                    return NO;
+                }
                 memcpy(outBytes, sv.bytes.bytes, sv.bytes.length);
                 return YES;
             } else if ([object isKindOfClass:[NSValue class]]) {
@@ -300,6 +353,24 @@ static BOOL ASUnboxIntoBytes(id _Nullable object, void *outBytes, const char *ty
 // ---------------------------------------------------------------------------
 
 @implementation ASBoxer
+
++ (nullable id)boxedObjectFromBytes:(const void *)bytes
+                       typeEncoding:(const char *)typeEncoding {
+    if (!bytes && typeEncoding && typeEncoding[0] != 'v') {
+        return nil;
+    }
+    return ASBoxBytes(bytes, typeEncoding);
+}
+
++ (BOOL)unboxObject:(nullable id)object
+          intoBytes:(void *)outBytes
+             ofSize:(NSUInteger)size
+       typeEncoding:(const char *)typeEncoding {
+    if (!outBytes && typeEncoding && typeEncoding[0] != 'v') {
+        return NO;
+    }
+    return ASUnboxIntoBytes(object, outBytes, size, typeEncoding);
+}
 
 + (nullable id)boxedArgumentAtIndex:(NSUInteger)argumentIndex
                      fromInvocation:(NSInvocation *)invocation {
@@ -373,7 +444,7 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
     void *buffer = alloca(argSize);
     memset(buffer, 0, argSize);
 
-    if (ASUnboxIntoBytes(object, buffer, typeEncoding)) {
+    if (ASUnboxIntoBytes(object, buffer, argSize, typeEncoding)) {
         [invocation setArgument:buffer atIndex:(NSInteger)invIndex];
     }
 }
@@ -415,7 +486,7 @@ intoReturnValueOfInvocation:(NSInvocation *)invocation {
     void *buffer = alloca(retSize);
     memset(buffer, 0, retSize);
 
-    if (ASUnboxIntoBytes(object, buffer, typeEncoding)) {
+    if (ASUnboxIntoBytes(object, buffer, retSize, typeEncoding)) {
         [invocation setReturnValue:buffer];
     }
 }

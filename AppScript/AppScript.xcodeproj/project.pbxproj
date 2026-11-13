@@ -10,6 +10,17 @@
 		980EBA0D2F5F35DD0023077B /* AppScript.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 980EBA012F5F35DD0023077B /* AppScript.framework */; };
 		98ACC1E32F5F369A0063EA86 /* AppScript.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 980EBA012F5F35DD0023077B /* AppScript.framework */; };
 		98ACC1E42F5F369A0063EA86 /* AppScript.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 980EBA012F5F35DD0023077B /* AppScript.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		98FF10012F685549009B7C9A /* closures.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10112F685549009B7C9A /* closures.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF10022F685549009B7C9A /* prep_cif.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10122F685549009B7C9A /* prep_cif.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF10032F685549009B7C9A /* raw_api.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10132F685549009B7C9A /* raw_api.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF10042F685549009B7C9A /* types.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10142F685549009B7C9A /* types.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF10052F685549009B7C9A /* tramp.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10152F685549009B7C9A /* tramp.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF10062F685549009B7C9A /* ffi_arm64.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10162F685549009B7C9A /* ffi_arm64.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF10072F685549009B7C9A /* sysv_arm64.S in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10172F685549009B7C9A /* sysv_arm64.S */; };
+		98FF10082F685549009B7C9A /* ffi64_x86_64.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10182F685549009B7C9A /* ffi64_x86_64.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF10092F685549009B7C9A /* ffiw64_x86_64.c in Sources */ = {isa = PBXBuildFile; fileRef = 98FF10192F685549009B7C9A /* ffiw64_x86_64.c */; settings = {COMPILER_FLAGS = "-w -Xanalyzer -analyzer-disable-all-checks"; }; };
+		98FF100A2F685549009B7C9A /* unix64_x86_64.S in Sources */ = {isa = PBXBuildFile; fileRef = 98FF101A2F685549009B7C9A /* unix64_x86_64.S */; };
+		98FF100B2F685549009B7C9A /* win64_x86_64.S in Sources */ = {isa = PBXBuildFile; fileRef = 98FF101B2F685549009B7C9A /* win64_x86_64.S */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,6 +77,17 @@
 		98A94D292F685310009B7C9A /* CODING_STANDARDS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = CODING_STANDARDS.md; path = ../CODING_STANDARDS.md; sourceTree = SOURCE_ROOT; };
 		98A94D2A2F68552A009B7C9A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = ../README.md; sourceTree = SOURCE_ROOT; };
 		98A94D2B2F685549009B7C9A /* ARCHITECTURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = ARCHITECTURE.md; path = ../ARCHITECTURE.md; sourceTree = SOURCE_ROOT; };
+		98FF10112F685549009B7C9A /* closures.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = closures.c; path = ../vendor/libffi/darwin_common/src/closures.c; sourceTree = SOURCE_ROOT; };
+		98FF10122F685549009B7C9A /* prep_cif.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = prep_cif.c; path = ../vendor/libffi/darwin_common/src/prep_cif.c; sourceTree = SOURCE_ROOT; };
+		98FF10132F685549009B7C9A /* raw_api.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = raw_api.c; path = ../vendor/libffi/darwin_common/src/raw_api.c; sourceTree = SOURCE_ROOT; };
+		98FF10142F685549009B7C9A /* types.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = types.c; path = ../vendor/libffi/darwin_common/src/types.c; sourceTree = SOURCE_ROOT; };
+		98FF10152F685549009B7C9A /* tramp.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = tramp.c; path = ../vendor/libffi/darwin_common/src/tramp.c; sourceTree = SOURCE_ROOT; };
+		98FF10162F685549009B7C9A /* ffi_arm64.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ffi_arm64.c; path = ../vendor/libffi/darwin_osx/src/aarch64/ffi_arm64.c; sourceTree = SOURCE_ROOT; };
+		98FF10172F685549009B7C9A /* sysv_arm64.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; name = sysv_arm64.S; path = ../vendor/libffi/darwin_osx/src/aarch64/sysv_arm64.S; sourceTree = SOURCE_ROOT; };
+		98FF10182F685549009B7C9A /* ffi64_x86_64.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ffi64_x86_64.c; path = ../vendor/libffi/darwin_osx/src/x86/ffi64_x86_64.c; sourceTree = SOURCE_ROOT; };
+		98FF10192F685549009B7C9A /* ffiw64_x86_64.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = ffiw64_x86_64.c; path = ../vendor/libffi/darwin_osx/src/x86/ffiw64_x86_64.c; sourceTree = SOURCE_ROOT; };
+		98FF101A2F685549009B7C9A /* unix64_x86_64.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; name = unix64_x86_64.S; path = ../vendor/libffi/darwin_osx/src/x86/unix64_x86_64.S; sourceTree = SOURCE_ROOT; };
+		98FF101B2F685549009B7C9A /* win64_x86_64.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; name = win64_x86_64.S; path = ../vendor/libffi/darwin_osx/src/x86/win64_x86_64.S; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -200,6 +222,7 @@
 			isa = PBXGroup;
 			children = (
 				98F04CF12F616D250081BDAF /* Documentation */,
+				98FF10202F685549009B7C9A /* libffi */,
 				980EBA032F5F35DD0023077B /* AppScript */,
 				980EBA102F5F35DD0023077B /* AppScriptTests */,
 				980EBA202F5F36220023077B /* AppScriptHarness */,
@@ -237,6 +260,24 @@
 				98A94D292F685310009B7C9A /* CODING_STANDARDS.md */,
 			);
 			path = Documentation;
+			sourceTree = "<group>";
+		};
+		98FF10202F685549009B7C9A /* libffi */ = {
+			isa = PBXGroup;
+			children = (
+				98FF10112F685549009B7C9A /* closures.c */,
+				98FF10122F685549009B7C9A /* prep_cif.c */,
+				98FF10132F685549009B7C9A /* raw_api.c */,
+				98FF10142F685549009B7C9A /* types.c */,
+				98FF10152F685549009B7C9A /* tramp.c */,
+				98FF10162F685549009B7C9A /* ffi_arm64.c */,
+				98FF10172F685549009B7C9A /* sysv_arm64.S */,
+				98FF10182F685549009B7C9A /* ffi64_x86_64.c */,
+				98FF10192F685549009B7C9A /* ffiw64_x86_64.c */,
+				98FF101A2F685549009B7C9A /* unix64_x86_64.S */,
+				98FF101B2F685549009B7C9A /* win64_x86_64.S */,
+			);
+			name = libffi;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -463,6 +504,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				98FF10012F685549009B7C9A /* closures.c in Sources */,
+				98FF10022F685549009B7C9A /* prep_cif.c in Sources */,
+				98FF10032F685549009B7C9A /* raw_api.c in Sources */,
+				98FF10042F685549009B7C9A /* types.c in Sources */,
+				98FF10052F685549009B7C9A /* tramp.c in Sources */,
+				98FF10062F685549009B7C9A /* ffi_arm64.c in Sources */,
+				98FF10072F685549009B7C9A /* sysv_arm64.S in Sources */,
+				98FF10082F685549009B7C9A /* ffi64_x86_64.c in Sources */,
+				98FF10092F685549009B7C9A /* ffiw64_x86_64.c in Sources */,
+				98FF100A2F685549009B7C9A /* unix64_x86_64.S in Sources */,
+				98FF100B2F685549009B7C9A /* win64_x86_64.S in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -655,6 +707,12 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../vendor/libffi/darwin_common/include",
+					"$(SRCROOT)/../vendor/libffi/darwin_osx/include",
+					"$(SRCROOT)/../vendor/libffi/darwin_osx/src/aarch64",
+					"$(SRCROOT)/../vendor/libffi/darwin_osx/src/x86",
+				);
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -700,6 +758,12 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../vendor/libffi/darwin_common/include",
+					"$(SRCROOT)/../vendor/libffi/darwin_osx/include",
+					"$(SRCROOT)/../vendor/libffi/darwin_osx/src/aarch64",
+					"$(SRCROOT)/../vendor/libffi/darwin_osx/src/x86",
+				);
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
