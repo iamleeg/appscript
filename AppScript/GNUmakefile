@@ -56,7 +56,10 @@ AppScript_OBJC_FILES = \
 	AppScript/ASAssignmentNode.m \
 	AppScript/ASASTNode.m \
 	AppScript/ASBlockLiteralNode.m \
+	AppScript/ASBlockRegistry.m \
+	AppScript/ASBlockTrampoline.m \
 	AppScript/ASBoxer.m \
+	AppScript/ASBridgeSupportBlockSignature.m \
 	AppScript/ASBridgeSupportConstant.m \
 	AppScript/ASBridgeSupportDocument.m \
 	AppScript/ASBridgeSupportEnumeration.m \
@@ -70,6 +73,7 @@ AppScript_OBJC_FILES = \
 	AppScript/ASClassDefinitionNode.m \
 	AppScript/ASDictionaryLiteralNode.m \
 	AppScript/ASIdentifierNode.m \
+	AppScript/ASFfiSupport.m \
 	AppScript/ASInterpreter.m \
 	AppScript/ASLexer.m \
 	AppScript/ASLoader.m \
@@ -88,7 +92,6 @@ AppScript_OBJC_FILES = \
 	AppScript/ASToken.m \
 	AppScript/ASUncaughtExceptionHandler.m \
 	AppScript/ASVariableDeclarationNode.m \
-	AppScript/NSArray+AppScriptBlocks.m \
 	AppScript/NSBundle+AppScriptBridgeSupportLoading.m \
 	AppScript/NSBundle+AppScriptLoading.m \
 	AppScript/NSNumber+AppScriptArithmetic.m \
@@ -107,7 +110,10 @@ AppScript_HEADER_FILES = \
 	ASAssignmentNode.h \
 	ASASTNode.h \
 	ASBlockLiteralNode.h \
+	ASBlockRegistry.h \
+	ASBlockTrampoline.h \
 	ASBoxer.h \
+	ASBridgeSupportBlockSignature.h \
 	ASBridgeSupportConstant.h \
 	ASBridgeSupportDocument.h \
 	ASBridgeSupportEnumeration.h \
@@ -139,7 +145,6 @@ AppScript_HEADER_FILES = \
 	ASSuperNode.h \
 	ASToken.h \
 	ASVariableDeclarationNode.h \
-	NSArray+AppScriptBlocks.h \
 	NSBundle+AppScriptBridgeSupportLoading.h \
 	NSBundle+AppScriptLoading.h \
 	NSNumber+AppScriptArithmetic.h \
@@ -179,6 +184,9 @@ BUNDLE_NAME = AppScriptTests
 
 AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASASTNodeTests.m \
+	AppScriptTests/ASBlockRegistryTests.m \
+	AppScriptTests/ASBlockSendTests.m \
+	AppScriptTests/ASBlockTrampolineTests.m \
 	AppScriptTests/ASBoxerTests.m \
 	AppScriptTests/ASBridgeSupportInstallerTests.m \
 	AppScriptTests/ASBridgeSupportParserTests.m \

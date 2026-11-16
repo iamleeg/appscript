@@ -22,7 +22,6 @@ FOUNDATION_EXPORT double AppScriptVersionNumber;
 FOUNDATION_EXPORT const unsigned char AppScriptVersionString[];
 
 #import <AppScript/NSBundle+AppScriptLoading.h>
-#import <AppScript/NSArray+AppScriptBlocks.h>
 #import <AppScript/NSURL+AppScriptFileReading.h>
 #import <AppScript/NSString+AppScriptRuntime.h>
 #import <AppScript/NSNumber+AppScriptBitwise.h>
@@ -34,3 +33,6 @@ FOUNDATION_EXPORT const unsigned char AppScriptVersionString[];
 #import <AppScript/ASBridgeSupportStruct.h>
 #import <AppScript/ASStructValue.h>
 #import <AppScript/ASOutObject.h>
+#import <AppScript/ASBridgeSupportBlockSignature.h>
+#import <AppScript/ASBlockRegistry.h>
+#import <AppScript/ASBlockTrampoline.h>

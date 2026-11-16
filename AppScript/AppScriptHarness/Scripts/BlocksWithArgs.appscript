@@ -19,11 +19,11 @@
 @class BlocksWithArgsTest : ASTestCase
 
 - runTests {
-    // Pass a two-parameter block to as_sortedArrayUsingBlock:.
+    // Pass a two-parameter block to -sortedArrayUsingComparator:.
     // The block receives two elements; returning [a compare:b] (an NSNumber
     // wrapping NSComparisonResult) drives the sort order.
     id items = @[@"banana", @"apple", @"cherry"]
-    id sorted = [items as_sortedArrayUsingBlock:^(a b) {
+    id sorted = [items sortedArrayUsingComparator:^(a b) {
         return [a compare:b]
     }]
     return sorted

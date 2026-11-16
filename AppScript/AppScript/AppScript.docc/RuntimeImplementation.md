@@ -26,28 +26,19 @@ AppScript uses Objective-C ARC for all memory management; manual `retain`/`relea
 
 When ``ASInterpreter`` evaluates a block literal such as `^(a b) { return [a compare:b] }`, it creates an Objective-C block whose arity matches the number of declared parameters. The interpreter supports blocks with zero to four parameters; blocks with more parameters produce a runtime error. All parameters and the return value are typed as `id`.
 
-The parameter names, body AST, and captured scope chain are closed over by the block at creation time. No additional storage — such as associated objects on the block instance — is required. When the block is invoked by Objective-C code, the received arguments are bound into a new child scope under the captured scope, and the body is executed by the interpreter.
+The parameter names, body AST, and captured scope chain are closed over by the block at creation time. The interpreter also attaches a small marker to the block (an associated object holding a generic invoker and the parameter count), so a block passed to a Cocoa method can be recognised and, where the method's block signature isn't all objects, wrapped in a block with the real C signature. When the block is invoked by Objective-C code, the received arguments are bound into a new child scope under the captured scope, and the body is executed by the interpreter.
 
-### Block adaptor methods
+### Blocks that take or return C values
 
-Because all AppScript blocks return `id`, there is a type mismatch when a native Objective-C API expects a block returning a C primitive type. For example, `-[NSArray sortedArrayUsingComparator:]` expects a block returning `NSComparisonResult` (an `NSInteger`), not an `id`.
-
-The AppScript runtime provides `as_`-prefixed adaptor methods on Foundation classes to bridge this gap:
-
-```objc
-@interface NSArray (AppScriptBlocks)
-/// Returns the array sorted using a comparator block that returns NSComparisonResult as an NSNumber.
-- (NSArray *)as_sortedArrayUsingBlock:(id (^)(id, id))comparatorBlock;
-@end
-```
+Because all AppScript blocks take and return `id`, a native API that calls its block with C values, such as `-[NSArray enumerateObjectsUsingBlock:]` (`NSUInteger`, `BOOL *`) or `-[NSArray sortedArrayUsingComparator:]` (a return of `NSComparisonResult`), needs the block's real signature. The runtime reads it from BridgeSupport (or from a built-in registration) and wraps the script's block in a libffi-closure block with that signature, so AppScript code calls the native method directly:
 
 ```appscript
-id sorted = [array as_sortedArrayUsingBlock: ^(a b) {
+id sorted = [array sortedArrayUsingComparator: ^(a b) {
     return [a compare: b]
 }]
 ```
 
-The adaptor unboxes the `NSNumber` return value to `NSComparisonResult` before forwarding to Foundation. AppScript code calls `as_sortedArrayUsingBlock:` instead of `sortedArrayUsingComparator:` and returns the comparison result directly.
+The index and other scalar arguments arrive as `NSNumber`s, a `BOOL *` stop flag arrives as an ``ASOutObject`` the script can set, and the script's result is converted to the declared return type. See ``ASBlockTrampoline`` and ``ASBlockRegistry``, and "Blocks passed to Cocoa methods" in ARCHITECTURE.md. The earlier `as_sortedArrayUsingBlock:` adaptor was removed.
 
 ## Topics
 

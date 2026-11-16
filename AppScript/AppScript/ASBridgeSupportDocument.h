@@ -21,6 +21,7 @@
 #import "ASBridgeSupportConstant.h"
 #import "ASBridgeSupportEnumeration.h"
 #import "ASBridgeSupportStruct.h"
+#import "ASBridgeSupportBlockSignature.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -41,11 +42,28 @@ NS_ASSUME_NONNULL_BEGIN
 /// Includes zero-field (opaque) structs.
 @property (nonatomic, readonly, copy) NSArray<ASBridgeSupportStruct *> *structs;
 
-/// Designated initializer.
+/// The block signatures of method arguments (`function_pointer='true'` arguments of `<method>` entries).
+@property (nonatomic, readonly, copy) NSArray<ASBridgeSupportBlockSignature *> *blockSignatures;
+
+/// Creates a document with no method block signatures.
 - (instancetype)initWithFunctions:(NSArray<ASBridgeSupportFunction *> *)functions
                         constants:(NSArray<ASBridgeSupportConstant *> *)constants
                      enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations
-                          structs:(NSArray<ASBridgeSupportStruct *> *)structs NS_DESIGNATED_INITIALIZER;
+                          structs:(NSArray<ASBridgeSupportStruct *> *)structs;
+
+/// Creates a document that also holds method block signatures.
+///
+/// - Parameters:
+///   - functions: The functions.
+///   - constants: The constants.
+///   - enumerations: The enumerations.
+///   - structs: The structs.
+///   - blockSignatures: The method block signatures.
+- (instancetype)initWithFunctions:(NSArray<ASBridgeSupportFunction *> *)functions
+                        constants:(NSArray<ASBridgeSupportConstant *> *)constants
+                     enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations
+                          structs:(NSArray<ASBridgeSupportStruct *> *)structs
+                  blockSignatures:(NSArray<ASBridgeSupportBlockSignature *> *)blockSignatures NS_DESIGNATED_INITIALIZER;
 
 - (instancetype)init NS_UNAVAILABLE;
 

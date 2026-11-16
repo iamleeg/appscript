@@ -24,12 +24,25 @@
                         constants:(NSArray<ASBridgeSupportConstant *> *)constants
                      enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations
                           structs:(NSArray<ASBridgeSupportStruct *> *)structs {
+    return [self initWithFunctions:functions
+                         constants:constants
+                      enumerations:enumerations
+                           structs:structs
+                   blockSignatures:@[]];
+}
+
+- (instancetype)initWithFunctions:(NSArray<ASBridgeSupportFunction *> *)functions
+                        constants:(NSArray<ASBridgeSupportConstant *> *)constants
+                     enumerations:(NSArray<ASBridgeSupportEnumeration *> *)enumerations
+                          structs:(NSArray<ASBridgeSupportStruct *> *)structs
+                  blockSignatures:(NSArray<ASBridgeSupportBlockSignature *> *)blockSignatures {
     self = [super init];
     if (self) {
-        _functions    = [functions copy];
-        _constants    = [constants copy];
-        _enumerations = [enumerations copy];
-        _structs      = [structs copy];
+        _functions       = [functions copy];
+        _constants       = [constants copy];
+        _enumerations    = [enumerations copy];
+        _structs         = [structs copy];
+        _blockSignatures = [blockSignatures copy];
     }
     return self;
 }

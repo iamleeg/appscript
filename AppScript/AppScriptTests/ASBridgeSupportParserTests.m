@@ -294,4 +294,65 @@
     XCTAssertNil(fn);
 }
 
+// ---------------------------------------------------------------------------
+// Method block signatures (function_pointer arguments of <method> entries)
+// ---------------------------------------------------------------------------
+
+- (void)test_parseData_methodBlockArgument_registersSignature {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<class name='NSArray'>"
+                    @"<method selector='enumerateObjectsUsingBlock:'>"
+                    @"<arg function_pointer='true' index='0' type64='@?'>"
+                    @"<arg type64='@'/><arg type64='Q'/><arg type64='^B' type_modifier='o'/>"
+                    @"<retval type64='v'/>"
+                    @"</arg>"
+                    @"</method>"
+                    @"</class>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    XCTAssertEqual(doc.blockSignatures.count, 1u);
+    ASBridgeSupportBlockSignature *sig = doc.blockSignatures.firstObject;
+    XCTAssertEqualObjects(sig.className, @"NSArray");
+    XCTAssertEqualObjects(sig.selectorName, @"enumerateObjectsUsingBlock:");
+    XCTAssertFalse(sig.isClassMethod);
+    XCTAssertEqual(sig.argumentIndex, 0u);
+    NSArray *expectedParams = @[@"@", @"Q", @"^B"];
+    XCTAssertEqualObjects(sig.parameterTypeEncodings, expectedParams);
+    XCTAssertEqualObjects(sig.returnTypeEncoding, @"v");
+}
+
+- (void)test_parseData_classMethodBlockArgumentAtLaterIndex_recordsClassMethodAndIndex {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<class name='NSTimer'>"
+                    @"<method class_method='true' selector='scheduledTimerWithTimeInterval:repeats:block:'>"
+                    @"<arg index='0' type64='d'/><arg index='1' type64='B'/>"
+                    @"<arg function_pointer='true' index='2' type64='@?'><arg type64='@'/><retval type64='v'/></arg>"
+                    @"<retval type64='@'/>"
+                    @"</method>"
+                    @"</class>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    XCTAssertEqual(doc.blockSignatures.count, 1u, @"only the function-pointer argument is a block signature");
+    ASBridgeSupportBlockSignature *sig = doc.blockSignatures.firstObject;
+    XCTAssertTrue(sig.isClassMethod);
+    XCTAssertEqual(sig.argumentIndex, 2u);
+    NSArray *expectedParams = @[@"@"];
+    XCTAssertEqualObjects(sig.parameterTypeEncodings, expectedParams);
+}
+
+- (void)test_parseData_methodWithoutBlockArgument_registersNothing {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<class name='NSArray'>"
+                    @"<method selector='objectAtIndex:'><arg index='0' type64='Q'/><retval type64='@'/></method>"
+                    @"</class>"
+                    @"<function name='sin'><arg type64='d'/><retval type64='d'/></function>"
+                    @"</signatures>";
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    XCTAssertEqual(doc.blockSignatures.count, 0u);
+    XCTAssertEqual(doc.functions.count, 1u, @"function parsing is unaffected by method parsing");
+}
+
 @end

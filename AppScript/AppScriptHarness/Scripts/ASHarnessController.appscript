@@ -26,7 +26,7 @@
     id runner = [ASTestRunner new]
     id unsorted = [runner runAllTests]
 
-    id sorted = [unsorted as_sortedArrayUsingBlock:^(a, b) {
+    id sorted = [unsorted sortedArrayUsingComparator:^(a, b) {
         id aPassed = [a isPassed]
         id bPassed = [b isPassed]
         id same = [aPassed isEqual:bPassed]

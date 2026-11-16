@@ -124,6 +124,17 @@ static void ASParseStructTypeEncoding(NSString *typeEncoding,
 @property (nonatomic, readonly) NSMutableArray<ASBridgeSupportConstant *> *constants;
 @property (nonatomic, readonly) NSMutableArray<ASBridgeSupportEnumeration *> *enumerations;
 @property (nonatomic, readonly) NSMutableArray<ASBridgeSupportStruct *> *structs;
+@property (nonatomic, readonly) NSMutableArray<ASBridgeSupportBlockSignature *> *blockSignatures;
+
+// Per-method block-signature parsing state
+@property (nonatomic, copy, nullable) NSString *currentClassName;
+@property (nonatomic, copy, nullable) NSString *currentMethodSelector;
+@property (nonatomic) BOOL currentMethodIsClassMethod;
+@property (nonatomic, strong, nullable) NSNumber *currentBlockArgumentIndex;
+@property (nonatomic, strong, nullable) NSMutableArray<NSString *> *currentBlockParameterTypes;
+@property (nonatomic, copy, nullable) NSString *currentBlockReturnType;
+/// 0 outside a block argument; 1 inside it; each nested `<arg>` adds one while it is open.
+@property (nonatomic) NSInteger currentBlockDepth;
 
 // Per-function parsing state
 @property (nonatomic, copy, nullable) NSString *currentFunctionName;
@@ -147,6 +158,7 @@ static void ASParseStructTypeEncoding(NSString *typeEncoding,
         _constants    = [NSMutableArray array];
         _enumerations = [NSMutableArray array];
         _structs      = [NSMutableArray array];
+        _blockSignatures = [NSMutableArray array];
     }
     return self;
 }
@@ -176,6 +188,44 @@ didStartElement:(NSString *)elementName
   namespaceURI:(nullable NSString *)namespaceURI
  qualifiedName:(nullable NSString *)qName
     attributes:(NSDictionary<NSString *, NSString *> *)attributeDict {
+
+    if ([elementName isEqualToString:@"class"]) {
+        self.currentClassName = attributeDict[@"name"];
+        return;
+    }
+    if ([elementName isEqualToString:@"method"]) {
+        // Only methods of a <class> carry block signatures we register; informal protocols are skipped.
+        if (self.currentClassName != nil) {
+            self.currentMethodSelector = attributeDict[@"selector"];
+            self.currentMethodIsClassMethod = [attributeDict[@"class_method"] isEqualToString:@"true"];
+        }
+        return;
+    }
+    if (self.currentMethodSelector != nil) {
+        if ([elementName isEqualToString:@"arg"]) {
+            if (self.currentBlockDepth > 0) {
+                // A parameter of the block argument we are inside.
+                self.currentBlockDepth++;
+                NSString *parameterType = [self typeFromAttributes:attributeDict];
+                if (parameterType) {
+                    [self.currentBlockParameterTypes addObject:parameterType];
+                }
+            } else if ([attributeDict[@"function_pointer"] isEqualToString:@"true"] ||
+                       [attributeDict[@"block"] isEqualToString:@"true"]) {
+                self.currentBlockDepth = 1;
+                self.currentBlockArgumentIndex = @([attributeDict[@"index"] integerValue]);
+                self.currentBlockParameterTypes = [NSMutableArray array];
+                self.currentBlockReturnType = nil;
+            }
+            return;
+        }
+        if ([elementName isEqualToString:@"retval"]) {
+            if (self.currentBlockDepth == 1) {
+                self.currentBlockReturnType = [self typeFromAttributes:attributeDict];
+            }
+            return;
+        }
+    }
 
     if ([elementName isEqualToString:@"function"]) {
         [self resetFunctionState];
@@ -251,6 +301,34 @@ didStartElement:(NSString *)elementName
   namespaceURI:(nullable NSString *)namespaceURI
  qualifiedName:(nullable NSString *)qName {
 
+    if ([elementName isEqualToString:@"arg"] && self.currentBlockDepth > 0) {
+        self.currentBlockDepth--;
+        if (self.currentBlockDepth == 0 && self.currentClassName != nil &&
+            self.currentMethodSelector != nil && self.currentBlockArgumentIndex != nil) {
+            ASBridgeSupportBlockSignature *signature = [[ASBridgeSupportBlockSignature alloc]
+                initWithClassName:self.currentClassName
+                     selectorName:self.currentMethodSelector
+                    isClassMethod:self.currentMethodIsClassMethod
+                    argumentIndex:self.currentBlockArgumentIndex.unsignedIntegerValue
+           parameterTypeEncodings:self.currentBlockParameterTypes ?: @[]
+               returnTypeEncoding:self.currentBlockReturnType ?: @"v"];
+            [self.blockSignatures addObject:signature];
+            self.currentBlockArgumentIndex = nil;
+            self.currentBlockParameterTypes = nil;
+            self.currentBlockReturnType = nil;
+        }
+        return;
+    }
+    if ([elementName isEqualToString:@"method"]) {
+        self.currentMethodSelector = nil;
+        self.currentMethodIsClassMethod = NO;
+        return;
+    }
+    if ([elementName isEqualToString:@"class"]) {
+        self.currentClassName = nil;
+        return;
+    }
+
     if ([elementName isEqualToString:@"function"]) {
         NSString *name = self.currentFunctionName;
         if (name) {
@@ -308,7 +386,8 @@ didStartElement:(NSString *)elementName
     return [[ASBridgeSupportDocument alloc] initWithFunctions:delegate.functions
                                                     constants:delegate.constants
                                                  enumerations:delegate.enumerations
-                                                      structs:delegate.structs];
+                                                      structs:delegate.structs
+                                              blockSignatures:delegate.blockSignatures];
 }
 
 - (nullable ASBridgeSupportDocument *)parseURL:(NSURL *)url error:(NSError **)error {

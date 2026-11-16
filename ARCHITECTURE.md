@@ -123,7 +123,6 @@ The following categories are included in the AppScript framework to bridge commo
 
 | Category | Method | Equivalent C function | Notes |
 |---|---|---|---|
-| `NSArray (AppScriptBlocks)` | `-as_sortedArrayUsingBlock:` | N/A | Bridges block-based sorting. The block must return an `NSNumber` wrapping an `NSComparisonResult`. |
 | `NSString (AppScriptRuntime)` | `-as_class` | `NSClassFromString()` | Returns the `Class` as `id`; returns `nil` for unknown names. |
 | `NSString (AppScriptRuntime)` | `-as_protocol` | `NSProtocolFromString()` | Returns the `Protocol *` as `id`; returns `nil` for unknown names. |
 | `NSURL (AppScriptFileReading)` | `-as_stringContents` | `+[NSString stringWithContentsOfURL:encoding:error:]` | UTF-8; returns `nil` on error instead of using an out-parameter. |
@@ -170,6 +169,32 @@ id capitalize = ^{
 ```
 
 Variables that aren't marked `constant` are automatically mutable by blocks that can capture them, as if they had the Objective-C `__block` annotation.
+
+#### Blocks passed to Cocoa methods
+
+A script's block has no types, but a Cocoa method that takes a block calls it with C values: `-[NSArray enumerateObjectsUsingBlock:]` passes `(id, NSUInteger, BOOL *)` and expects nothing back, `-[NSArray sortedArrayUsingComparator:]` expects an `NSComparisonResult`, and `-[NSSavePanel beginSheetModalForWindow:completionHandler:]` passes an `NSInteger`. The Objective-C runtime encodes every block argument as `@?` with no signature, so the runtime takes the signature from BridgeSupport: each `<method>` entry of a `<class>` with an `<arg function_pointer='true'>` lists the block's parameter types and return type. Loading a framework's BridgeSupport (`+[NSBundle loadBridgeSupportForFramework:]`) registers those signatures, found later by the receiver's class (and its superclasses), the selector and the argument index. The framework registers its own block-taking helpers (`ifTrue:`, `ifFalse:`, `ifTrue:ifFalse:`, `do:while:`, `do:until:`) itself, and also `-[NSArray sortedArrayUsingComparator:]` and `-[NSArray enumerateObjectsUsingBlock:]`, so they work without BridgeSupport, as on GNUstep. (The `as_sortedArrayUsingBlock:` workaround that these replace was removed; a script that called it should call `sortedArrayUsingComparator:` with the same block.)
+
+When a script passes a block to a method:
+
+- **The block's parameter count must match the signature's**, and a signature must be registered. Otherwise the send raises an `ASRuntimeErrorException` with code `ASErrorCodeValueConversionFailed`: "No block signature is registered for argument N of '…'; load BridgeSupport for the framework that declares it", or "The block passed as argument N … takes M parameters, but the method calls it with K".
+- **A signature that is all objects** (and returns an object or nothing) takes the script's block as it is.
+- **Any other signature** gets a wrapper block with the real C signature (built from a libffi closure, shared by every block with the same signature). Each argument reaches the script as an object: objects as themselves, scalars and floating-point values as `NSNumber`, a struct passed by value as an `ASStructValue`, and a pointer to a scalar or struct, such as `BOOL *stop`, as an `ASOutObject`, so `[stop setValue: YES]` sets the caller's flag when the script block returns. The script's result is converted to the declared return type with the strict rules above: nothing for `void`, an `NSNumber` for a scalar (an `NSComparisonResult` comparator returns `[a compare: b]`), an `ASStructValue` for a struct, an object (kept alive until the caller can retain it) for an object. A result that can't convert raises `ASErrorCodeValueConversionFailed` to whoever called the Cocoa method.
+- A wrapper keeps its script block and captured variables alive as long as Cocoa holds it, so a completion handler that runs later, on another thread, still works.
+
+```appscript
+id seen = [NSMutableArray array]
+[@[@"b", @"a", @"c"] enumerateObjectsUsingBlock:^(obj idx stop) {
+    [seen addObject:obj]
+    [[idx isEqualToNumber:1] ifTrue:^{
+        [stop setValue:YES]       // ends the enumeration after index 1
+    }]
+}]
+id sorted = [@[@"b", @"a", @"c"] sortedArrayUsingComparator:^(a b) {
+    return [b compare:a]          // an NSNumber, converted to NSComparisonResult
+}]
+```
+
+**Limits.** BridgeSupport isn't available on GNUstep, so only the built-in helpers accept blocks there. Block wrappers are built on 64-bit platforms only, and they patch the block's `invoke` pointer, so they don't support arm64e processes (pointer authentication). Block parameters of `<informal_protocol>` methods, blocks that Cocoa passes to a script, and C functions that take blocks aren't covered.
 
 ### Defining classes
 

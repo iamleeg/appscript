@@ -30,6 +30,8 @@ OBJC_EXPORT id _Nullable objc_retain(id _Nullable value);
 #endif
 #import "ASBoxer.h"
 #import "ASRuntimeInstaller.h"
+#import "ASBlockRegistry.h"
+#import "ASBlockTrampoline.h"
 #import "ASMethodNode.h"
 
 // AST node types
@@ -555,6 +557,8 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
     // we pass the address of the corresponding slot in `outObjectSlots` to the invocation,
     // then copy the resulting object reference back into the ASOutObject after invoke.
     NSUInteger argCount = argValues.count;
+    // Keeps wrapper blocks alive until after the send (NSInvocation doesn't retain its arguments).
+    NSMutableArray *blockArguments = [NSMutableArray array];
     id __unsafe_unretained *outObjectSlots = NULL;
     // Scratch buffers for scalar and struct out-parameters (`NSInteger *`, `NSRange *`), one per argument.
     void **outBuffers = NULL;
@@ -607,6 +611,17 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
             }
             outBuffers[i] = buffer;
             [inv setArgument:&buffer atIndex:(NSInteger)(i + 2)];
+        } else if ([ASBlockTrampoline isScriptBlock:arg] && ASArgumentIsBlock(sig, i)) {
+            // A script block for a block parameter: pass it as is, or wrapped in a block with the C
+            // signature the method will call it with.
+            id blockArgument = [self blockArgumentForScriptBlock:arg
+                                                        receiver:receiver
+                                                        selector:sel
+                                                   argumentIndex:i
+                                                            node:node
+                                                         context:ctx];
+            [blockArguments addObject:blockArgument];
+            [inv setArgument:&blockArgument atIndex:(NSInteger)(i + 2)];
         } else if (![ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv]) {
             const char *expected = [sig getArgumentTypeAtIndex:i + 2];
             [self reportError:[NSString stringWithFormat:
@@ -703,6 +718,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
         }
     }
 
+    (void)blockArguments.count;
     id boxedResult = [ASBoxer boxedReturnValueFromInvocation:inv];
     if (balanceOwnership && boxedResult != nil &&
         ![boxedResult isKindOfClass:[ASNull class]] && ![boxedResult isKindOfClass:[NSNull class]]) {
@@ -791,6 +807,21 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
     // arguments.  All AppScript block parameters are `id`.
     NSUInteger paramCount = paramNames.count;
 
+    // The arity-specific blocks below take `id` parameters. Cocoa methods that call a block with other
+    // C types need a wrapper (ASBlockTrampoline); it runs the script through this generic invoker.
+    id _Nullable (^invoker)(NSArray *) = ^id _Nullable(NSArray *arguments) {
+        return [interpreter executeBlockBody:body parentScope:capturedScope
+                               definingClass:capturedDefiningClass
+                                  scriptPath:scriptPath weakNames:capturedWeakNames
+                              constantNames:capturedConstantNames
+                                  arguments:arguments paramNames:paramNames
+                                  frameName:capturedFrameName];
+    };
+    id (^finish)(id) = ^id(id scriptBlock) {
+        [ASBlockTrampoline attachInvoker:invoker parameterCount:paramCount toScriptBlock:scriptBlock];
+        return scriptBlock;
+    };
+
     if (paramCount == 0) {
         id (^block)(void) = ^id {
             return [interpreter executeBlockBody:body parentScope:capturedScope
@@ -800,7 +831,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
                                       arguments:@[] paramNames:paramNames
                                       frameName:capturedFrameName];
         };
-        return [block copy];
+        return finish([block copy]);
     }
 
     if (paramCount == 1) {
@@ -814,7 +845,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
                                      paramNames:@[p0]
                                       frameName:capturedFrameName];
         };
-        return [block copy];
+        return finish([block copy]);
     }
 
     if (paramCount == 2) {
@@ -828,7 +859,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
                                      paramNames:@[p0, p1]
                                       frameName:capturedFrameName];
         };
-        return [block copy];
+        return finish([block copy]);
     }
 
     if (paramCount == 3) {
@@ -843,7 +874,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
                                      paramNames:@[p0, p1, p2]
                                       frameName:capturedFrameName];
         };
-        return [block copy];
+        return finish([block copy]);
     }
 
     // Four-parameter blocks cover all common Foundation patterns.
@@ -859,7 +890,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
                                  paramNames:@[p0, p1, p2, p3]
                                   frameName:capturedFrameName];
     };
-    return [block copy];
+    return finish([block copy]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1063,6 +1094,65 @@ void ASRaiseRuntimeError(NSString *message, ASErrorCode code,
                          NSString * _Nullable scriptPath, NSUInteger line) {
     [ASMakeRuntimeErrorException(message, code, scriptPath, line, 0, @{}, scriptPath == nil) raise];
     __builtin_unreachable();
+}
+
+/// Returns whether argument `index` of the method signature is a block (`@?`).
+static BOOL ASArgumentIsBlock(NSMethodSignature *signature, NSUInteger index) {
+    const char *type = [signature getArgumentTypeAtIndex:index + 2];
+    while (*type != '\0' && strchr("rnNoORV", *type) != NULL) {
+        type++;
+    }
+    return type[0] == '@' && type[1] == '?';
+}
+
+/// Decides what to pass for a script block given as a block argument: raises if the method's block
+/// signature isn't known or the block's parameter count is wrong, passes the block as is if the
+/// signature is object-only, and otherwise wraps it with the signature's C types.
+- (id)blockArgumentForScriptBlock:(id)scriptBlock
+                         receiver:(id)receiver
+                         selector:(SEL)selector
+                    argumentIndex:(NSUInteger)index
+                             node:(ASMessageSendNode *)node
+                          context:(ASExecutionContext *)ctx {
+    ASBridgeSupportBlockSignature *signature =
+        [[ASBlockRegistry sharedRegistry] signatureForReceiver:receiver selector:selector argumentIndex:index];
+    if (signature == nil) {
+        [self reportError:[NSString stringWithFormat:
+                           @"No block signature is registered for argument %lu of '%@'; load BridgeSupport "
+                           @"for the framework that declares it",
+                           (unsigned long)(index + 1), node.selector]
+                     code:ASErrorCodeValueConversionFailed
+                     node:node
+                  context:ctx];
+        __builtin_unreachable();
+    }
+    NSUInteger given = [ASBlockTrampoline parameterCountOfScriptBlock:scriptBlock];
+    NSUInteger expected = signature.parameterTypeEncodings.count;
+    if (given != expected) {
+        [self reportError:[NSString stringWithFormat:
+                           @"The block passed as argument %lu of '%@' takes %lu parameters, but the method "
+                           @"calls it with %lu",
+                           (unsigned long)(index + 1), node.selector,
+                           (unsigned long)given, (unsigned long)expected]
+                     code:ASErrorCodeValueConversionFailed
+                     node:node
+                  context:ctx];
+        __builtin_unreachable();
+    }
+    if ([signature isObjectOnly]) {
+        return scriptBlock;
+    }
+    NSError *error = nil;
+    id wrapper = [ASBlockTrampoline blockWrappingScriptBlock:scriptBlock signature:signature error:&error];
+    if (wrapper == nil) {
+        [self reportError:[NSString stringWithFormat:@"Cannot pass the block as argument %lu of '%@': %@",
+                           (unsigned long)(index + 1), node.selector, error.localizedDescription]
+                     code:ASErrorCodeValueConversionFailed
+                     node:node
+                  context:ctx];
+        __builtin_unreachable();
+    }
+    return wrapper;
 }
 
 - (void)invokeInvocation:(NSInvocation *)inv
