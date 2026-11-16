@@ -7,6 +7,9 @@ AppScript/AppScript.xcodeproj/xcuserdata/leeg.xcuserdatad/xcschemes/xcschememana
 AppScript/AppScript.xcodeproj/xcuserdata/leeg.xcuserdatad/
 AppScript/AppScript.xcodeproj/xcuserdata/leeg.xcuserdatad/xcdebugger/Breakpoints_v2.xcbkptlist
 
+# Test result bundles kept by the run-tests scripts
+AppScript/TestResults/
+
 # GNUstep build artifacts
 AppScript/*.framework/
 AppScript/obj/
