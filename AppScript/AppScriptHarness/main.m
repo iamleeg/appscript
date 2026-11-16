@@ -38,8 +38,9 @@ int main(int argc, const char * argv[]) {
                                      URLByAppendingPathComponent:@"Foundation.dylib"];
             dlopen([[companionURL path] UTF8String], RTLD_GLOBAL);
 
-            // Install Foundation's BridgeSupport so scripts can call NSMakeRect, NSMakeSize, etc.
+            // Install Cocoa's BridgeSupport so scripts can call NSMakeRect, NSMakeSize, etc.
             [NSBundle loadBridgeSupportForFramework:@"Foundation"];
+            [NSBundle loadBridgeSupportForFramework:@"AppKit"];
 
             NSError *loadError = nil;
             if (![[NSBundle mainBundle] loadScriptsWithError:&loadError]) {

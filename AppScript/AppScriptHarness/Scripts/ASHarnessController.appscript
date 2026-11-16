@@ -34,9 +34,9 @@
             return [[a testName] compare:[b testName]]
         } ifFalse:^{
             return [aPassed ifTrue:^{
-                return 1
+                return [ASFoundation NSOrderedDescending]
             } ifFalse:^{
-                return [0 numberBySubtracting:1]
+                return [ASFoundation NSOrderedAscending]
             }]
         }]
     }]
@@ -77,7 +77,7 @@
 
     id cell = [NSTextField labelWithString:@""]
     [cell setIdentifier:identifier]
-    [cell setLineBreakMode:4]
+    [cell setLineBreakMode:[ASAppKit NSLineBreakByTruncatingTail]]
 
     id isPassed = [result isPassed]
     id isStatus = [identifier isEqualToString:@"status"]
@@ -94,7 +94,7 @@
             return [NSColor systemRedColor]
         }]
         [cell setTextColor:color]
-        [cell setAlignment:2]
+        [cell setAlignment:[ASAppKit NSTextAlignmentCenter]]
         return self
     } ifFalse:^{
         return nil

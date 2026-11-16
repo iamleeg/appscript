@@ -25,12 +25,8 @@
 
 - init {
     id contentRect = [ASFoundation NSMakeRect:0 :0 :900 :600]
-    id NSWindowStyleMaskTitled = @1
-    id NSWindowStyleMaskClosable = @2
-    id NSWindowStyleMaskMiniaturizable = @4
-    id NSWindowStyleMaskResizable = @8
-    id styleMask = [[[NSWindowStyleMaskTitled bitwiseOr:NSWindowStyleMaskClosable] bitwiseOr:NSWindowStyleMaskMiniaturizable] bitwiseOr:NSWindowStyleMaskResizable]
-    id window = [[NSWindow alloc] initWithContentRect:contentRect styleMask:styleMask backing:2 defer:NO]
+    id styleMask = [[[[ASAppKit NSWindowStyleMaskTitled] bitwiseOr:[ASAppKit NSWindowStyleMaskClosable]] bitwiseOr:[ASAppKit NSWindowStyleMaskMiniaturizable]] bitwiseOr:[ASAppKit NSWindowStyleMaskResizable]]
+    id window = [[NSWindow alloc] initWithContentRect:contentRect styleMask:styleMask backing:[ASAppKit NSBackingStoreBuffered] defer:NO]
     [window setTitle:@"AppScript Integration Tests"]
     id minSize = [ASFoundation NSMakeSize:600 :300]
     [window setMinSize:minSize]
@@ -50,14 +46,14 @@
 
     id summary = [NSTextField labelWithString:@"Press \"Run Tests\" to begin."]
     [summary setTranslatesAutoresizingMaskIntoConstraints:NO]
-    [summary setLineBreakMode:4]
+    [summary setLineBreakMode:[ASAppKit NSLineBreakByTruncatingTail]]
     [content addSubview:summary]
     [self setSummaryLabel:summary]
 
     id zeroRect = [ASFoundation NSZeroRect]
     id table = [[NSTableView alloc] initWithFrame:zeroRect]
     [table setUsesAlternatingRowBackgroundColors:YES]
-    [table setColumnAutoresizingStyle:1]
+    [table setColumnAutoresizingStyle:[ASAppKit NSTableViewUniformColumnAutoresizingStyle]]
     [table setDataSource:self]
     [table setDelegate:self]
 
@@ -108,7 +104,7 @@
     id vConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|-(pad)-[scroll]-(btnPad)-[run]-(pad)-|" options:0 metrics:metrics views:views]
     [content addConstraints:vConstraints]
 
-    [summary setContentHuggingPriority:250 forOrientation:0]
+    [summary setContentHuggingPriority:250 forOrientation:[ASAppKit NSLayoutConstraintOrientationHorizontal]]
     return self
 }
 
