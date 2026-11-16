@@ -24,12 +24,18 @@
     return [[self alloc] initWithValue:nil];
 }
 
-- (instancetype)initWithValue:(nullable id)value {
+- (instancetype)initWithValue:(nullable id)value
+          pointeeTypeEncoding:(nullable NSString *)pointeeTypeEncoding {
     self = [super init];
     if (self) {
         _value = value;
+        _pointeeTypeEncoding = [pointeeTypeEncoding copy];
     }
     return self;
+}
+
+- (instancetype)initWithValue:(nullable id)value {
+    return [self initWithValue:value pointeeTypeEncoding:nil];
 }
 
 - (instancetype)init {

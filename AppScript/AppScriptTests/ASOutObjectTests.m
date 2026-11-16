@@ -50,4 +50,26 @@
     XCTAssertEqualObjects(outObj.value, err, @"Setting value should update the stored object");
 }
 
+- (void)test_outObject_hasNilPointeeTypeEncoding {
+    XCTAssertNil([ASOutObject outObject].pointeeTypeEncoding,
+                 @"+outObject should start with no pointee type");
+}
+
+- (void)test_initWithValue_pointeeTypeEncoding_storesBoth {
+    ASOutObject *outObj = [[ASOutObject alloc] initWithValue:@7 pointeeTypeEncoding:@"q"];
+    XCTAssertEqualObjects(outObj.value, @7);
+    XCTAssertEqualObjects(outObj.pointeeTypeEncoding, @"q");
+}
+
+- (void)test_initWithValue_leavesPointeeTypeEncodingNil {
+    ASOutObject *outObj = [[ASOutObject alloc] initWithValue:@"x"];
+    XCTAssertNil(outObj.pointeeTypeEncoding, @"-initWithValue: is for object out-parameters");
+}
+
+- (void)test_setPointeeTypeEncoding_updatesType {
+    ASOutObject *outObj = [ASOutObject outObject];
+    outObj.pointeeTypeEncoding = @"d";
+    XCTAssertEqualObjects(outObj.pointeeTypeEncoding, @"d");
+}
+
 @end

@@ -99,7 +99,8 @@ Each C type accepts only the objects listed below. `nil` is accepted only where 
 | `BOOL`, `char`, and integer and floating-point scalars | `NSNumber` | Rejected |
 | `char *` | `NSString` (passed as its UTF-8 representation) | Passed as `NULL` |
 | `id *` (e.g. `NSError **`) | `ASOutObject` | Passed as `NULL` |
-| Other pointers | `NSValue` wrapping a pointer | Passed as `NULL` |
+| Pointer to a scalar or struct (e.g. `NSInteger *`, `double *`, `NSRange *`) | `ASOutObject` | Passed as `NULL` |
+| Other pointers (`void *`, pointers to pointers other than `id *`, unions) | `NSValue` wrapping a pointer | Passed as `NULL` |
 | Struct | `ASStructValue`, or `NSValue` holding a struct of the same size | Rejected |
 
 When the runtime cannot convert an object to the C type that the method signature requires (for example a number passed where a `SEL` is expected, a string passed for an `int`, `nil` passed for an `NSRect`, or a struct of the wrong size), it raises an `ASRuntimeErrorException` with error code `ASErrorCodeValueConversionFailed`. It never proceeds with a zeroed or reinterpreted value. Objective-C would reject such a mismatch at compile time, or produce undefined behaviour if forced through a cast; AppScript has no compile step, so the run-time error stands in for the compiler diagnostic.
@@ -560,6 +561,41 @@ id fm = [NSFileManager defaultManager]
 id items = [fm contentsOfDirectoryAtPath: @"/nonexistent" error: errBox]
 id err = [errBox value] // holds the NSError instance on failure, or nil on success
 ```
+
+### Scalar and struct out-parameters (`NSInteger *`, `double *`, `NSRange *`)
+
+Many Cocoa methods hand back extra results through a pointer to a scalar or a struct: `-[NSScanner scanInteger:]` (`NSInteger *`), `-[NSColor getRed:green:blue:alpha:]` (`CGFloat *`), `-[NSString getLineStart:end:contentsEnd:forRange:]` (`NSUInteger *`). The runtime bridges them with the same `ASOutObject` container as `NSError **`, so a script never names a C type or takes an address.
+
+The pointee types bridged are the scalars `char`, `unsigned char`, `short`, `unsigned short`, `int`, `unsigned int`, `long`, `unsigned long`, `long long`, `unsigned long long`, `float`, `double` and `BOOL`, and structs. Pointers to anything else (`void *`, `char *`, pointers to pointers other than `id *`, unions) remain opaque `NSValue` pointers. As for scalar values elsewhere, a `char` pointee is treated as a `BOOL`.
+
+An `ASOutObject` for one of these parameters holds an `NSNumber` (or, for a struct, an `ASStructValue`) in `-value`, and the pointee's type encoding (such as `q`, `d` or `{_NSRange=QQ}`) in `-pointeeTypeEncoding`. The encoding is `nil` for an object out-parameter and for an out-object a script created that has not yet been passed to a native method.
+
+#### Calling a Cocoa method that takes a scalar or struct out-parameter
+
+Create an `ASOutObject` with `[ASOutObject outObject]`, pass it for the pointer parameter, and read `-value` after the call:
+
+```appscript
+id scanner = [NSScanner scannerWithString: @"42 3.5"]
+id count = [ASOutObject outObject]
+id found = [scanner scanInteger: count]  // @YES
+id n = [count value]                     // @42
+```
+
+- If the out-object already has a value, the runtime seeds the pointee with it before the call, so a method that reads its parameter (an in/out parameter) sees that value. A `nil` value seeds zero.
+- A seed the C type cannot accept (for example an `NSString` for an `NSInteger *`) raises an `ASRuntimeErrorException` with code `ASErrorCodeValueConversionFailed` at the message send, and the method is not called.
+- After the call `-value` holds what the method wrote, and `-pointeeTypeEncoding` records the type.
+- Passing `nil` passes a `NULL` pointer, for methods that accept one.
+
+#### Implementing a method with a scalar or struct out-parameter in AppScript
+
+When an Objective-C caller invokes an AppScript method whose signature declares such a parameter, `ASBoxer` boxes the argument into an `ASOutObject` with the pointee's current value as `-value` (`nil` if the caller passed `NULL`, which still gives an `ASOutObject`) and the pointee type as `-pointeeTypeEncoding`. Inside the method:
+
+- Send `-setValue:` to the parameter with an `NSNumber` (or `ASStructValue`); the runtime writes it to the caller's pointer when the method returns. A value the script doesn't change is written back unchanged.
+- A value that cannot be converted to the pointee type (a string for an `int *`, or `nil`) raises `ASErrorCodeValueConversionFailed` when the method returns, and the caller's variable is left as it was. A `NULL` pointer discards the write.
+
+The declaration rule for `NSError **` applies here too: such a method must be declared in a protocol the class conforms to, so the runtime installs it with the real pointer encoding (such as `^q`) instead of the all-`id` fallback.
+
+Only arguments are boxed this way. A pointer a method *returns* stays an opaque `NSValue`.
 
 ### BridgeSupport integration
 

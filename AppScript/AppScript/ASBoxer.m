@@ -39,6 +39,23 @@ static const char *ASSkipTypeQualifiers(const char *typeEncoding) {
     return typeEncoding;
 }
 
+/// Returns YES if `pointee` (the encoding after a `^`, qualifiers already skipped) is a scalar or
+/// struct that a pointer out-parameter can carry. `^@` is handled separately as an object
+/// out-parameter, and `^v`, `^?`, `^*`, `^^` and unions stay opaque pointers.
+static BOOL ASIsBridgedOutPointee(const char *pointee) {
+    if (!pointee) {
+        return NO;
+    }
+    switch (pointee[0]) {
+        case 'B': case 'c': case 'C': case 's': case 'S': case 'i': case 'I':
+        case 'l': case 'L': case 'q': case 'Q': case 'f': case 'd':
+        case '{':
+            return YES;
+        default:
+            return NO;
+    }
+}
+
 /// Returns a boxed id for a raw buffer `bytes` of size `size` described by `typeEncoding`.
 /// This function is shared between the argument and return-value boxing paths.
 static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
@@ -424,6 +441,17 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
     NSUInteger invIndex = argumentIndex + 2; // skip self (0) and _cmd (1)
     const char *typeEncoding = [sig getArgumentTypeAtIndex:invIndex];
 
+    // A pointer to a scalar or struct (`NSInteger *`, `double *`, `NSRange *`) becomes an ASOutObject
+    // seeded from the pointee, so a script can read it and write it back. This applies to
+    // arguments only: a pointer *returned* by a method stays an opaque NSValue.
+    NSString *pointee = [self pointeeTypeEncodingOfOutParameterAtIndex:argumentIndex inSignature:sig];
+    if (pointee != nil) {
+        void *pointer = NULL;
+        [invocation getArgument:&pointer atIndex:(NSInteger)invIndex];
+        id initialValue = (pointer != NULL) ? ASBoxBytes(pointer, pointee.UTF8String) : nil;
+        return [[ASOutObject alloc] initWithValue:initialValue pointeeTypeEncoding:pointee];
+    }
+
     NSUInteger argSize = 0;
     NSGetSizeAndAlignment(typeEncoding, &argSize, NULL);
     if (argSize == 0) {
@@ -451,15 +479,57 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
     return (pointedType != NULL && pointedType[0] == '@');
 }
 
-+ (void)writeBackObject:(nullable id)object
++ (BOOL)isOutParameterAtIndex:(NSUInteger)argumentIndex
+                  inSignature:(NSMethodSignature *)signature {
+    return [self isObjectOutParameterAtIndex:argumentIndex inSignature:signature] ||
+           [self pointeeTypeEncodingOfOutParameterAtIndex:argumentIndex inSignature:signature] != nil;
+}
+
++ (nullable NSString *)pointeeTypeEncodingOfOutParameterAtIndex:(NSUInteger)argumentIndex
+                                                      inSignature:(NSMethodSignature *)signature {
+    NSUInteger invIndex = argumentIndex + 2;
+    if (invIndex >= signature.numberOfArguments) {
+        return nil;
+    }
+    const char *typeEncoding = ASSkipTypeQualifiers([signature getArgumentTypeAtIndex:invIndex]);
+    if (!typeEncoding || typeEncoding[0] != '^') {
+        return nil;
+    }
+    const char *pointee = ASSkipTypeQualifiers(typeEncoding + 1);
+    return ASIsBridgedOutPointee(pointee) ? @(pointee) : nil;
+}
+
++ (BOOL)writeBackObject:(nullable id)object
         atArgumentIndex:(NSUInteger)argumentIndex
            toInvocation:(NSInvocation *)invocation {
     if (![object isKindOfClass:[ASOutObject class]]) {
-        return;
+        return YES;
     }
     NSMethodSignature *sig = invocation.methodSignature;
+    NSString *pointee = [self pointeeTypeEncodingOfOutParameterAtIndex:argumentIndex inSignature:sig];
+    if (pointee != nil) {
+        // Scalar or struct out-parameter: unbox into a scratch buffer with the strict conversion
+        // rules (ADR 11), and store it only if that succeeds, so a failure leaves *ptr alone.
+        void *pointer = NULL;
+        [invocation getArgument:&pointer atIndex:(NSInteger)(argumentIndex + 2)];
+        if (pointer == NULL) {
+            return YES;
+        }
+        NSUInteger size = 0;
+        NSGetSizeAndAlignment(pointee.UTF8String, &size, NULL);
+        if (size == 0) {
+            return NO;
+        }
+        void *buffer = alloca(size);
+        memset(buffer, 0, size);
+        if (!ASUnboxIntoBytes(((ASOutObject *)object).value, buffer, size, pointee.UTF8String)) {
+            return NO;
+        }
+        memcpy(pointer, buffer, size);
+        return YES;
+    }
     if (![self isObjectOutParameterAtIndex:argumentIndex inSignature:sig]) {
-        return;
+        return YES;
     }
     NSUInteger invIndex = argumentIndex + 2;
     id __autoreleasing *ptr = NULL;
@@ -472,6 +542,7 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
         }
         *ptr = val;
     }
+    return YES;
 }
 
 + (BOOL)unboxObject:(nullable id)object

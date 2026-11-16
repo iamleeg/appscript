@@ -20,7 +20,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// A mutable object container that represents an Objective-C object out-parameter (such as `NSError **`).
+/// A mutable container that represents an Objective-C out-parameter: an object (`NSError **`, encoded `^@`),
+/// a scalar (`NSInteger *`, `double *`, `BOOL *`) or a struct (`NSRange *`).
+///
+/// For a scalar or struct out-parameter `value` is an `NSNumber` or `ASStructValue`, and
+/// `pointeeTypeEncoding` holds the pointed-to type's encoding (for example `q` or `{_NSRange=QQ}`).
+/// For an object out-parameter `pointeeTypeEncoding` is `nil`.
 ///
 /// When an Objective-C caller passes a non-NULL `NSError **` (or any `id *`, encoded as `^@`) into an
 /// AppScript method, `ASBoxer` boxes the pointer into an `ASOutObject` instance. Inside the AppScript
@@ -35,19 +40,34 @@ NS_ASSUME_NONNULL_BEGIN
 /// created it and must not be shared across threads without external synchronisation.
 @interface ASOutObject : NSObject
 
-/// The object stored in or written to the out-parameter slot. Defaults to `nil`.
+/// The object, `NSNumber` or `ASStructValue` stored in or written to the out-parameter slot. Defaults to `nil`.
 @property (nonatomic, strong, nullable) id value;
+
+/// The Objective-C type encoding of the value the out-parameter points to, such as `q`, `d`,
+/// `B` or `{_NSRange=QQ}`, or `nil` for an object out-parameter and for an out-object a script
+/// created that has not yet been passed to a native method. The runtime sets it when it boxes a
+/// pointer argument and when a native method fills the out-object.
+@property (nonatomic, copy, nullable) NSString *pointeeTypeEncoding;
 
 /// Creates and returns a new `ASOutObject` with a `nil` initial value.
 ///
 /// - Returns: A newly allocated `ASOutObject` instance with `value` set to `nil`.
 + (instancetype)outObject;
 
-/// Initialises an `ASOutObject` with the given initial object value.
+/// Initialises an `ASOutObject` with the given initial value and pointee type.
+///
+/// - Parameters:
+///   - value: The initial object, `NSNumber` or `ASStructValue` pointed to by the out-parameter, or `nil`.
+///   - pointeeTypeEncoding: The encoding of the pointed-to scalar or struct type, or `nil` for an object.
+/// - Returns: An initialised `ASOutObject` instance.
+- (instancetype)initWithValue:(nullable id)value
+          pointeeTypeEncoding:(nullable NSString *)pointeeTypeEncoding NS_DESIGNATED_INITIALIZER;
+
+/// Initialises an `ASOutObject` with the given initial object value and no pointee type.
 ///
 /// - Parameter value: The initial object pointed to by the out-parameter, or `nil`.
 /// - Returns: An initialised `ASOutObject` instance.
-- (instancetype)initWithValue:(nullable id)value NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithValue:(nullable id)value;
 
 /// Initialises an `ASOutObject` with a `nil` initial value.
 ///

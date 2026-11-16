@@ -315,6 +315,190 @@
 }
 
 // ---------------------------------------------------------------------------
+// Scalar and struct out-parameters ('^q', '^d', '^B', '^{...}')
+// ---------------------------------------------------------------------------
+
+- (void)test_isOutParameterAtIndex_objectScalarAndStructPointers_returnYES {
+    for (NSString *types in @[@"B@:^@", @"B@:^q", @"B@:^d", @"B@:^B", @"B@:^Q", @"B@:o^{_NSRange=QQ}"]) {
+        NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:types.UTF8String];
+        XCTAssertTrue([ASBoxer isOutParameterAtIndex:0 inSignature:sig],
+                      @"%@ should be a bridged out-parameter", types);
+    }
+}
+
+- (void)test_isOutParameterAtIndex_voidPointerPointerToPointerAndPlainValues_returnNO {
+    for (NSString *types in @[@"B@:^v", @"B@:^^c", @"B@:q", @"B@:@"]) {
+        NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:types.UTF8String];
+        XCTAssertFalse([ASBoxer isOutParameterAtIndex:0 inSignature:sig],
+                       @"%@ should not be a bridged out-parameter", types);
+    }
+}
+
+- (void)test_pointeeTypeEncodingOfOutParameter_scalarStructAndObject {
+    XCTAssertEqualObjects([ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:0
+                                inSignature:[NSMethodSignature signatureWithObjCTypes:"B@:^q"]], @"q");
+    XCTAssertEqualObjects([ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:0
+                                inSignature:[NSMethodSignature signatureWithObjCTypes:"B@:o^{_NSRange=QQ}"]],
+                          @"{_NSRange=QQ}");
+    XCTAssertNil([ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:0
+                                inSignature:[NSMethodSignature signatureWithObjCTypes:"B@:^@"]],
+                 @"an object out-parameter has no scalar pointee type");
+}
+
+- (void)test_boxedArgument_longLongPointer_returnsOutObjectSeededFromPointee {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^q"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    long long number = 7;
+    long long *ptr = &number;
+    [inv setArgument:&ptr atIndex:2];
+
+    id boxed = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertTrue([boxed isKindOfClass:[ASOutObject class]], @"a ^q should be boxed as an ASOutObject");
+    XCTAssertEqualObjects(((ASOutObject *)boxed).value, @7);
+    XCTAssertEqualObjects(((ASOutObject *)boxed).pointeeTypeEncoding, @"q");
+}
+
+- (void)test_boxedArgument_doublePointer_returnsOutObjectSeededFromPointee {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^d"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    double number = 2.5;
+    double *ptr = &number;
+    [inv setArgument:&ptr atIndex:2];
+
+    id boxed = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertTrue([boxed isKindOfClass:[ASOutObject class]]);
+    XCTAssertEqualObjects(((ASOutObject *)boxed).value, @2.5);
+    XCTAssertEqualObjects(((ASOutObject *)boxed).pointeeTypeEncoding, @"d");
+}
+
+- (void)test_boxedArgument_boolPointer_returnsOutObjectSeededFromPointee {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^B"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    bool flag = true;
+    bool *ptr = &flag;
+    [inv setArgument:&ptr atIndex:2];
+
+    id boxed = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertTrue([boxed isKindOfClass:[ASOutObject class]]);
+    XCTAssertEqualObjects(((ASOutObject *)boxed).value, @YES);
+    XCTAssertEqualObjects(((ASOutObject *)boxed).pointeeTypeEncoding, @"B");
+}
+
+- (void)test_boxedArgument_nullScalarPointer_returnsTypedOutObjectWithNilValue {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^q"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    long long *ptr = NULL;
+    [inv setArgument:&ptr atIndex:2];
+
+    id boxed = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertTrue([boxed isKindOfClass:[ASOutObject class]],
+                  @"a NULL ^q should still be an ASOutObject, as a NULL ^@ is");
+    XCTAssertNil(((ASOutObject *)boxed).value);
+    XCTAssertEqualObjects(((ASOutObject *)boxed).pointeeTypeEncoding, @"q");
+    ((ASOutObject *)boxed).value = @5;
+    XCTAssertTrue([ASBoxer writeBackObject:boxed atArgumentIndex:0 toInvocation:inv],
+                  @"writing to a NULL pointer is discarded, not an error");
+}
+
+- (void)test_boxedArgument_nsRangePointer_returnsOutObjectWithStructValue {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^{_NSRange=QQ}"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    NSRange range = NSMakeRange(3, 4);
+    NSRange *ptr = &range;
+    [inv setArgument:&ptr atIndex:2];
+
+    id boxed = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertTrue([boxed isKindOfClass:[ASOutObject class]]);
+    id value = ((ASOutObject *)boxed).value;
+    XCTAssertTrue([value isKindOfClass:[ASStructValue class]], @"the pointee should box as an ASStructValue");
+    NSData *expected = [NSData dataWithBytes:&range length:sizeof(range)];
+    XCTAssertEqualObjects(((ASStructValue *)value).bytes, expected);
+    XCTAssertEqualObjects(((ASOutObject *)boxed).pointeeTypeEncoding, @"{_NSRange=QQ}");
+}
+
+- (void)test_writeBackObject_longLongPointer_storesNumberInPointee {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^q"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    long long caller = 1;
+    long long *ptr = &caller;
+    [inv setArgument:&ptr atIndex:2];
+    ASOutObject *outObj = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+    outObj.value = @99;
+
+    BOOL ok = [ASBoxer writeBackObject:outObj atArgumentIndex:0 toInvocation:inv];
+
+    XCTAssertTrue(ok);
+    XCTAssertEqual(caller, 99LL, @"write-back should store the NSNumber in *ptr");
+}
+
+- (void)test_writeBackObject_unmodifiedScalarOutObject_keepsPointeeValue {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^d"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    double caller = 6.25;
+    double *ptr = &caller;
+    [inv setArgument:&ptr atIndex:2];
+    ASOutObject *outObj = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+
+    XCTAssertTrue([ASBoxer writeBackObject:outObj atArgumentIndex:0 toInvocation:inv]);
+
+    XCTAssertEqual(caller, 6.25, @"a value the script didn't touch should round-trip unchanged");
+}
+
+- (void)test_writeBackObject_nsRangePointer_storesStructInPointee {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^{_NSRange=QQ}"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    NSRange caller = NSMakeRange(0, 0);
+    NSRange *ptr = &caller;
+    [inv setArgument:&ptr atIndex:2];
+    ASOutObject *outObj = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+    NSRange produced = NSMakeRange(10, 20);
+    outObj.value = [[ASStructValue alloc] initWithBytes:&produced
+                                                 length:sizeof(produced)
+                                          canonicalName:@"NSRange"
+                                    runtimeTypeEncoding:@"{_NSRange=QQ}"];
+
+    BOOL ok = [ASBoxer writeBackObject:outObj atArgumentIndex:0 toInvocation:inv];
+
+    XCTAssertTrue(ok);
+    XCTAssertTrue(NSEqualRanges(caller, produced), @"write-back should store the struct in *ptr");
+}
+
+- (void)test_writeBackObject_stringForScalarPointer_returnsNOAndLeavesPointee {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^q"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    long long caller = 1;
+    long long *ptr = &caller;
+    [inv setArgument:&ptr atIndex:2];
+    ASOutObject *outObj = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+    outObj.value = @"not a number";
+
+    BOOL ok = [ASBoxer writeBackObject:outObj atArgumentIndex:0 toInvocation:inv];
+
+    XCTAssertFalse(ok, @"an NSString can't convert to long long");
+    XCTAssertEqual(caller, 1LL, @"a failed conversion must not change the pointee");
+}
+
+- (void)test_writeBackObject_nilForScalarPointer_returnsNOAndLeavesPointee {
+    NSMethodSignature *sig = [NSMethodSignature signatureWithObjCTypes:"B@:^q"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    long long caller = 1;
+    long long *ptr = &caller;
+    [inv setArgument:&ptr atIndex:2];
+    ASOutObject *outObj = [ASBoxer boxedArgumentAtIndex:0 fromInvocation:inv];
+    outObj.value = nil;
+
+    BOOL ok = [ASBoxer writeBackObject:outObj atArgumentIndex:0 toInvocation:inv];
+
+    XCTAssertFalse(ok, @"nil has no scalar equivalent (ADR 11)");
+    XCTAssertEqual(caller, 1LL);
+}
+
+// ---------------------------------------------------------------------------
 // Struct boxing, unboxing, and byte-level API tests
 // ---------------------------------------------------------------------------
 

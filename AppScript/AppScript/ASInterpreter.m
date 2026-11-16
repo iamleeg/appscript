@@ -549,9 +549,13 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
     // then copy the resulting object reference back into the ASOutObject after invoke.
     NSUInteger argCount = argValues.count;
     id __unsafe_unretained *outObjectSlots = NULL;
+    // Scratch buffers for scalar and struct out-parameters (`NSInteger *`, `NSRange *`), one per argument.
+    void **outBuffers = NULL;
     if (argCount > 0) {
         outObjectSlots = (id __unsafe_unretained *)alloca(sizeof(id) * argCount);
         memset(outObjectSlots, 0, sizeof(id) * argCount);
+        outBuffers = (void **)alloca(sizeof(void *) * argCount);
+        memset(outBuffers, 0, sizeof(void *) * argCount);
     }
 
     for (NSUInteger i = 0; i < argCount; i++) {
@@ -570,6 +574,32 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
             outObjectSlots[i] = initialVal;
             id __unsafe_unretained *slotPtr = &outObjectSlots[i];
             [inv setArgument:&slotPtr atIndex:(NSInteger)(i + 2)];
+        } else if ([arg isKindOfClass:[ASOutObject class]] &&
+                   [ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:i inSignature:sig] != nil) {
+            // Scalar or struct out-parameter: pass the address of a pointee-sized scratch buffer,
+            // seeded from the out-object's value (zero if it has none).
+            NSString *pointee = [ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:i inSignature:sig];
+            NSUInteger pointeeSize = 0;
+            NSGetSizeAndAlignment(pointee.UTF8String, &pointeeSize, NULL);
+            void *buffer = alloca(pointeeSize > 0 ? pointeeSize : 1);
+            memset(buffer, 0, pointeeSize > 0 ? pointeeSize : 1);
+            id seed = ((ASOutObject *)arg).value;
+            if ([seed isKindOfClass:[ASNull class]]) {
+                seed = nil;
+            }
+            if (seed != nil &&
+                ![ASBoxer unboxObject:seed intoBytes:buffer ofSize:pointeeSize typeEncoding:pointee.UTF8String]) {
+                [self reportError:[NSString stringWithFormat:
+                                   @"Cannot convert argument %lu of '%@' from %@ to %@",
+                                   (unsigned long)(i + 1), node.selector,
+                                   NSStringFromClass([seed class]),
+                                   [ASBoxer displayNameForTypeEncoding:pointee.UTF8String]]
+                              code:ASErrorCodeValueConversionFailed
+                              node:node
+                           context:ctx];
+            }
+            outBuffers[i] = buffer;
+            [inv setArgument:&buffer atIndex:(NSInteger)(i + 2)];
         } else if (![ASBoxer unboxObject:arg intoArgumentAtIndex:i ofInvocation:inv]) {
             const char *expected = [sig getArgumentTypeAtIndex:i + 2];
             [self reportError:[NSString stringWithFormat:
@@ -635,6 +665,12 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
             [ASBoxer isObjectOutParameterAtIndex:i inSignature:sig]) {
             ASOutObject *outObj = (ASOutObject *)arg;
             outObj.value = outObjectSlots[i];
+        } else if ([arg isKindOfClass:[ASOutObject class]] && outBuffers[i] != NULL) {
+            // Scalar or struct out-parameter: box what the native method wrote.
+            NSString *pointee = [ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:i inSignature:sig];
+            ASOutObject *outObj = (ASOutObject *)arg;
+            outObj.value = [ASBoxer boxedObjectFromBytes:outBuffers[i] typeEncoding:pointee.UTF8String];
+            outObj.pointeeTypeEncoding = pointee;
         }
     }
 

@@ -36,7 +36,8 @@ NS_ASSUME_NONNULL_BEGIN
 ///
 /// Uses the argument's type encoding from the invocation's `methodSignature` to determine the
 /// correct boxing strategy. Supported type encodings: `@` (id), `^@` (id *, e.g. `NSError **`,
-/// boxed as `ASOutObject`), `B` (BOOL), `c` (char / BOOL),
+/// boxed as `ASOutObject`), a pointer to a scalar or struct argument (`^q`, `^d`, `^B`, `^{...}`,
+/// boxed as an `ASOutObject` seeded from the pointee), `B` (BOOL), `c` (char / BOOL),
 /// `i` (int), `l` (long), `q` (long long), `I` (unsigned int), `L` (unsigned long),
 /// `Q` (unsigned long long), `f` (float), `d` (double), `*` (C string), `v` (void, returns
 /// `NSNull`). For unknown or struct types, returns an `NSValue` wrapping the raw bytes.
@@ -50,20 +51,44 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable id)boxedArgumentAtIndex:(NSUInteger)argumentIndex
                      fromInvocation:(NSInvocation *)invocation;
 
-/// Writes back the value of an `ASOutObject` into an object out-parameter (`^@`, such as `NSError **`)
-/// of an `NSInvocation` after an AppScript method finishes executing.
+/// Writes back the value of an `ASOutObject` into an out-parameter of an `NSInvocation` after an
+/// AppScript method finishes executing: an object (`^@`, such as `NSError **`), a scalar (`^q`, `^d`, ...)
+/// or a struct (`^{...}`).
 ///
-/// If the argument at `argumentIndex` does not have a `^@` type encoding, if the caller passed a
-/// `NULL` pointer, or if `object` is not an `ASOutObject`, this method does nothing.
+/// If the argument at `argumentIndex` is not a bridged out-parameter, if the caller passed a
+/// `NULL` pointer, or if `object` is not an `ASOutObject`, this method does nothing and returns `YES`.
+/// For a scalar or struct the value is unboxed with the strict conversion rules (an `NSNumber` for a
+/// scalar, an `ASStructValue` or `NSValue` for a struct) and stored only if the conversion succeeds.
 ///
 /// - Parameters:
 ///   - object: The boxed argument object (expected to be an `ASOutObject` for `^@` arguments).
 ///   - argumentIndex: Zero-based index into the method's logical argument list. Maps to
 ///     `NSInvocation` index `argumentIndex + 2`.
 ///   - invocation: The invocation whose out-parameter pointer should be updated.
-+ (void)writeBackObject:(nullable id)object
+/// - Returns: `YES` if nothing needed writing or the write succeeded; `NO` if the value could not be converted to the pointee type, in which case the caller's variable is left unchanged.
++ (BOOL)writeBackObject:(nullable id)object
         atArgumentIndex:(NSUInteger)argumentIndex
            toInvocation:(NSInvocation *)invocation;
+
+/// Returns whether the argument at the given logical index in the signature is an out-parameter
+/// the runtime bridges: an object pointer (`^@`), or a pointer to a scalar (`c C s S i I l L q Q f d B`)
+/// or to a struct (`^{...}`).
+///
+/// - Parameters:
+///   - argumentIndex: Zero-based index into the method's logical argument list.
+///   - signature: The method signature to inspect.
+/// - Returns: `YES` for a bridged out-parameter; `NO` for anything else, including `^v`, `^?`, `^*` and pointers to pointers other than `^@`.
++ (BOOL)isOutParameterAtIndex:(NSUInteger)argumentIndex
+                  inSignature:(NSMethodSignature *)signature;
+
+/// Returns the type encoding of the scalar or struct a pointer argument points to.
+///
+/// - Parameters:
+///   - argumentIndex: Zero-based index into the method's logical argument list.
+///   - signature: The method signature to inspect.
+/// - Returns: The pointee's encoding (such as `q` or `{_NSRange=QQ}`) for a scalar or struct out-parameter; `nil` for an object out-parameter (`^@`) or any other argument.
++ (nullable NSString *)pointeeTypeEncodingOfOutParameterAtIndex:(NSUInteger)argumentIndex
+                                                      inSignature:(NSMethodSignature *)signature;
 
 /// Returns whether the argument at the given logical index in the signature is an object
 /// out-parameter (`^@`, e.g. `NSError **`).

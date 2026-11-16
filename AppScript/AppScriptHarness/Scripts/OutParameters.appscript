@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// OutParameters.appscript — Scalar out-parameter integration test
+// Copyright (C) 2026 Graham Lee
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+@class OutParametersTest : ASTestCase
+
+- runTests {
+    // NSScanner reports what it scanned through NSInteger * and double * out-parameters.
+    // A script passes an ASOutObject and reads the result with -value afterwards.
+    id scanner = [NSScanner scannerWithString:@"42 3.5"]
+    id count = [ASOutObject outObject]
+    id ratio = [ASOutObject outObject]
+    id scannedCount = [scanner scanInteger:count]
+    id scannedRatio = [scanner scanDouble:ratio]
+
+    // NSColor reports its four components through four CGFloat * out-parameters.
+    id color = [NSColor colorWithCalibratedRed:0.25 green:0.5 blue:0.75 alpha:1.0]
+    id red = [ASOutObject outObject]
+    id green = [ASOutObject outObject]
+    id blue = [ASOutObject outObject]
+    id alpha = [ASOutObject outObject]
+    [color getRed:red green:green blue:blue alpha:alpha]
+
+    return @[scannedCount, [count value], scannedRatio, [ratio value],
+             [red value], [green value], [blue value], [alpha value]]
+}
+
+@end

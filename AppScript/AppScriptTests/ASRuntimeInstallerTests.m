@@ -120,6 +120,24 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 - (BOOL)saveData:(NSString *)data error:(NSError **)error;
 @end
 
+@protocol ASTestOutScalarProtocol <NSObject>
+- (BOOL)fillCount:(NSInteger *)count;
+@end
+
+@protocol ASTestOutRangeProtocol <NSObject>
+- (BOOL)fillRange:(NSRange *)range;
+@end
+
+@interface ASTestRangeFactory : NSObject
++ (NSRange)sampleRange;
+@end
+
+@implementation ASTestRangeFactory
++ (NSRange)sampleRange {
+    return NSMakeRange(10, 20);
+}
+@end
+
 @interface ASTestStructSuperclass : NSObject
 - (NSRange)echoRange:(NSRange)range;
 @end
@@ -787,6 +805,99 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
     // 2. Call with NULL error — must not crash and must treat [outErr setValue:...] as no-op.
     BOOL okNull = [instance saveData:@"hello" error:nil];
     XCTAssertFalse(okNull, @"saveData:error: with nil error pointer should still return NO safely");
+}
+
+// Installs a class whose `- <selectorPart>: out` runs `[out setValue: <valueNode>]; return YES`,
+// conforming to the named protocol.
+- (Class)installOutParameterClassWithSelectorPart:(NSString *)selectorPart
+                                     protocolName:(NSString *)protocolName
+                                   settingValueTo:(ASASTNode *)valueNode {
+    NSString *className = uniqueClassName(@"ASTestOutScalar");
+    ASMessageSendNode *setVal = [[ASMessageSendNode alloc]
+        initWithReceiver:[[ASIdentifierNode alloc] initWithName:@"out" line:1 column:1]
+           selectorParts:@[@"setValue"]
+               arguments:@[valueNode]
+                    line:1
+                  column:1];
+    ASReturnNode *retYes = [[ASReturnNode alloc]
+        initWithValue:[[ASIdentifierNode alloc] initWithName:@"YES" line:2 column:1]
+                 line:2
+               column:1];
+    ASMethodNode *fill = [[ASMethodNode alloc] initWithSelectorParts:@[selectorPart]
+                                                      parameterNames:@[@"out"]
+                                                                body:@[setVal, retYes]
+                                                       isClassMethod:NO
+                                                                line:1
+                                                              column:1];
+    ASClassDefinitionNode *classDef = [[ASClassDefinitionNode alloc]
+        initWithClassName:className
+           superclassName:@"NSObject"
+            protocolNames:@[protocolName]
+               properties:@[]
+                  methods:@[fill]
+                     line:1
+                   column:1];
+    NSError *installError = nil;
+    XCTAssertTrue([self.installer installNodes:@[classDef] scriptPath:@"test.appscript" error:&installError]);
+    return NSClassFromString(className);
+}
+
+- (Class)installFillCountClassSettingValueTo:(ASASTNode *)valueNode {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestOutScalarProtocol);
+    return [self installOutParameterClassWithSelectorPart:@"fillCount"
+                                             protocolName:@"ASTestOutScalarProtocol"
+                                           settingValueTo:valueNode];
+}
+
+- (void)test_installClass_methodWithNSRangeOutParam_writesBackStruct {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestOutRangeProtocol);
+    ASMessageSendNode *sample = [[ASMessageSendNode alloc]
+        initWithReceiver:[[ASIdentifierNode alloc] initWithName:@"ASTestRangeFactory" line:1 column:1]
+           selectorParts:@[@"sampleRange"]
+               arguments:@[]
+                    line:1
+                  column:1];
+    Class cls = [self installOutParameterClassWithSelectorPart:@"fillRange"
+                                                  protocolName:@"ASTestOutRangeProtocol"
+                                                settingValueTo:sample];
+    id<ASTestOutRangeProtocol> instance = [[cls alloc] init];
+
+    NSRange range = NSMakeRange(0, 0);
+    BOOL ok = [instance fillRange:&range];
+
+    XCTAssertTrue(ok);
+    XCTAssertTrue(NSEqualRanges(range, NSMakeRange(10, 20)),
+                  @"the NSRange the script set should be written back to the caller's NSRange *");
+    XCTAssertTrue([instance fillRange:NULL], @"a NULL NSRange * discards the write without crashing");
+}
+
+- (void)test_installClass_methodWithNSIntegerOutParam_writesBackNumber {
+    Class cls = [self installFillCountClassSettingValueTo:
+                 [[ASNumberLiteralNode alloc] initWithValue:@5 line:1 column:1]];
+    id<ASTestOutScalarProtocol> instance = [[cls alloc] init];
+
+    NSInteger count = 0;
+    BOOL ok = [instance fillCount:&count];
+
+    XCTAssertTrue(ok);
+    XCTAssertEqual(count, 5, @"[out setValue: 5] should be written back to the caller's NSInteger");
+    XCTAssertTrue([instance fillCount:NULL], @"a NULL pointer discards the write without crashing");
+}
+
+- (void)test_installClass_methodWithNSIntegerOutParam_stringValue_raisesConversionFailure {
+    Class cls = [self installFillCountClassSettingValueTo:
+                 [[ASStringLiteralNode alloc] initWithValue:@"not a number" line:1 column:1]];
+    id<ASTestOutScalarProtocol> instance = [[cls alloc] init];
+
+    NSInteger count = 7;
+    @try {
+        [instance fillCount:&count];
+        XCTFail(@"an NSString can't be written back to an NSInteger *");
+    } @catch (NSException *ex) {
+        XCTAssertEqualObjects(ex.name, ASRuntimeErrorException);
+        XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+    }
+    XCTAssertEqual(count, 7, @"a failed conversion must leave the caller's value alone");
 }
 
 - (void)test_installClass_subclassOverridesNativeSuperclassStructMethod_withoutProtocol {

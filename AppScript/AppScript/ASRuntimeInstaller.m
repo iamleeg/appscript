@@ -23,6 +23,7 @@
 #import "ASPropertyNode.h"
 #import "ASInterpreter.h"
 #import "ASBoxer.h"
+#import "ASOutObject.h"
 #import "ASNull.h"
 
 #import <objc/runtime.h>
@@ -173,6 +174,38 @@ static void ASRaiseReturnValueConversionFailure(id _Nullable result,
                         methodNode.lineNumber);
 }
 
+static void ASRaiseOutParameterConversionFailure(id _Nullable outObject,
+                                                 NSString *pointeeTypeEncoding,
+                                                 NSUInteger argumentIndex,
+                                                 Class methodClass,
+                                                 NSString *selectorString,
+                                                 BOOL isClassMethod,
+                                                 NSString * _Nullable scriptPath,
+                                                 ASMethodNode *methodNode) __attribute__((noreturn));
+static void ASRaiseOutParameterConversionFailure(id _Nullable outObject,
+                                                 NSString *pointeeTypeEncoding,
+                                                 NSUInteger argumentIndex,
+                                                 Class methodClass,
+                                                 NSString *selectorString,
+                                                 BOOL isClassMethod,
+                                                 NSString * _Nullable scriptPath,
+                                                 ASMethodNode *methodNode) {
+    id value = [outObject isKindOfClass:[ASOutObject class]] ? ((ASOutObject *)outObject).value : nil;
+    if ([value isKindOfClass:[ASNull class]]) {
+        value = nil;
+    }
+    ASRaiseRuntimeError([NSString stringWithFormat:
+                         @"Cannot convert out-parameter %lu of %c[%@ %@] from %@ to %@",
+                         (unsigned long)(argumentIndex + 1),
+                         isClassMethod ? '+' : '-',
+                         NSStringFromClass(methodClass), selectorString,
+                         value ? NSStringFromClass([value class]) : @"nil",
+                         [ASBoxer displayNameForTypeEncoding:pointeeTypeEncoding.UTF8String]],
+                        ASErrorCodeValueConversionFailed,
+                        scriptPath ?: @"<unknown>",
+                        methodNode.lineNumber);
+}
+
 static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) {
     // When self is a class object (class-method dispatch), object_getClass(self) is the
     // metaclass — but the method map is stored on the class object itself, so use self
@@ -226,7 +259,12 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
 
     // Write back any object out-parameters (e.g. NSError **) that were boxed into ASOutObject.
     for (NSUInteger i = 0; i < paramCount; i++) {
-        [ASBoxer writeBackObject:arguments[i] atArgumentIndex:i toInvocation:invocation];
+        if (![ASBoxer writeBackObject:arguments[i] atArgumentIndex:i toInvocation:invocation]) {
+            NSString *pointee = [ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:i
+                                                                      inSignature:invocation.methodSignature];
+            ASRaiseOutParameterConversionFailure(arguments[i], pointee ?: @"?", i, methodClass,
+                                                 selectorString, isClassDispatch, scriptPath, methodNode);
+        }
     }
 
     // Unbox the result back into the invocation if the return type is non-void.

@@ -20,6 +20,7 @@
 #import <AppScript/ASInterpreter.h>
 #import <AppScript/ASNull.h>
 #import <AppScript/ASOutObject.h>
+#import <AppScript/ASStructValue.h>
 #import <AppScript/ASASTNode.h>
 #import <AppScript/ASReturnNode.h>
 #import <AppScript/ASVariableDeclarationNode.h>
@@ -76,6 +77,39 @@
         *error = [NSError errorWithDomain:@"ASOutErrorHelperDomain" code:77 userInfo:nil];
     }
     return NO;
+}
+@end
+
+@interface ASOutScalarHelper : NSObject
++ (void)setInteger:(NSInteger *)out;
++ (void)doubleInteger:(NSInteger *)inOut;
++ (void)setRange:(NSRange *)out;
+@end
+
+@implementation ASOutScalarHelper
++ (void)setInteger:(NSInteger *)out {
+    if (out) { *out = 42; }
+}
++ (void)doubleInteger:(NSInteger *)inOut {
+    if (inOut) { *inOut *= 2; }
+}
++ (void)setRange:(NSRange *)out {
+    if (out) { *out = NSMakeRange(5, 6); }
+}
+@end
+
+/// Stands in for NSColor, whose real API needs AppKit: four `double *` out-parameters in one
+/// message, as in `-[NSColor getRed:green:blue:alpha:]` (CGFloat is double on 64-bit).
+@interface ASOutColorHelper : NSObject
+- (void)getRed:(double *)red green:(double *)green blue:(double *)blue alpha:(double *)alpha;
+@end
+
+@implementation ASOutColorHelper
+- (void)getRed:(double *)red green:(double *)green blue:(double *)blue alpha:(double *)alpha {
+    if (red) { *red = 0.25; }
+    if (green) { *green = 0.5; }
+    if (blue) { *blue = 0.75; }
+    if (alpha) { *alpha = 1.0; }
 }
 @end
 
@@ -1260,6 +1294,144 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
     NSError *err = (NSError *)result;
     XCTAssertEqualObjects(err.domain, @"ASOutErrorHelperDomain");
     XCTAssertEqual(err.code, 77);
+}
+
+// ---------------------------------------------------------------------------
+// 53b. Scalar and struct out-parameters (NSInteger *, NSRange *) in outbound sends
+// ---------------------------------------------------------------------------
+
+- (id)evaluateBody:(NSArray<ASASTNode *> *)body {
+    return [self.interpreter evaluateMethodBody:body
+                                   withReceiver:[NSObject new]
+                                  definingClass:[NSObject class]
+                                       selector:@"test"
+                                      arguments:@[]
+                                 parameterNames:@[]
+                                     scriptPath:@"test.appscript"];
+}
+
+- (void)test_evaluateMessageSend_withASOutObject_integerPointer_populatesNumberAndType {
+    // id box = [ASOutObject outObject]; [ASOutScalarHelper setInteger: box]; return box
+    ASVariableDeclarationNode *declBox = varDeclNode(@"box", messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]));
+    ASMessageSendNode *call = messageSendNode(identNode(@"ASOutScalarHelper"), @[@"setInteger"], @[identNode(@"box")]);
+
+    id result = [self evaluateBody:@[declBox, call, returnNode(identNode(@"box"))]];
+
+    XCTAssertTrue([result isKindOfClass:[ASOutObject class]]);
+    XCTAssertEqualObjects(((ASOutObject *)result).value, @42, @"the native method's write should reach the script");
+    XCTAssertEqualObjects(((ASOutObject *)result).pointeeTypeEncoding, @"q");
+}
+
+- (void)test_evaluateMessageSend_withASOutObject_integerPointer_seedsPointeeFromValue {
+    // id box = [ASOutObject outObject]; [box setValue: 21]; [ASOutScalarHelper doubleInteger: box]; return [box value]
+    ASVariableDeclarationNode *declBox = varDeclNode(@"box", messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]));
+    ASMessageSendNode *seed = messageSendNode(identNode(@"box"), @[@"setValue"], @[numberNode(@21)]);
+    ASMessageSendNode *call = messageSendNode(identNode(@"ASOutScalarHelper"), @[@"doubleInteger"], @[identNode(@"box")]);
+    ASMessageSendNode *getVal = messageSendNode(identNode(@"box"), @[@"value"], @[]);
+
+    id result = [self evaluateBody:@[declBox, seed, call, returnNode(getVal)]];
+
+    XCTAssertEqualObjects(result, @42, @"the pointee should start at the out-object's value (21) and be doubled");
+}
+
+- (void)test_evaluateMessageSend_withASOutObject_rangePointer_populatesStructValue {
+    ASVariableDeclarationNode *declBox = varDeclNode(@"box", messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]));
+    ASMessageSendNode *call = messageSendNode(identNode(@"ASOutScalarHelper"), @[@"setRange"], @[identNode(@"box")]);
+    ASMessageSendNode *getVal = messageSendNode(identNode(@"box"), @[@"value"], @[]);
+
+    id result = [self evaluateBody:@[declBox, call, returnNode(getVal)]];
+
+    XCTAssertTrue([result isKindOfClass:[ASStructValue class]], @"an NSRange * should fill in an ASStructValue");
+    NSRange expected = NSMakeRange(5, 6);
+    XCTAssertEqualObjects(((ASStructValue *)result).bytes, [NSData dataWithBytes:&expected length:sizeof(expected)]);
+}
+
+- (void)test_evaluateMessageSend_nsScannerScanInteger_readsNumberThroughOutObject {
+    // id scanner = [NSScanner scannerWithString: @"123 rest"]; id box = [ASOutObject outObject];
+    // [scanner scanInteger: box]; return [box value]
+    ASVariableDeclarationNode *declScanner = varDeclNode(@"scanner", messageSendNode(identNode(@"NSScanner"), @[@"scannerWithString"], @[stringNode(@"123 rest")]));
+    ASVariableDeclarationNode *declBox = varDeclNode(@"box", messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]));
+    ASMessageSendNode *scan = messageSendNode(identNode(@"scanner"), @[@"scanInteger"], @[identNode(@"box")]);
+    ASMessageSendNode *getVal = messageSendNode(identNode(@"box"), @[@"value"], @[]);
+
+    id result = [self evaluateBody:@[declScanner, declBox, scan, returnNode(getVal)]];
+
+    XCTAssertEqualObjects(result, @123, @"-[NSScanner scanInteger:] should deliver its result through the out-object");
+}
+
+- (void)test_evaluateMessageSend_stringSeedForIntegerPointer_raisesValueConversionFailed {
+    ASVariableDeclarationNode *declBox = varDeclNode(@"box", messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]));
+    ASMessageSendNode *seed = messageSendNode(identNode(@"box"), @[@"setValue"], @[stringNode(@"oops")]);
+    ASMessageSendNode *call = messageSendNode(identNode(@"ASOutScalarHelper"), @[@"doubleInteger"], @[identNode(@"box")]);
+
+    NSException *ex = runAndCatch(self.interpreter, @[declBox, seed, call]);
+
+    XCTAssertEqualObjects(ex.name, ASRuntimeErrorException);
+    XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+}
+
+- (void)test_evaluateMessageSend_nsStringGetLineStart_returnsLineBoundariesThroughOutObjects {
+    // method with parameter `range`:
+    //   id s = @"first\nsecond"; id start = [ASOutObject outObject]; id lineEnd = ...; id contentsEnd = ...
+    //   [s getLineStart: start end: lineEnd contentsEnd: contentsEnd forRange: range]
+    //   return @[[start value], [lineEnd value], [contentsEnd value]]
+    NSRange lineRange = NSMakeRange(0, 1);
+    ASStructValue *range = [[ASStructValue alloc] initWithBytes:&lineRange
+                                                         length:sizeof(lineRange)
+                                                  canonicalName:@"NSRange"
+                                            runtimeTypeEncoding:@"{_NSRange=QQ}"];
+    ASVariableDeclarationNode *declString = varDeclNode(@"s", stringNode(@"first\nsecond"));
+    NSMutableArray<ASASTNode *> *body = [NSMutableArray arrayWithObject:declString];
+    for (NSString *name in @[@"start", @"lineEnd", @"contentsEnd"]) {
+        [body addObject:varDeclNode(name, messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]))];
+    }
+    [body addObject:messageSendNode(identNode(@"s"),
+                                    @[@"getLineStart", @"end", @"contentsEnd", @"forRange"],
+                                    @[identNode(@"start"), identNode(@"lineEnd"),
+                                      identNode(@"contentsEnd"), identNode(@"range")])];
+    NSArray<ASASTNode *> *values = @[messageSendNode(identNode(@"start"), @[@"value"], @[]),
+                                     messageSendNode(identNode(@"lineEnd"), @[@"value"], @[]),
+                                     messageSendNode(identNode(@"contentsEnd"), @[@"value"], @[])];
+    [body addObject:returnNode([[ASArrayLiteralNode alloc] initWithElements:values line:1 column:1])];
+
+    id result = [self.interpreter evaluateMethodBody:body
+                                        withReceiver:[NSObject new]
+                                       definingClass:[NSObject class]
+                                            selector:@"test"
+                                           arguments:@[range]
+                                      parameterNames:@[@"range"]
+                                          scriptPath:@"test.appscript"];
+
+    NSArray *expected = @[@0, @6, @5];
+    XCTAssertEqualObjects(result, expected,
+                          @"line start 0, line end 6 (after the newline) and contents end 5 should reach the script");
+}
+
+- (void)test_evaluateMessageSend_colorLikeGetRed_returnsFourComponentsThroughOutObjects {
+    // id color = [ASOutColorHelper new]; id red = [ASOutObject outObject]; ... (green, blue, alpha)
+    // [color getRed: red green: green blue: blue alpha: alpha]
+    // return @[[red value], [green value], [blue value], [alpha value]]
+    NSMutableArray<ASASTNode *> *body = [NSMutableArray arrayWithObject:
+        varDeclNode(@"color", messageSendNode(identNode(@"ASOutColorHelper"), @[@"new"], @[]))];
+    NSArray<NSString *> *names = @[@"red", @"green", @"blue", @"alpha"];
+    for (NSString *name in names) {
+        [body addObject:varDeclNode(name, messageSendNode(identNode(@"ASOutObject"), @[@"outObject"], @[]))];
+    }
+    [body addObject:messageSendNode(identNode(@"color"),
+                                    @[@"getRed", @"green", @"blue", @"alpha"],
+                                    @[identNode(@"red"), identNode(@"green"),
+                                      identNode(@"blue"), identNode(@"alpha")])];
+    NSMutableArray<ASASTNode *> *values = [NSMutableArray array];
+    for (NSString *name in names) {
+        [values addObject:messageSendNode(identNode(name), @[@"value"], @[])];
+    }
+    [body addObject:returnNode([[ASArrayLiteralNode alloc] initWithElements:values line:1 column:1])];
+
+    id result = [self evaluateBody:body];
+
+    NSArray *expected = @[@0.25, @0.5, @0.75, @1.0];
+    XCTAssertEqualObjects(result, expected,
+                          @"all four double * out-parameters of one message should reach the script");
 }
 
 // ---------------------------------------------------------------------------
