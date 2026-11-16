@@ -188,6 +188,7 @@ AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASLexerTests.m \
 	AppScriptTests/ASLoaderTests.m \
 	AppScriptTests/ASOutObjectTests.m \
+	AppScriptTests/ASOwnershipTests.m \
 	AppScriptTests/ASParserStringEscapeTests.m \
 	AppScriptTests/ASParserTests.m \
 	AppScriptTests/ASRuntimeInstallerTests.m \

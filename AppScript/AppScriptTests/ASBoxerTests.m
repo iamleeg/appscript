@@ -499,6 +499,33 @@
 }
 
 // ---------------------------------------------------------------------------
+// Return ownership by selector family
+// ---------------------------------------------------------------------------
+
+- (void)test_returnOwnershipForSelector_retainedFamilies_returnRetained {
+    for (NSString *name in @[@"alloc", @"allocWithZone:", @"new", @"newObject", @"copy",
+                             @"copyWithZone:", @"mutableCopy", @"mutableCopyWithZone:", @"_copyThing"]) {
+        XCTAssertEqual([ASBoxer returnOwnershipForSelector:NSSelectorFromString(name)],
+                       ASReturnOwnershipRetained, @"-%@ returns an owned object", name);
+    }
+}
+
+- (void)test_returnOwnershipForSelector_initFamily_returnsInitFamily {
+    for (NSString *name in @[@"init", @"initWithURL:", @"initWithModel:library:notesStorage:", @"_initFoo"]) {
+        XCTAssertEqual([ASBoxer returnOwnershipForSelector:NSSelectorFromString(name)],
+                       ASReturnOwnershipInitFamily, @"-%@ consumes self and returns an owned object", name);
+    }
+}
+
+- (void)test_returnOwnershipForSelector_otherSelectors_returnNone {
+    for (NSString *name in @[@"description", @"tracker", @"newer", @"copying", @"initialize",
+                             @"allocate", @"mutableCopying", @"objectAtIndex:", @"count", @"newsletter"]) {
+        XCTAssertEqual([ASBoxer returnOwnershipForSelector:NSSelectorFromString(name)],
+                       ASReturnOwnershipNone, @"-%@ is not in an owning family", name);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Struct boxing, unboxing, and byte-level API tests
 // ---------------------------------------------------------------------------
 

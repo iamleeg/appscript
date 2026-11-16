@@ -21,6 +21,13 @@
 #import "ASNull.h"
 #import "ASOutObject.h"
 #import <objc/runtime.h>
+#if __has_include(<objc/objc-arc.h>)
+#import <objc/objc-arc.h>   // GNUstep's libobjc2 declares objc_retain here.
+#else
+// Apple's SDK doesn't declare the ARC runtime entry points in a public header, but libobjc
+// exports objc_retain (it is part of the ARC runtime interface the compiler itself calls).
+OBJC_EXPORT id _Nullable objc_retain(id _Nullable value);
+#endif
 #import "ASBoxer.h"
 #import "ASRuntimeInstaller.h"
 #import "ASMethodNode.h"
@@ -613,6 +620,28 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
         }
     }
 
+    // Ownership of the returned object, by the ARC naming convention. A native method in the alloc,
+    // new, copy or mutableCopy family returns +1, and an init-family method also consumes self;
+    // NSInvocation does neither on our behalf, so balance them here (asu-73m). A method defined in
+    // AppScript is skipped: its forwarding stub returns an autoreleased +0 result (ADR 3) and
+    // doesn't consume self.
+    ASReturnOwnership ownership = [ASBoxer returnOwnershipForSelector:sel];
+    BOOL balanceOwnership = NO;
+    if (ownership != ASReturnOwnershipNone && sig.methodReturnType[0] == '@') {
+        BOOL targetIsClass = class_isMetaClass(object_getClass(receiver));
+        Class ownershipStartClass = isSuperSend ? [ctx.definingClass superclass]
+                                                : (targetIsClass ? (Class)receiver : object_getClass(receiver));
+        balanceOwnership = [ASRuntimeInstaller appScriptMethodNodeForSuperDispatch:ownershipStartClass
+                                                                          selector:node.selector
+                                                                     definingClass:NULL] == nil;
+    }
+    if (balanceOwnership && ownership == ASReturnOwnershipInitFamily) {
+        // The callee releases self (it consumes it), so give it one more retain to release. This is
+        // a hand-off of ownership to the callee, which the static analyzer can't see, hence the
+        // explicit runtime call; it is balanced by the release of the result below.
+        objc_retain(receiver);
+    }
+
     if (isSuperSend) {
         // For super sends, we must bypass dynamic dispatch to avoid infinite recursion.
         //
@@ -674,7 +703,15 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
         }
     }
 
-    return [ASBoxer boxedReturnValueFromInvocation:inv];
+    id boxedResult = [ASBoxer boxedReturnValueFromInvocation:inv];
+    if (balanceOwnership && boxedResult != nil &&
+        ![boxedResult isKindOfClass:[ASNull class]] && ![boxedResult isKindOfClass:[NSNull class]]) {
+        // Release the +1 the callee returned. `boxedResult` is a strong reference, so the object
+        // stays alive for the script until that is released in turn.
+        id owned = (__bridge_transfer id)(__bridge void *)boxedResult;
+        (void)owned;
+    }
+    return boxedResult;
 }
 
 // ---------------------------------------------------------------------------

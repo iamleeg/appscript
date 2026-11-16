@@ -144,6 +144,27 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
 + (BOOL)unboxObject:(nullable id)object
 intoReturnValueOfInvocation:(NSInvocation *)invocation;
 
+/// How a method hands back the object it returns, by the Objective-C naming convention.
+typedef NS_ENUM(NSInteger, ASReturnOwnership) {
+    /// The result is not owned by the caller (+0): ordinary selectors, `autorelease`d results.
+    ASReturnOwnershipNone = 0,
+    /// The selector is in the `alloc`, `new`, `copy` or `mutableCopy` family: the result is owned (+1).
+    ASReturnOwnershipRetained,
+    /// The selector is in the `init` family: the method consumes `self` and its result is owned (+1).
+    ASReturnOwnershipInitFamily,
+};
+
+/// Returns the ownership convention for the object a method named `selector` returns.
+///
+/// This is the rule the Objective-C compiler applies to every method that has no ownership
+/// annotation: ignoring leading underscores, a selector is in a family when it begins with
+/// `alloc`, `new`, `copy`, `mutableCopy` or `init` and the next character is not a lowercase
+/// letter (so `copyWithZone:` and `initWithURL:` qualify, `copying` and `initialize` don't).
+///
+/// - Parameter selector: The selector of the method that was invoked.
+/// - Returns: The ownership convention for the method's returned object.
++ (ASReturnOwnership)returnOwnershipForSelector:(SEL)selector;
+
 /// Returns a human-readable name for an Objective-C type encoding, for use in error messages.
 ///
 /// Type qualifiers are ignored. Common scalar encodings map to their C names (`double`, `BOOL`,

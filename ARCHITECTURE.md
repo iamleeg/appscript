@@ -597,6 +597,21 @@ The declaration rule for `NSError **` applies here too: such a method must be de
 
 Only arguments are boxed this way. A pointer a method *returns* stays an opaque `NSValue`.
 
+### Ownership of returned objects
+
+Objective-C decides who owns an object a method returns by the method's name: `alloc`, `new`, `copy` and `mutableCopy` (and selectors that begin with them, such as `allocWithZone:` and `copyWithZone:`) return an object the caller owns (+1), and `init`-family selectors (`init`, `initWithURL:`) consume `self` and also return an owned object. The compiler balances this for Objective-C code. `NSInvocation` does not, so the runtime does it for every native send a script makes:
+
+- For an `alloc`, `new`, `copy` or `mutableCopy` send, the runtime releases the +1 once the returned object is held by the script.
+- For an `init`-family send, it first retains the receiver, because the callee will consume that retain, and releases the returned object afterwards. The receiver may be replaced by a different object; both cases balance.
+
+The result is that an object a script creates, with `[[Foo alloc] init]`, `[Foo new]` or `[x copy]`, is freed when the script's last reference to it goes away. A script author does nothing for this.
+
+The rule is applied by selector name (`+[ASBoxer returnOwnershipForSelector:]`; leading underscores are ignored, and the family prefix must be followed by something other than a lowercase letter, so `copying` and `initialize` are not in a family). The runtime can't see ownership annotations such as `NS_RETURNS_NOT_RETAINED`, so a native method named in a family but declared otherwise would be over-released. None is known; the search was not exhaustive.
+
+Methods defined in AppScript are not balanced. Their results are returned to the caller autoreleased (+0, the `ASForwardInvocationIMP` rule), and they don't consume `self`. So a script method named in a family, such as `- copyOfSomething`, is safe to call from a script. Objective-C code that calls an AppScript `init`-family method should do so through a typed `objc_msgSend` pointer, as the ResearchBuddy factories do, not with ARC message syntax, which would expect an owned result.
+
+Only objects (`@` return type) are balanced. BridgeSupport C functions, which follow the Core Foundation "Create" and "Copy" rule, are not covered.
+
 ### BridgeSupport integration
 
 AppScript provides access to C functions and constants declared in Apple's BridgeSupport metadata, while preserving the language's all-objects-are-`id` invariant.

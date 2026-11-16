@@ -479,6 +479,33 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
     return (pointedType != NULL && pointedType[0] == '@');
 }
 
++ (ASReturnOwnership)returnOwnershipForSelector:(SEL)selector {
+    const char *name = sel_getName(selector);
+    while (*name == '_') {
+        name++;
+    }
+    static const struct {
+        const char *prefix;
+        ASReturnOwnership ownership;
+    } families[] = {
+        { "alloc", ASReturnOwnershipRetained },
+        { "new", ASReturnOwnershipRetained },
+        { "copy", ASReturnOwnershipRetained },
+        { "mutableCopy", ASReturnOwnershipRetained },
+        { "init", ASReturnOwnershipInitFamily },
+    };
+    for (size_t i = 0; i < sizeof(families) / sizeof(families[0]); i++) {
+        size_t length = strlen(families[i].prefix);
+        if (strncmp(name, families[i].prefix, length) == 0) {
+            char next = name[length];
+            if (next < 'a' || next > 'z') {
+                return families[i].ownership;
+            }
+        }
+    }
+    return ASReturnOwnershipNone;
+}
+
 + (BOOL)isOutParameterAtIndex:(NSUInteger)argumentIndex
                   inSignature:(NSMethodSignature *)signature {
     return [self isObjectOutParameterAtIndex:argumentIndex inSignature:signature] ||
