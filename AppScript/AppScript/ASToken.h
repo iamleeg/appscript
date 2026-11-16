@@ -33,7 +33,7 @@ typedef NS_ENUM(NSInteger, ASTokenType) {
     ASTokenTypeNilLiteral,
 
     // Keywords
-    /// The @class keyword.
+    /// The \@class keyword.
     ASTokenTypeKwClass,
     /// The @category keyword.
     ASTokenTypeKwCategory,

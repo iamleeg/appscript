@@ -1216,7 +1216,7 @@ static BOOL ASTokenIsKeywordPart(ASToken *tok) {
 /// corresponding Unicode characters.
 ///
 /// Supported sequences mirror those of the Objective-C language:
-///   \\  \"  \n  \t  \r  \0  \a  \b  \f  \v
+///   \\  \"  \n  \t  \r  \0  \\a  \\b  \f  \v
 ///   \xNN  (1–2 hex digits)
 ///   \uNNNN  (exactly 4 hex digits)
 ///   \UNNNNNNNN  (exactly 8 hex digits)
