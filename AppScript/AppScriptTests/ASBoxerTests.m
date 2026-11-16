@@ -17,11 +17,26 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <XCTest/XCTest.h>
+#include <complex.h>
 #import <AppScript/ASBoxer.h>
 #import <AppScript/ASOutObject.h>
 #import <AppScript/ASStructValue.h>
 #import <AppScript/ASBridgeSupportStruct.h>
 #import <AppScript/ASBridgeSupportStructField.h>
+
+/// A union passed by value, for the wide-type tests (asu-3b4).
+union ASBoxerTestUnion { int i; double d; };
+
+/// Echoes its argument, so the wide-type tests go through the same NSInvocation slots a script send uses.
+@interface ASBoxerWideTypesTarget : NSObject
+- (long double)echoLongDouble:(long double)value;
+- (__int128)echoInt128:(__int128)value;
+@end
+
+@implementation ASBoxerWideTypesTarget
+- (long double)echoLongDouble:(long double)value { return value; }
+- (__int128)echoInt128:(__int128)value { return value; }
+@end
 
 @protocol ASBoxerTestOutErrorProtocol <NSObject>
 - (BOOL)performOperationWithError:(NSError **)error;
@@ -828,6 +843,201 @@
     BOOL ok = [ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(NSRange) typeEncoding:@encode(NSRange)];
     XCTAssertFalse(ok, @"nil must not be unboxed into a struct as all-zero");
     XCTAssertEqual(out.location, (NSUInteger)1);
+}
+
+// ---------------------------------------------------------------------------
+// Wide C types: long double, unions, __int128, _Complex, _Atomic (asu-3b4)
+//
+// Apple's NSMethodSignature rejects unions and _Complex, NSInvocation traps on __int128 and
+// NSGetSizeAndAlignment rejects bitfields and _Atomic, so only long double can be tested through
+// an invocation. The others are tested at the byte level, which is where ASBoxer decides what an
+// object may become.
+// ---------------------------------------------------------------------------
+
+/// Sends `selector` to a fresh ASBoxerWideTypesTarget with `argument` unboxed into its first
+/// argument. Returns the boxed return value, or sets *failed when the argument is rejected.
+- (id)echoSelector:(SEL)selector argument:(id)argument failed:(BOOL *)failed {
+    ASBoxerWideTypesTarget *target = [[ASBoxerWideTypesTarget alloc] init];
+    NSMethodSignature *sig = [target methodSignatureForSelector:selector];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = target;
+    inv.selector = selector;
+    if (![ASBoxer unboxObject:argument intoArgumentAtIndex:0 ofInvocation:inv]) {
+        *failed = YES;
+        return nil;
+    }
+    *failed = NO;
+    [inv invoke];
+    return [ASBoxer boxedReturnValueFromInvocation:inv];
+}
+
+- (void)test_longDouble_numberRoundTripsThroughAnInvocation {
+    BOOL failed = NO;
+    id result = [self echoSelector:@selector(echoLongDouble:) argument:@2.5 failed:&failed];
+    XCTAssertFalse(failed);
+    XCTAssertEqualObjects(result, @2.5);
+}
+
+- (void)test_longDouble_unboxWritesTheWholeSlot {
+    long double out = 0;
+    BOOL ok = [ASBoxer unboxObject:@3.25 intoBytes:&out ofSize:sizeof(long double) typeEncoding:@encode(long double)];
+    XCTAssertTrue(ok);
+    XCTAssertEqual((double)out, 3.25);
+}
+
+- (void)test_longDouble_rejectsStringNilAndWrongSlotSize {
+    long double out = 9;
+    XCTAssertFalse([ASBoxer unboxObject:@"2.5" intoBytes:&out ofSize:sizeof(long double) typeEncoding:@encode(long double)]);
+    XCTAssertFalse([ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(long double) typeEncoding:@encode(long double)]);
+    XCTAssertFalse([ASBoxer unboxObject:@2.5 intoBytes:&out ofSize:sizeof(long double) + 1 typeEncoding:@encode(long double)]);
+    XCTAssertEqual((double)out, 9.0, @"A rejected value must leave the slot alone");
+}
+
+- (void)test_union_boxesAsAnNSValueAndUnboxesBack {
+    union ASBoxerTestUnion u = { .d = 2.5 };
+    NSValue *boxed = [ASBoxer boxedObjectFromBytes:&u typeEncoding:@encode(union ASBoxerTestUnion)];
+    XCTAssertTrue([boxed isKindOfClass:[NSValue class]]);
+    XCTAssertFalse([boxed isKindOfClass:[NSNumber class]]);
+    union ASBoxerTestUnion out = { .i = 0 };
+    XCTAssertTrue([ASBoxer unboxObject:boxed intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(union ASBoxerTestUnion)]);
+    XCTAssertEqual(out.d, 2.5);
+}
+
+- (void)test_union_rejectsNumberStringNilAndOtherNSValues {
+    union ASBoxerTestUnion out = { .i = 7 };
+    const char *enc = @encode(union ASBoxerTestUnion);
+    XCTAssertFalse([ASBoxer unboxObject:@5 intoBytes:&out ofSize:sizeof(out) typeEncoding:enc], @"An NSNumber is not a union");
+    XCTAssertFalse([ASBoxer unboxObject:@"u" intoBytes:&out ofSize:sizeof(out) typeEncoding:enc]);
+    XCTAssertFalse([ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(out) typeEncoding:enc]);
+    double d = 1.5;
+    NSValue *doubleValue = [NSValue valueWithBytes:&d objCType:@encode(double)];
+    XCTAssertFalse([ASBoxer unboxObject:doubleValue intoBytes:&out ofSize:sizeof(out) typeEncoding:enc],
+                   @"An NSValue of another type and the same size is not a union");
+    XCTAssertEqual(out.i, 7, @"A rejected value must leave the slot alone");
+}
+
+- (void)test_union_rejectsAnNSValueOfTheWrongSize {
+    union ASBoxerTestUnion out = { .i = 7 };
+    union { char c[3]; } small = { {1, 2, 3} };
+    NSValue *smallUnion = [NSValue valueWithBytes:&small objCType:@encode(__typeof__(small))];
+    XCTAssertFalse([ASBoxer unboxObject:smallUnion intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(union ASBoxerTestUnion)]);
+}
+
+- (void)test_int128_numberSignExtends {
+    __int128 out = 0;
+    XCTAssertTrue([ASBoxer unboxObject:@-1 intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(__int128)]);
+    XCTAssertTrue(out == (__int128)-1, @"A negative number must be sign-extended into all 128 bits");
+}
+
+- (void)test_unsignedInt128_zeroExtends {
+    unsigned __int128 out = 1;
+    XCTAssertTrue([ASBoxer unboxObject:@(UINT64_MAX) intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(unsigned __int128)]);
+    XCTAssertTrue(out == (unsigned __int128)UINT64_MAX);
+}
+
+- (void)test_int128_smallValueBoxesAsANumber {
+    __int128 small = -7;
+    XCTAssertEqualObjects([ASBoxer boxedObjectFromBytes:&small typeEncoding:@encode(__int128)], @-7);
+    unsigned __int128 usmall = 9;
+    XCTAssertEqualObjects([ASBoxer boxedObjectFromBytes:&usmall typeEncoding:@encode(unsigned __int128)], @9);
+}
+
+- (void)test_int128_valueThatDoesNotFitIn64BitsBoxesAsNSValueAndRoundTrips {
+    __int128 big = ((__int128)1) << 100;
+    id boxed = [ASBoxer boxedObjectFromBytes:&big typeEncoding:@encode(__int128)];
+    XCTAssertTrue([boxed isKindOfClass:[NSValue class]]);
+    XCTAssertFalse([boxed isKindOfClass:[NSNumber class]], @"2^100 doesn't fit a long long");
+    __int128 out = 0;
+    XCTAssertTrue([ASBoxer unboxObject:boxed intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(__int128)]);
+    XCTAssertTrue(out == big);
+}
+
+- (void)test_int128_rejectsStringAndNil {
+    __int128 out = 3;
+    XCTAssertFalse([ASBoxer unboxObject:@"5" intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(__int128)]);
+    XCTAssertFalse([ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(__int128)]);
+    XCTAssertTrue(out == 3);
+}
+
+- (void)test_int128_invocationSlotIsRejectedBecauseNSInvocationWouldTrap {
+    // -[NSInvocation setArgument:atIndex:] kills the process for 't' on Apple platforms, so the
+    // invocation paths report a conversion failure instead. Building the invocation is safe.
+    NSMethodSignature *sig = [ASBoxerWideTypesTarget instanceMethodSignatureForSelector:@selector(echoInt128:)];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    XCTAssertFalse([ASBoxer unboxObject:@5 intoArgumentAtIndex:0 ofInvocation:inv]);
+    XCTAssertFalse([ASBoxer unboxObject:@5 intoReturnValueOfInvocation:inv]);
+}
+
+- (void)test_complex_isRejectedForEveryObject {
+    double _Complex out = 3;
+    const char *enc = @encode(double _Complex);
+    XCTAssertFalse([ASBoxer unboxObject:@5 intoBytes:&out ofSize:sizeof(out) typeEncoding:enc]);
+    XCTAssertFalse([ASBoxer unboxObject:@"1+2i" intoBytes:&out ofSize:sizeof(out) typeEncoding:enc]);
+    XCTAssertFalse([ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(out) typeEncoding:enc]);
+    double d[2] = {1, 2};
+    NSValue *pair = [NSValue valueWithBytes:d objCType:@encode(double[2])];
+    XCTAssertFalse([ASBoxer unboxObject:pair intoBytes:&out ofSize:sizeof(out) typeEncoding:enc]);
+    XCTAssertTrue(out == 3, @"A rejected value must leave the slot alone");
+}
+
+- (void)test_complex_boxingReturnsNilInsteadOfRaising {
+    double _Complex c = 1.5 + 2.5 * I;
+    XCTAssertNoThrow([ASBoxer boxedObjectFromBytes:&c typeEncoding:@encode(double _Complex)]);
+    XCTAssertNil([ASBoxer boxedObjectFromBytes:&c typeEncoding:@encode(double _Complex)],
+                 @"NSValue can't wrap _Complex on Apple platforms");
+}
+
+- (void)test_atomicInt_isConvertedLikeInt {
+    _Atomic int source = 7;
+    id boxed = [ASBoxer boxedObjectFromBytes:&source typeEncoding:@encode(_Atomic int)];
+    XCTAssertEqualObjects(boxed, @7);
+    _Atomic int out = 0;
+    XCTAssertTrue([ASBoxer unboxObject:@9 intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(_Atomic int)]);
+    XCTAssertEqual((int)out, 9);
+    XCTAssertFalse([ASBoxer unboxObject:@"9" intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(_Atomic int)]);
+}
+
+- (void)test_pointer_rejectsNumberAcceptsNilAndPointerValue {
+    void *out = (void *)0x10;
+    XCTAssertFalse([ASBoxer unboxObject:@5 intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(void *)],
+                   @"An NSNumber's bytes must not be copied into a pointer slot");
+    XCTAssertTrue(out == (void *)0x10);
+    XCTAssertTrue([ASBoxer unboxObject:nil intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(void *)]);
+    XCTAssertTrue(out == NULL);
+    int marker = 0;
+    XCTAssertTrue([ASBoxer unboxObject:[NSValue valueWithPointer:&marker] intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(void *)]);
+    XCTAssertTrue(out == &marker);
+}
+
+#if defined(OBJC_BOOL_IS_BOOL) && OBJC_BOOL_IS_BOOL
+// Where BOOL is _Bool, `c` is always a real char (arm64 Apple platforms).
+- (void)test_char_numberKeepsItsValue {
+    signed char out = 0;
+    XCTAssertTrue([ASBoxer unboxObject:@65 intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(char)]);
+    XCTAssertEqual(out, 65);
+    signed char source = 66;
+    id boxed = [ASBoxer boxedObjectFromBytes:&source typeEncoding:@encode(char)];
+    XCTAssertEqual([boxed charValue], 66);
+}
+#endif
+
+- (void)test_BOOL_stillBoxesAndUnboxesAsABoolean {
+    BOOL out = NO;
+    XCTAssertTrue([ASBoxer unboxObject:@YES intoBytes:&out ofSize:sizeof(out) typeEncoding:@encode(BOOL)]);
+    XCTAssertTrue(out);
+    BOOL source = YES;
+    XCTAssertEqualObjects([ASBoxer boxedObjectFromBytes:&source typeEncoding:@encode(BOOL)], @YES);
+}
+
+- (void)test_displayNameForTypeEncoding_wideTypes {
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(long double)], @"long double");
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(__int128)], @"__int128");
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(unsigned __int128)], @"unsigned __int128");
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(float _Complex)], @"float _Complex");
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(double _Complex)], @"double _Complex");
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(long double _Complex)], @"long double _Complex");
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(union ASBoxerTestUnion)], @"ASBoxerTestUnion");
+    XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(_Atomic int)], @"_Atomic int");
 }
 
 @end

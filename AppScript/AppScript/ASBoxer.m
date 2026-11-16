@@ -28,7 +28,7 @@
 
 /// Skips past any Objective-C type qualifier characters (const, in, out, etc.)
 /// that may prefix a type encoding string, returning a pointer to the base type character.
-static const char *ASSkipTypeQualifiers(const char *typeEncoding) {
+static const char *ASSkipQualifierCharacters(const char *typeEncoding) {
     // Qualifier characters defined by the ObjC runtime: r=const, n=in, N=inout, o=out, O=bycopy, R=byref, V=oneway
     while (typeEncoding && (*typeEncoding == 'r' || *typeEncoding == 'n' ||
                             *typeEncoding == 'N' || *typeEncoding == 'o' ||
@@ -37,6 +37,35 @@ static const char *ASSkipTypeQualifiers(const char *typeEncoding) {
         typeEncoding++;
     }
     return typeEncoding;
+}
+
+/// Skips qualifiers and `_Atomic` (`A`): an atomic scalar is converted like the type it wraps.
+static const char *ASSkipTypeQualifiers(const char *typeEncoding) {
+    typeEncoding = ASSkipQualifierCharacters(typeEncoding);
+    while (typeEncoding && *typeEncoding == 'A') {
+        typeEncoding = ASSkipQualifierCharacters(typeEncoding + 1);
+    }
+    return typeEncoding;
+}
+
+/// Returns YES for types that NSInvocation can't carry on Apple platforms: `-setArgument:atIndex:`
+/// traps for `__int128`, which would kill the process, so the invocation paths report a conversion
+/// failure for it instead.
+static BOOL ASInvocationCannotCarry(const char *typeEncoding) {
+    typeEncoding = ASSkipTypeQualifiers(typeEncoding);
+    return typeEncoding && (typeEncoding[0] == 't' || typeEncoding[0] == 'T');
+}
+
+/// Returns the size of a union or other type encoding without letting Foundation's exception
+/// escape: NSGetSizeAndAlignment raises for encodings it doesn't know. Returns 0 when unknown.
+static NSUInteger ASSizeOfTypeEncoding(const char *typeEncoding) {
+    NSUInteger size = 0;
+    @try {
+        NSGetSizeAndAlignment(typeEncoding, &size, NULL);
+    } @catch (NSException *exception) {
+        size = 0;
+    }
+    return size;
 }
 
 /// Returns YES if `pointee` (the encoding after a `^`, qualifiers already skipped) is a scalar or
@@ -92,10 +121,15 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             return [NSNumber numberWithBool:value];
         }
         case 'c': {
-            // char — treat as BOOL for boxing purposes (common usage in ObjC)
             signed char value = 0;
             memcpy(&value, bytes, sizeof(signed char));
+#if defined(OBJC_BOOL_IS_BOOL) && OBJC_BOOL_IS_BOOL
+            // BOOL is _Bool here (arm64 Apple platforms), so `c` is always a real char.
+            return [NSNumber numberWithChar:value];
+#else
+            // BOOL is a signed char here (x86_64 macOS, GNUstep), so `c` may be a BOOL.
             return [NSNumber numberWithBool:(BOOL)value];
+#endif
         }
         case 'C': {
             unsigned char value = 0;
@@ -151,6 +185,36 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             double value = 0.0;
             memcpy(&value, bytes, sizeof(double));
             return [NSNumber numberWithDouble:value];
+        }
+        case 'D': {
+            // long double — boxed through double, so the extra precision of x86_64's 80-bit
+            // format is lost (arm64's long double already is a double).
+            long double value = 0.0L;
+            memcpy(&value, bytes, sizeof(long double));
+            return [NSNumber numberWithDouble:(double)value];
+        }
+#ifdef __SIZEOF_INT128__
+        case 't': {
+            // __int128 — a number when the value fits in a long long, otherwise an NSValue.
+            __int128 value = 0;
+            memcpy(&value, bytes, sizeof(value));
+            if (value >= (__int128)LLONG_MIN && value <= (__int128)LLONG_MAX) {
+                return [NSNumber numberWithLongLong:(long long)value];
+            }
+            return [NSValue valueWithBytes:bytes objCType:"t"];
+        }
+        case 'T': {
+            unsigned __int128 value = 0;
+            memcpy(&value, bytes, sizeof(value));
+            if (value <= (unsigned __int128)ULLONG_MAX) {
+                return [NSNumber numberWithUnsignedLongLong:(unsigned long long)value];
+            }
+            return [NSValue valueWithBytes:bytes objCType:"T"];
+        }
+#endif
+        case 'j': {
+            // _Complex — Foundation can't size it, so NSValue can't wrap it; there is no boxed form.
+            return nil;
         }
         case '*': {
             // const char * — the bytes hold a pointer to a C string
@@ -232,12 +296,15 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
     // before any accessor is sent, so nothing is silently zeroed or reinterpreted.
     switch (typeEncoding[0]) {
         case 'B': case 'c': case 'C': case 's': case 'S': case 'i': case 'I':
-        case 'l': case 'L': case 'q': case 'Q': case 'f': case 'd':
+        case 'l': case 'L': case 'q': case 'Q': case 'f': case 'd': case 'D':
             // Scalars accept only NSNumber; nil has no scalar equivalent.
             if (![object isKindOfClass:[NSNumber class]]) {
                 return NO;
             }
             break;
+        case 'j':
+            // _Complex has no boxed form (NSValue can't wrap it), so nothing converts to it.
+            return NO;
         case '#':
             // Class accepts class objects (whose class is a metaclass) or nil.
             if (object != nil && !class_isMetaClass(object_getClass(object))) {
@@ -285,8 +352,12 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
             return YES;
         }
         case 'c': {
-            // Treat char as BOOL
+#if defined(OBJC_BOOL_IS_BOOL) && OBJC_BOOL_IS_BOOL
+            signed char value = [object charValue];
+#else
+            // BOOL is a signed char here, so `c` may be a BOOL.
             signed char value = (signed char)[object boolValue];
+#endif
             memcpy(outBytes, &value, sizeof(signed char));
             return YES;
         }
@@ -345,6 +416,56 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
             memcpy(outBytes, &value, sizeof(double));
             return YES;
         }
+        case 'D': {
+            if (outSize != sizeof(long double)) {
+                return NO;
+            }
+            long double value = (long double)[object doubleValue];
+            memcpy(outBytes, &value, sizeof(long double));
+            return YES;
+        }
+#ifdef __SIZEOF_INT128__
+        case 't':
+        case 'T': {
+            // A number widens (signed for `t`, unsigned for `T`); a value that doesn't fit in 64
+            // bits comes back as an NSValue of the same encoding. Nothing else converts.
+            if (outSize != 16) {
+                return NO;
+            }
+            if ([object isKindOfClass:[NSNumber class]]) {
+                if (typeEncoding[0] == 't') {
+                    __int128 value = (__int128)[(NSNumber *)object longLongValue];
+                    memcpy(outBytes, &value, sizeof(value));
+                } else {
+                    unsigned __int128 value = (unsigned __int128)[(NSNumber *)object unsignedLongLongValue];
+                    memcpy(outBytes, &value, sizeof(value));
+                }
+                return YES;
+            }
+            if ([object isKindOfClass:[NSValue class]] &&
+                [(NSValue *)object objCType][0] == typeEncoding[0] &&
+                ASSizeOfTypeEncoding([(NSValue *)object objCType]) == 16) {
+                [object getValue:outBytes];
+                return YES;
+            }
+            return NO;
+        }
+#endif
+        case '(': {
+            // Union — only an NSValue of the same encoding, or of another union of the same size.
+            // An NSNumber is an NSValue but never a union.
+            if (outSize == 0 || ![object isKindOfClass:[NSValue class]] ||
+                [object isKindOfClass:[NSNumber class]]) {
+                return NO;
+            }
+            const char *valueType = [(NSValue *)object objCType];
+            if (valueType && (strcmp(valueType, typeEncoding) == 0 ||
+                              (valueType[0] == '(' && ASSizeOfTypeEncoding(valueType) == outSize))) {
+                [object getValue:outBytes];
+                return YES;
+            }
+            return NO;
+        }
         case '*': {
             // NSString → const char *; nil → NULL.
             const char *ptr = object ? [(NSString *)object UTF8String] : NULL;
@@ -361,7 +482,8 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
                 memcpy(outBytes, &nullPtr, sizeof(void *));
                 return YES;
             }
-            if ([object isKindOfClass:[NSValue class]]) {
+            // An NSNumber is an NSValue, but its bytes are not a pointer.
+            if ([object isKindOfClass:[NSValue class]] && ![object isKindOfClass:[NSNumber class]]) {
                 [object getValue:outBytes];
                 return YES;
             }
@@ -402,7 +524,8 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
                 }
                 memcpy(outBytes, sv.bytes.bytes, sv.bytes.length);
                 return YES;
-            } else if ([object isKindOfClass:[NSValue class]]) {
+            } else if ([object isKindOfClass:[NSValue class]] && ![object isKindOfClass:[NSNumber class]]) {
+                // Any other NSValue, but not an NSNumber: its bytes would be reinterpreted.
                 [object getValue:outBytes];
                 return YES;
             }
@@ -579,6 +702,10 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
     NSUInteger invIndex = argumentIndex + 2;
     const char *typeEncoding = [sig getArgumentTypeAtIndex:invIndex];
 
+    if (ASInvocationCannotCarry(typeEncoding)) {
+        return NO;
+    }
+
     NSUInteger argSize = 0;
     NSGetSizeAndAlignment(typeEncoding, &argSize, NULL);
     if (argSize == 0) {
@@ -624,6 +751,10 @@ intoReturnValueOfInvocation:(NSInvocation *)invocation {
         return YES;
     }
 
+    if (ASInvocationCannotCarry(typeEncoding)) {
+        return NO;
+    }
+
     NSUInteger retSize = sig.methodReturnLength;
     if (retSize == 0) {
         return YES;
@@ -640,9 +771,12 @@ intoReturnValueOfInvocation:(NSInvocation *)invocation {
 }
 
 + (NSString *)displayNameForTypeEncoding:(const char *)typeEncoding {
-    const char *enc = ASSkipTypeQualifiers(typeEncoding);
+    const char *enc = ASSkipQualifierCharacters(typeEncoding);
     if (!enc || enc[0] == '\0') {
         return @"";
+    }
+    if (enc[0] == 'A') {
+        return [NSString stringWithFormat:@"_Atomic %@", [self displayNameForTypeEncoding:enc + 1]];
     }
     switch (enc[0]) {
         case '@': return @"id";
@@ -661,6 +795,34 @@ intoReturnValueOfInvocation:(NSInvocation *)invocation {
         case 'Q': return @"unsigned long long";
         case 'f': return @"float";
         case 'd': return @"double";
+        case 'D': return @"long double";
+        case 't': return @"__int128";
+        case 'T': return @"unsigned __int128";
+        case 'j': {
+            switch (enc[1]) {
+                case 'f': return @"float _Complex";
+                case 'd': return @"double _Complex";
+                case 'D': return @"long double _Complex";
+                default: return @(typeEncoding);
+            }
+        }
+        case '(': {
+            // (ASBoxerTestUnion=id) -> ASBoxerTestUnion: the tag runs to '=' or ')'.
+            const char *start = enc + 1;
+            while (*start == '_') {
+                start++;
+            }
+            const char *end = start;
+            while (*end && *end != '=' && *end != ')') {
+                end++;
+            }
+            if (end > start && *start != '?') {
+                return [[NSString alloc] initWithBytes:start
+                                                length:(NSUInteger)(end - start)
+                                              encoding:NSUTF8StringEncoding];
+            }
+            return @"union";
+        }
         case '*': return @"char *";
         case '^': return @"pointer";
         case 'v': return @"void";

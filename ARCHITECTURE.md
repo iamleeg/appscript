@@ -96,14 +96,26 @@ Each C type accepts only the objects listed below. `nil` is accepted only where 
 | `id` | Any object | Passed as `nil` |
 | `Class` | Class objects | Passed as `Nil` |
 | `SEL` | `NSString` (the selector name) | Passed as `NULL` |
-| `BOOL`, `char`, and integer and floating-point scalars | `NSNumber` | Rejected |
+| `BOOL`, `char`, and integer and floating-point scalars, including `long double` | `NSNumber` | Rejected |
 | `char *` | `NSString` (passed as its UTF-8 representation) | Passed as `NULL` |
 | `id *` (e.g. `NSError **`) | `ASOutObject` | Passed as `NULL` |
 | Pointer to a scalar or struct (e.g. `NSInteger *`, `double *`, `NSRange *`) | `ASOutObject` | Passed as `NULL` |
-| Other pointers (`void *`, pointers to pointers other than `id *`, unions) | `NSValue` wrapping a pointer | Passed as `NULL` |
+| Other pointers (`void *`, pointers to pointers other than `id *`, pointers to unions) | `NSValue` wrapping a pointer. An `NSNumber` is rejected: its bytes are not a pointer. | Passed as `NULL` |
 | Struct | `ASStructValue`, or `NSValue` holding a struct of the same size | Rejected |
+| Union | `NSValue` of the same union type, or of another union of the same size. Not an `NSNumber`, an `ASStructValue` or an `NSValue` of another kind. | Rejected |
+| `__int128`, `unsigned __int128` | `NSNumber` (sign-extended for `__int128`, zero-extended from the unsigned value for `unsigned __int128`), or an `NSValue` of the same type | Rejected |
+| `_Complex` | Nothing: Foundation can't size or wrap it | Rejected |
+| `_Atomic T` | The same objects as `T` | As for `T` |
 
 When the runtime cannot convert an object to the C type that the method signature requires (for example a number passed where a `SEL` is expected, a string passed for an `int`, `nil` passed for an `NSRect`, or a struct of the wrong size), it raises an `ASRuntimeErrorException` with error code `ASErrorCodeValueConversionFailed`. It never proceeds with a zeroed or reinterpreted value. Objective-C would reject such a mismatch at compile time, or produce undefined behaviour if forced through a cast; AppScript has no compile step, so the run-time error stands in for the compiler diagnostic.
+
+Notes on the wider types (asu-3b4):
+
+- `long double` is converted through `double`, so on x86_64 the 80-bit format's extra precision is lost when a value is boxed. On arm64 `long double` is `double`.
+- A union is boxed as an `NSValue` carrying the union's type, and converts back only from such a value. Apple's `NSMethodSignature` rejects unions, so a method with a union parameter or result can't be called through `NSInvocation`; only the byte-level conversion in `ASBoxer` handles them.
+- `__int128` boxes as an `NSNumber` when it fits a `long long` (or `unsigned long long`), otherwise as an `NSValue`. `-[NSInvocation setArgument:atIndex:]` traps for it on Apple platforms, so the invocation conversions (`unboxObject:intoArgumentAtIndex:ofInvocation:` and `unboxObject:intoReturnValueOfInvocation:`) report a conversion failure instead of crashing.
+- `_Complex` has no boxed form: boxing returns `nil` and nothing converts to it. Structs with bitfields can't be sized by `NSGetSizeAndAlignment` and so can't be boxed (asu-r9q).
+- `char` (`c`) converts with `charValue` and boxes with `numberWithChar:` where `BOOL` is `_Bool` (arm64 Apple platforms, `OBJC_BOOL_IS_BOOL`), so `@65` reaches a `char` parameter as 65. Where `BOOL` is a signed char (x86_64 macOS, GNUstep) `c` stays BOOL-like: `boolValue` in, `numberWithBool:` out.
 
 The error message names the method or function, which value could not be converted (argument number or return value), the class of the offending object (or `nil`), and the expected C type. The location reported depends on where the conversion happens:
 

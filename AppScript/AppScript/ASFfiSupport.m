@@ -20,8 +20,9 @@
 #import "ASFfiSupport.h"
 
 const char *ASFfiSkipQualifiers(const char *p) {
+    // Qualifiers, and `A` (_Atomic): an atomic scalar is passed like the type it wraps.
     while (p && (*p == 'r' || *p == 'n' || *p == 'N' || *p == 'o' ||
-                 *p == 'O' || *p == 'R' || *p == 'V')) {
+                 *p == 'O' || *p == 'R' || *p == 'V' || *p == 'A')) {
         p++;
     }
     return p;
@@ -53,6 +54,7 @@ ffi_type * _Nullable ASFfiTypeForEncodingCursor(const char **pPtr,
         case 'Q': return &ffi_type_uint64;
         case 'f': return &ffi_type_float;
         case 'd': return &ffi_type_double;
+        case 'D': return &ffi_type_longdouble;
         case '@':
         case '#':
         case ':':

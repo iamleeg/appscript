@@ -30,6 +30,7 @@
 - (void)finishWithCompletion:(void (^)(NSInteger code))handler;
 - (void)finishLaterWithCompletion:(void (^)(NSInteger code))handler;
 - (double)scale:(double)x using:(double (^)(double x))block;
+- (long double)scaleLong:(long double)x using:(long double (^)(long double x))block;
 - (NSInteger)lengthOf:(NSRange)range using:(NSInteger (^)(NSRange range))block;
 - (id)transform:(id)value usingBlock:(id (^)(id value))block;
 - (void)noMetadata:(void (^)(NSInteger code))block;
@@ -63,6 +64,9 @@
     });
 }
 - (double)scale:(double)x using:(double (^)(double))block {
+    return block(x);
+}
+- (long double)scaleLong:(long double)x using:(long double (^)(long double))block {
     return block(x);
 }
 - (NSInteger)lengthOf:(NSRange)range using:(NSInteger (^)(NSRange))block {
@@ -136,6 +140,8 @@ static NSString *uniqueClassName(NSString *prefix) {
         @"<arg type64='q'/><retval type64='v'/></arg></method>"
         @"<method selector='scale:using:'><arg index='1' function_pointer='true' type64='@?'>"
         @"<arg type64='d'/><retval type64='d'/></arg></method>"
+        @"<method selector='scaleLong:using:'><arg index='1' function_pointer='true' type64='@?'>"
+        @"<arg type64='D'/><retval type64='D'/></arg></method>"
         @"<method selector='lengthOf:using:'><arg index='1' function_pointer='true' type64='@?'>"
         @"<arg type64='{_NSRange=QQ}'/><retval type64='q'/></arg></method>"
         @"<method selector='transform:usingBlock:'><arg index='1' function_pointer='true' type64='@?'>"
@@ -260,6 +266,15 @@ static NSString *uniqueClassName(NSString *prefix) {
     id result = [self resultOfRunning:
         @"    id host = [ASTestBlockHost new]\n"
         @"    return [host scale:2.5 using:^(x) {\n"
+        @"        return [x numberByMultiplyingBy:2.0]\n"
+        @"    }]"];
+    XCTAssertEqualObjects(result, @5.0);
+}
+
+- (void)test_longDoubleBlock_roundTripsAsNumbers {
+    id result = [self resultOfRunning:
+        @"    id host = [ASTestBlockHost new]\n"
+        @"    return [host scaleLong:2.5 using:^(x) {\n"
         @"        return [x numberByMultiplyingBy:2.0]\n"
         @"    }]"];
     XCTAssertEqualObjects(result, @5.0);
