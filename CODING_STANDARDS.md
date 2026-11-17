@@ -42,7 +42,7 @@ All implementation is in Objective-C, or AppScript. Specifically:
 
 ## Project Structure
 
-This project builds with both Xcode, and GNUstep. It's **CRITICAL** that all development work builds successfully and passes tests with both structures.
+This project builds with both Xcode and GNUstep, and it's macOS-first. All development work must build and pass its tests with Xcode. If GNUstep is installed, the work must also build and pass its tests there. If it isn't installed, go ahead without it, but don't knowingly break GNUstep compatibility: keep to the XCTest subset and the runtime calls GNUstep supports. The unit-test script skips GNUstep when it isn't installed (ADR 38 in the parent repository).
 
 ### Xcode
 The repository contains three Xcode targets:

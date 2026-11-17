@@ -297,6 +297,110 @@ static ASClassDefinitionNode *simpleClassNamed(NSString *className,
 }
 
 // ---------------------------------------------------------------------------
+// 5b. A conformance list naming a protocol that isn't registered in the runtime
+//     fails the install, and leaves nothing registered.
+// ---------------------------------------------------------------------------
+
+static ASClassDefinitionNode *classWithProtocols(NSString *className,
+                                                 NSArray<NSString *> *protocolNames,
+                                                 NSUInteger line) {
+    return [[ASClassDefinitionNode alloc] initWithClassName:className
+                                             superclassName:@"NSObject"
+                                              protocolNames:protocolNames
+                                                 properties:@[]
+                                                    methods:@[]
+                                                       line:line
+                                                     column:1];
+}
+
+- (void)test_installNodes_unknownProtocol_returnsNO {
+    NSString *className = uniqueClassName(@"ASTestUnknownProto");
+    NSString *protocolName = uniqueClassName(@"ASTestMissingProtocol");
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classWithProtocols(className, @[protocolName], 7)]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+
+    XCTAssertFalse(result, @"Installing a class that names an unregistered protocol should fail");
+    XCTAssertEqualObjects(error.domain, ASRuntimeInstallerErrorDomain);
+    XCTAssertEqual(error.code, ASRuntimeInstallerErrorUnknownProtocol);
+    NSString *message = error.localizedDescription;
+    XCTAssertTrue([message containsString:className], @"Message should name the class: %@", message);
+    XCTAssertTrue([message containsString:protocolName], @"Message should name the protocol: %@", message);
+    XCTAssertTrue([message containsString:@"test.appscript:7"], @"Message should give path and line: %@", message);
+    XCTAssertTrue([message containsString:@"@protocol("], @"Message should say how to register it: %@", message);
+    XCTAssertNil(NSClassFromString(className), @"No class should be registered after the failure");
+}
+
+- (void)test_installNodes_twoUnknownProtocols_namesBoth {
+    NSString *className = uniqueClassName(@"ASTestTwoUnknownProtos");
+    NSString *first = uniqueClassName(@"ASTestMissingProtocolA");
+    NSString *second = uniqueClassName(@"ASTestMissingProtocolB");
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classWithProtocols(className, @[first, second], 1)]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+
+    XCTAssertFalse(result);
+    XCTAssertEqual(error.code, ASRuntimeInstallerErrorUnknownProtocol);
+    XCTAssertTrue([error.localizedDescription containsString:first], @"%@", error.localizedDescription);
+    XCTAssertTrue([error.localizedDescription containsString:second], @"%@", error.localizedDescription);
+}
+
+- (void)test_installNodes_knownAndUnknownProtocol_installsNothing {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestBoolProtocol);
+    NSString *className = uniqueClassName(@"ASTestMixedProtos");
+    NSString *missing = uniqueClassName(@"ASTestMissingProtocol");
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classWithProtocols(className, @[@"ASTestBoolProtocol", missing], 1)]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+
+    XCTAssertFalse(result);
+    XCTAssertEqual(error.code, ASRuntimeInstallerErrorUnknownProtocol);
+    XCTAssertFalse([error.localizedDescription containsString:@"'ASTestBoolProtocol'"],
+                   @"Only the missing protocol should be reported: %@", error.localizedDescription);
+    XCTAssertNil(NSClassFromString(className), @"No class should be registered after the failure");
+}
+
+- (void)test_installNodes_afterUnknownProtocolFailure_correctedDefinitionInstalls {
+    __attribute__((unused)) Protocol *_ensure = @protocol(ASTestBoolProtocol);
+    NSString *className = uniqueClassName(@"ASTestRetryProtos");
+    NSString *missing = uniqueClassName(@"ASTestMissingProtocol");
+
+    NSError *error = nil;
+    XCTAssertFalse([self.installer installNodes:@[classWithProtocols(className, @[missing], 1)]
+                                     scriptPath:@"test.appscript"
+                                          error:&error]);
+
+    NSError *retryError = nil;
+    BOOL retried = [self.installer installNodes:@[classWithProtocols(className, @[@"ASTestBoolProtocol"], 1)]
+                                     scriptPath:@"test.appscript"
+                                          error:&retryError];
+    XCTAssertTrue(retried, @"A corrected definition with the same name should install: %@", retryError);
+    XCTAssertTrue([NSClassFromString(className) conformsToProtocol:@protocol(ASTestBoolProtocol)]);
+}
+
+- (void)test_installNodes_registeredProtocols_conformToEach {
+    __attribute__((unused)) Protocol *_ensureBool = @protocol(ASTestBoolProtocol);
+    __attribute__((unused)) Protocol *_ensureVoid = @protocol(ASTestVoidProtocol);
+    NSString *className = uniqueClassName(@"ASTestRegisteredProtos");
+
+    NSError *error = nil;
+    BOOL result = [self.installer installNodes:@[classWithProtocols(className, @[@"ASTestVoidProtocol", @"ASTestBoolProtocol"], 1)]
+                                    scriptPath:@"test.appscript"
+                                         error:&error];
+    XCTAssertTrue(result, @"%@", error);
+
+    Class installed = NSClassFromString(className);
+    XCTAssertTrue([installed conformsToProtocol:@protocol(ASTestVoidProtocol)]);
+    XCTAssertTrue([installed conformsToProtocol:@protocol(ASTestBoolProtocol)]);
+}
+
+// ---------------------------------------------------------------------------
 // 6. A synthesized property has getter and setter accessible via respondsToSelector:.
 // ---------------------------------------------------------------------------
 

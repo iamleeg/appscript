@@ -212,6 +212,8 @@ id sorted = [@[@"b", @"a", @"c"] sortedArrayUsingComparator:^(a b) {
 
 Declare a class with the `@class` keyword, followed by the name of the class, then a colon, then the name of the superclass, then optionally any protocol conformances in angle brackets. Multiple protocol names inside the angle brackets are separated by commas (e.g. `<NSCopying, NSCoding>`). A superclass is always required. A class with no explicit protocols omits the angle-bracket section entirely.
 
+The superclass and every named protocol must already exist in the Objective-C runtime when the script loads. If they don't, the class isn't installed and loading fails with an error that names the class, the script and the line. A protocol is registered only if some loaded compiled code references it with `@protocol(...)` or the library that defines it is loaded. SDK protocols such as `NSTableViewDelegate` are registered once their framework is linked. For your own protocols, keep an `@protocol(...)` reference in compiled code (ResearchBuddy does this in `main.m`), and load any library that defines a protocol or superclass before loading the scripts that use it. Don't create missing protocols at runtime with `objc_allocateProtocol`. An empty protocol made that way replaces the compiled definition when the library loads later, and the runtime loses the method type encodings that AppScript relies on.
+
 In subsequent lines, define properties, instance methods, and class methods. Complete the class definition with the word `@end` on its own line.
 
 Properties are always Objective-C objects. Use the `@property` keyword, followed by any modifiers in parentheses, then the name of the property. Acceptable modifiers:

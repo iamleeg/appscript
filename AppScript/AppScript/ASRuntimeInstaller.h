@@ -33,6 +33,10 @@ typedef NS_ENUM(NSInteger, ASRuntimeInstallerErrorCode) {
     ASRuntimeInstallerErrorDuplicateClass    = 2,
     /// The named class could not be found in the Objective-C runtime (used for categories).
     ASRuntimeInstallerErrorUnknownClass      = 3,
+    /// A protocol named in a class's conformance list is not registered in the Objective-C
+    /// runtime: no compiled code references it with a protocol expression, or the library that
+    /// defines it has not been loaded yet.
+    ASRuntimeInstallerErrorUnknownProtocol   = 4,
 };
 
 /// Registers parsed AppScript class and category definitions as live Objective-C classes.
@@ -71,7 +75,9 @@ typedef NS_ENUM(NSInteger, ASRuntimeInstallerErrorCode) {
 ///   - nodes: The top-level AST nodes returned by `ASParser` (`ASClassDefinitionNode` and
 ///     `ASCategoryDefinitionNode`). Nodes of other types are silently ignored.
 ///   - scriptPath: The path of the `.appscript` file containing the definitions, used in error messages.
-///   - error: On failure, set to describe the error (e.g. unknown superclass, duplicate class).
+///   - error: On failure, set to describe the error (e.g. unknown superclass, duplicate class,
+///     or a protocol in the conformance list that isn't registered in the runtime). Every
+///     protocol a class names must already be registered; otherwise the class is not installed.
 /// - Returns: `YES` on success; `NO` if registration fails.
 - (BOOL)installNodes:(NSArray<ASASTNode *> *)nodes
           scriptPath:(NSString *)scriptPath

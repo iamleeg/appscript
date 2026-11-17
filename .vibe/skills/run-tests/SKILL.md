@@ -28,13 +28,9 @@ The tests are designed to run with the appscript source folder as current workin
 Run the script at `scripts/unit-tests.sh`, relative to the base directory for this skill.
 
 Run the script with no arguments to use the default test configuration (no runtime sanitizers).
-This builds and runs the tests using both xcodebuild and GNUstep make: it's **mandatory** that you ensure both compile correctly, run all tests, and pass.
+This builds and runs the tests with xcodebuild, which must compile, run every test and pass. Then, if GNUstep is installed, it runs them with GNUstep make as well, and those must pass too. AppScript is macOS-first: when GNUstep isn't installed, the script prints `GNUstep: SKIPPED` and the reason, and doesn't fail. You can go ahead without GNUstep, but still aim not to break GNUstep compatibility.
 
-The GNUstep make step requires `GNUSTEP_MAKEFILES=/Library/GNUstep/Makefiles` to be set in the environment:
-
-```bash
-GNUSTEP_MAKEFILES=/Library/GNUstep/Makefiles bash .claude/skills/run-tests/scripts/unit-tests.sh
-```
+The script uses `GNUSTEP_MAKEFILES` if it's set, and `/Library/GNUstep/Makefiles` if it isn't. GNUstep counts as installed when `common.make` is in that directory.
 
 Run the script with a single argument that's a configuration name to use that test configuration instead; this just uses xcodebuild (no need to additionally use GNUstep for the alternate configurations). The test configurations are:
 

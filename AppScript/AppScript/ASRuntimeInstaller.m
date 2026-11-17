@@ -647,6 +647,46 @@ static void ASAddMatchingProtocolsToClass(Class cls) {
         return NO;
     }
 
+    // 2b. Resolve every protocol in the conformance list before allocating anything, so an
+    //     unregistered protocol fails the install without leaving a class pair behind.
+    //     Protocol objects live for the whole process, so they are kept
+    //     as unretained pointers.
+    NSMutableArray<NSValue *> *protocols = [NSMutableArray array];
+    NSMutableArray<NSString *> *missingProtocols = [NSMutableArray array];
+    for (NSString *protocolName in classDef.protocolNames) {
+        Protocol *proto = objc_getProtocol(protocolName.UTF8String);
+        if (proto != NULL) {
+            [protocols addObject:[NSValue valueWithPointer:(__bridge const void *)proto]];
+        } else {
+            [missingProtocols addObject:protocolName];
+        }
+    }
+    if (missingProtocols.count > 0) {
+        if (error) {
+            BOOL plural = missingProtocols.count > 1;
+            NSString *quoted = [NSString stringWithFormat:@"'%@'",
+                                [missingProtocols componentsJoinedByString:@"', '"]];
+            NSString *reference = plural
+                ? @"@protocol(...)"
+                : [NSString stringWithFormat:@"@protocol(%@)", missingProtocols.firstObject];
+            *error = [NSError errorWithDomain:ASRuntimeInstallerErrorDomain
+                                         code:ASRuntimeInstallerErrorUnknownProtocol
+                                     userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"Unknown protocol%@ %@ in conformance list of class '%@' at %@:%lu. "
+                    @"%@ registered: reference %@ with %@ in compiled code, or load the "
+                    @"library that defines %@ before loading this script.",
+                    plural ? @"s" : @"", quoted, className, scriptPath,
+                    (unsigned long)classDef.lineNumber,
+                    plural ? @"They aren't" : @"It isn't",
+                    plural ? @"each" : @"it",
+                    reference,
+                    plural ? @"them" : @"it"],
+            }];
+        }
+        return NO;
+    }
+
     // 3. Allocate the class pair.
     Class newClass = objc_allocateClassPair(superclass, className.UTF8String, 0);
     if (newClass == Nil) {
@@ -663,12 +703,9 @@ static void ASAddMatchingProtocolsToClass(Class cls) {
         return NO;
     }
 
-    // 4. Add protocol conformances.
-    for (NSString *protocolName in classDef.protocolNames) {
-        Protocol *proto = objc_getProtocol(protocolName.UTF8String);
-        if (proto != NULL) {
-            class_addProtocol(newClass, proto);
-        }
+    // 4. Add the protocol conformances resolved in step 2b.
+    for (NSValue *protocolValue in protocols) {
+        class_addProtocol(newClass, (__bridge Protocol *)protocolValue.pointerValue);
     }
 
     // 5. Install forwardInvocation: and methodSignatureForSelector: overrides on both
