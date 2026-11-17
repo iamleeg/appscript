@@ -17,7 +17,9 @@ run() { # run <kind> <xcodebuild arguments...>
 }
 
 if [ $# -eq 0 ]; then
-    run unit -project AppScript/AppScript.xcodeproj -scheme AppScript
+    # The test plan's default runs all three configurations; run only the plain one here,
+    # because the ASan and TSan arguments run the other two (asu-efj).
+    run unit -project AppScript/AppScript.xcodeproj -scheme AppScript -testPlan AppScript -only-test-configuration "Test Scheme Action"
     # GNUstep is tested when it's installed, and skipped (not failed) when it isn't (ADR 38).
     GNUSTEP_MAKEFILES=${GNUSTEP_MAKEFILES:-/Library/GNUstep/Makefiles}
     if [ -f "$GNUSTEP_MAKEFILES/common.make" ]; then

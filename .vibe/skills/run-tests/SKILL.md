@@ -32,7 +32,7 @@ This builds and runs the tests with xcodebuild, which must compile, run every te
 
 The script uses `GNUSTEP_MAKEFILES` if it's set, and `/Library/GNUstep/Makefiles` if it isn't. GNUstep counts as installed when `common.make` is in that directory.
 
-Run the script with a single argument that's a configuration name to use that test configuration instead; this just uses xcodebuild (no need to additionally use GNUstep for the alternate configurations). The test configurations are:
+Run the script with a single argument that's a configuration name to use that test configuration instead; this just uses xcodebuild (no need to additionally use GNUstep for the alternate configurations). Each invocation runs exactly one configuration of the `AppScript` test plan: no argument runs "Test Scheme Action" (no sanitizer), `ASan` runs ASan and `TSan` runs TSan, so the three runs don't overlap. The `total=` that the script prints counts unique tests, not executions. The test configurations are:
 
 - `ASan`: Run with the Address Sanitizer enabled.
 - `TSan`: Run with the Thread Sanitizer enabled.
