@@ -18,6 +18,7 @@
 
 #import <XCTest/XCTest.h>
 #import <stdatomic.h>
+#import <objc/message.h>
 #import <AppScript/ASLoader.h>
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,22 @@ static _Atomic NSUInteger gTrackerDeallocCount;
 - (id)run;
 - (id)make;
 @end
+
+/// Script methods in the init, copy and new families, declared so ARC callers apply the family
+/// conventions to them: init consumes self and returns +1, copy and new return +1 (asu-1y1).
+@protocol ASTestFamilyScript <NSObject>
+- (instancetype)initKeepingSelf;
+- (instancetype)initReplacingSelf;
+- (id)copyFresh;
++ (id)newFresh;
+/// Not in a family: returns a fresh object at +0.
+- (id)makeFresh;
+@end
+
+/// What the compiler generates for a call to an init-family method, as a plain function pointer:
+/// the receiver is consumed and the result is owned.
+typedef id (*ASTestConsumingInitFunction)(id __attribute__((ns_consumed)), SEL)
+    __attribute__((ns_returns_retained));
 
 static NSString *uniqueClassName(NSString *prefix) {
     return [NSString stringWithFormat:@"%@_%@", prefix,
@@ -190,5 +207,213 @@ static NSString *uniqueClassName(NSString *prefix) {
     XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 1u,
                    @"once the caller lets go, the tracker should be freed exactly once");
 }
+
+// ---------------------------------------------------------------------------
+// Script-defined family methods called with ARC message syntax (asu-1y1)
+// ---------------------------------------------------------------------------
+
+/// A script class that is itself a tracker, so the receiver of an init is counted too.
+- (Class)loadFamilyClass {
+    NSString *name = uniqueClassName(@"ASTestFamilyScriptClass");
+    NSString *source = [NSString stringWithFormat:
+        @"@class %@ : ASTestDeallocTracker\n"
+        @"- initKeepingSelf {\n    self = [super init]\n    return self\n}\n"
+        @"- initReplacingSelf {\n    return [[ASTestDeallocTracker alloc] init]\n}\n"
+        @"- copyFresh {\n    return [[ASTestDeallocTracker alloc] init]\n}\n"
+        @"+ newFresh {\n    return [[ASTestDeallocTracker alloc] init]\n}\n"
+        @"- makeFresh {\n    return [[ASTestDeallocTracker alloc] init]\n}\n"
+        @"@end\n", name];
+    return [self loadSource:source className:name];
+}
+
+- (void)test_arcInit_scriptReturnsSelf_isDeallocatedOnce {
+    Class cls = [self loadFamilyClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> object = [(id<ASTestFamilyScript>)[cls alloc] initKeepingSelf];
+        XCTAssertNotNil(object);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 1u);
+}
+
+- (void)test_arcInit_scriptReturnsAnotherObject_deallocatesReceiverAndReplacementOnce {
+    Class cls = [self loadFamilyClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> object = [(id<ASTestFamilyScript>)[cls alloc] initReplacingSelf];
+        XCTAssertNotNil(object);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 2u,
+                   @"the discarded receiver and its replacement should each be freed once");
+}
+
+- (void)test_arcCopyFamily_scriptReturnsFreshObject_isDeallocatedOnce {
+    Class cls = [self loadFamilyClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> original = [(id<ASTestFamilyScript>)[cls alloc] initKeepingSelf];
+        id copy = [original copyFresh];
+        XCTAssertNotNil(copy);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 2u, @"the original and the copy");
+}
+
+- (void)test_arcNewFamily_scriptClassMethod_isDeallocatedOnce {
+    Class cls = [self loadFamilyClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id made = [(Class<ASTestFamilyScript>)cls newFresh];
+        XCTAssertNotNil(made);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 1u);
+}
+
+- (void)test_arcNonFamilyMethod_scriptResultStaysAtPlusZero {
+    Class cls = [self loadFamilyClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> original = [(id<ASTestFamilyScript>)[cls alloc] initKeepingSelf];
+        id fresh = [original makeFresh];
+        XCTAssertNotNil(fresh);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 2u, @"the original and the fresh object");
+}
+
+- (void)test_consumingTypedPointer_scriptInit_isBalancedInBothCases {
+    Class cls = [self loadFamilyClass];
+    ASTestConsumingInitFunction send = (ASTestConsumingInitFunction)objc_msgSend;
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id keeping = send([cls alloc], @selector(initKeepingSelf));
+        XCTAssertNotNil(keeping);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 1u);
+    before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id replacing = send([cls alloc], @selector(initReplacingSelf));
+        XCTAssertNotNil(replacing);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 2u);
+}
+
+- (void)test_scriptToScriptFamilySends_areBalanced {
+    Class family = [self loadFamilyClass];
+    NSString *runner = uniqueClassName(@"ASTestFamilyRunner");
+    NSString *source = [NSString stringWithFormat:
+        @"@class %@ : NSObject\n"
+        @"- run: familyClass {\n"
+        @"    id a = [[familyClass alloc] initKeepingSelf]\n"
+        @"    id b = [[familyClass alloc] initReplacingSelf]\n"
+        @"    id c = [a copyFresh]\n"
+        @"    id d = [familyClass newFresh]\n"
+        @"    id e = [a makeFresh]\n"
+        @"    return nil\n}\n@end\n", runner];
+    Class cls = [self loadSource:source className:runner];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id object = [[cls alloc] init];
+        ((id (*)(id, SEL, id))objc_msgSend)(object, NSSelectorFromString(@"run:"), family);
+    }
+    // a, b's receiver, b's replacement, c, d and e.
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 6u);
+}
+
+// ---------------------------------------------------------------------------
+// [super ...] sends to script-defined family methods (asu-awy)
+// A super send to a script method is evaluated straight from the AST, with no forwarding stub,
+// so the interpreter neither balances its result nor consumes self. The enclosing override
+// returns through its own stub, which does follow the convention.
+// ---------------------------------------------------------------------------
+
+/// A script subclass of the family class whose overrides all send to super.
+- (Class)loadSuperForwardingClass {
+    Class base = [self loadFamilyClass];
+    NSString *name = uniqueClassName(@"ASTestSuperForwarder");
+    NSString *source = [NSString stringWithFormat:
+        @"@class %@ : %@\n"
+        @"- initKeepingSelf {\n    self = [super initKeepingSelf]\n    return self\n}\n"
+        @"- initReplacingSelf {\n    self = [super initReplacingSelf]\n    return self\n}\n"
+        @"- copyFresh {\n    return [super copyFresh]\n}\n"
+        @"+ newFresh {\n    return [super newFresh]\n}\n"
+        @"- makeFresh {\n    return [super makeFresh]\n}\n"
+        @"@end\n", name, NSStringFromClass(base)];
+    return [self loadSource:source className:name];
+}
+
+- (void)test_superInit_toScriptInit_returningSelf_isDeallocatedOnce {
+    Class cls = [self loadSuperForwardingClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> object = [(id<ASTestFamilyScript>)[cls alloc] initKeepingSelf];
+        XCTAssertNotNil(object);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 1u);
+}
+
+- (void)test_superInit_toScriptInit_returningAnotherObject_deallocatesBothOnce {
+    Class cls = [self loadSuperForwardingClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> object = [(id<ASTestFamilyScript>)[cls alloc] initReplacingSelf];
+        XCTAssertNotNil(object);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 2u,
+                   @"the discarded receiver and its replacement should each be freed once");
+}
+
+- (void)test_superCopy_toScriptCopy_isDeallocatedOnce {
+    Class cls = [self loadSuperForwardingClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> original = [(id<ASTestFamilyScript>)[cls alloc] initKeepingSelf];
+        id copy = [original copyFresh];
+        XCTAssertNotNil(copy);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 2u, @"the original and the copy");
+}
+
+- (void)test_superNew_toScriptClassMethod_isDeallocatedOnce {
+    Class cls = [self loadSuperForwardingClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id made = [(Class<ASTestFamilyScript>)cls newFresh];
+        XCTAssertNotNil(made);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 1u);
+}
+
+- (void)test_superNonFamily_toScriptMethod_staysAtPlusZero {
+    Class cls = [self loadSuperForwardingClass];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id<ASTestFamilyScript> original = [(id<ASTestFamilyScript>)[cls alloc] initKeepingSelf];
+        id fresh = [original makeFresh];
+        XCTAssertNotNil(fresh);
+    }
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 2u, @"the original and the fresh object");
+}
+
+- (void)test_superSends_calledFromScript_areBalanced {
+    Class forwarder = [self loadSuperForwardingClass];
+    NSString *runner = uniqueClassName(@"ASTestSuperRunner");
+    NSString *source = [NSString stringWithFormat:
+        @"@class %@ : NSObject\n"
+        @"- run: aClass {\n"
+        @"    id a = [[aClass alloc] initKeepingSelf]\n"
+        @"    id b = [[aClass alloc] initReplacingSelf]\n"
+        @"    id c = [a copyFresh]\n"
+        @"    id d = [aClass newFresh]\n"
+        @"    id e = [a makeFresh]\n"
+        @"    return nil\n}\n@end\n", runner];
+    Class cls = [self loadSource:source className:runner];
+    NSUInteger before = [ASTestDeallocTracker deallocCount];
+    @autoreleasepool {
+        id object = [[cls alloc] init];
+        ((id (*)(id, SEL, id))objc_msgSend)(object, NSSelectorFromString(@"run:"), forwarder);
+    }
+    // a, b's receiver, b's replacement, c, d and e.
+    XCTAssertEqual([ASTestDeallocTracker deallocCount] - before, 6u);
+}
+
 
 @end

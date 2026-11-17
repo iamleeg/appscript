@@ -28,6 +28,14 @@
 
 #import <objc/runtime.h>
 #import <objc/message.h>
+#if __has_include(<objc/objc-arc.h>)
+#import <objc/objc-arc.h>   // GNUstep's libobjc2 declares the ARC entry points here.
+#else
+// Apple's SDK doesn't declare the ARC runtime entry points in a public header, but libobjc
+// exports them (they are the interface the compiler itself calls).
+OBJC_EXPORT id _Nullable objc_retain(id _Nullable value);
+OBJC_EXPORT id _Nullable objc_autorelease(id _Nullable value);
+#endif
 
 // ---------------------------------------------------------------------------
 // Error domain constant
@@ -276,9 +284,31 @@ static void ASForwardInvocationIMP(id self, SEL _cmd, NSInvocation *invocation) 
     }
 
     // The invocation's return slot holds the object unretained, and ARC releases `result`
-    // when this function returns. Autorelease it so an object created by the script (and
-    // owned by nothing else, e.g. an array literal) outlives the call until the caller can
-    // retain it, as a conventional +0 Objective-C return value would.
+    // when this function returns, so the slot needs a reference of its own.
+    //
+    // A selector in the alloc, new, copy, mutableCopy or init family follows the naming convention
+    // the compiler applies at every call site (asu-1y1, ADR 32): the caller expects an owned (+1)
+    // result, and for init also expects the callee to consume the receiver it passed at +1.
+    // Anything else is a conventional +0 return, so the result is autoreleased: an object created
+    // by the script and owned by nothing else, such as an array literal, then outlives the call
+    // until the caller can retain it (ADR 3).
+    BOOL hasObjectResult = result != nil && ![result isKindOfClass:[ASNull class]] &&
+                           ![result isKindOfClass:[NSNull class]];
+    ASReturnOwnership ownership = (returnType[0] == '@')
+        ? [ASBoxer returnOwnershipForSelector:invocation.selector] : ASReturnOwnershipNone;
+    if (ownership != ASReturnOwnershipNone) {
+        if (hasObjectResult) {
+            // The caller's reference, which it releases when it is done. The static analyzer can't
+            // see the hand-off through the invocation's return slot, hence the explicit call.
+            objc_retain(result);
+        }
+        if (ownership == ASReturnOwnershipInitFamily && !isClassDispatch) {
+            // Consume the receiver: hand the reference the caller passed to the autorelease pool,
+            // so the receiver outlives the method body and an exception can't leak it.
+            objc_autorelease(self);
+        }
+        return;
+    }
     __autoreleasing id returnedObject = result;
     (void)returnedObject;
 }

@@ -635,20 +635,21 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
         }
     }
 
-    // Ownership of the returned object, by the ARC naming convention. A native method in the alloc,
-    // new, copy or mutableCopy family returns +1, and an init-family method also consumes self;
-    // NSInvocation does neither on our behalf, so balance them here (asu-73m). A method defined in
-    // AppScript is skipped: its forwarding stub returns an autoreleased +0 result (ADR 3) and
-    // doesn't consume self.
+    // Ownership of the returned object, by the ARC naming convention. A method in the alloc, new,
+    // copy or mutableCopy family returns +1, and an init-family method also consumes self;
+    // NSInvocation does neither on our behalf, so balance them here. That holds for
+    // methods defined in AppScript too, because their forwarding stub follows the same convention.
+    // The one exception is a super send to an AppScript-defined method, which is
+    // evaluated directly from the AST below and never goes through the stub.
     ASReturnOwnership ownership = [ASBoxer returnOwnershipForSelector:sel];
     BOOL balanceOwnership = NO;
     if (ownership != ASReturnOwnershipNone && sig.methodReturnType[0] == '@') {
-        BOOL targetIsClass = class_isMetaClass(object_getClass(receiver));
-        Class ownershipStartClass = isSuperSend ? [ctx.definingClass superclass]
-                                                : (targetIsClass ? (Class)receiver : object_getClass(receiver));
-        balanceOwnership = [ASRuntimeInstaller appScriptMethodNodeForSuperDispatch:ownershipStartClass
-                                                                          selector:node.selector
-                                                                     definingClass:NULL] == nil;
+        balanceOwnership = YES;
+        if (isSuperSend) {
+            balanceOwnership = [ASRuntimeInstaller appScriptMethodNodeForSuperDispatch:[ctx.definingClass superclass]
+                                                                              selector:node.selector
+                                                                         definingClass:NULL] == nil;
+        }
     }
     if (balanceOwnership && ownership == ASReturnOwnershipInitFamily) {
         // The callee releases self (it consumes it), so give it one more retain to release. This is
