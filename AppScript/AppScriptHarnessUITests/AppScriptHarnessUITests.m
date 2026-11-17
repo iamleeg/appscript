@@ -61,6 +61,11 @@
                    @"Summary should not report 0 passed, got: %@", summary);
 
     // Verify there is at least one row in the results table.
+    // The harness must still be running once its tests finish: a crash during the run fails here
+    // with a clear message, not as a missing element.
+    XCTAssertEqual(app.state, XCUIApplicationStateRunningForeground,
+                   @"The harness should still be running after its tests, but its state is %ld", (long)app.state);
+
     XCUIElement *table = app.tables.firstMatch;
     XCTAssertTrue(table.cells.count > 0, @"Results table should contain at least one row");
 

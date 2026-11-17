@@ -40,17 +40,6 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "980EBA2E2F5F36230023077B"
-               BuildableName = "AppScriptHarnessTests.xctest"
-               BlueprintName = "AppScriptHarnessTests"
-               ReferencedContainer = "container:AppScript.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
                BlueprintIdentifier = "980EBA382F5F36230023077B"
                BuildableName = "AppScriptHarnessUITests.xctest"
                BlueprintName = "AppScriptHarnessUITests"

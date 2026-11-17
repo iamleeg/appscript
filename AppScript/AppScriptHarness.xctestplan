@@ -21,14 +21,6 @@
       "parallelizable" : true,
       "target" : {
         "containerPath" : "container:AppScript.xcodeproj",
-        "identifier" : "980EBA2E2F5F36230023077B",
-        "name" : "AppScriptHarnessTests"
-      }
-    },
-    {
-      "parallelizable" : true,
-      "target" : {
-        "containerPath" : "container:AppScript.xcodeproj",
         "identifier" : "980EBA382F5F36230023077B",
         "name" : "AppScriptHarnessUITests"
       }
