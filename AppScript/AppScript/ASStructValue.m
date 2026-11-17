@@ -16,9 +16,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASStructValue.h"
-#import "ASBridgeSupportStruct.h"
-#import "ASBridgeSupportStructField.h"
+#import <AppScript/ASStructValue.h>
+#import <AppScript/ASBridgeSupportStruct.h>
+#import <AppScript/ASBridgeSupportStructField.h>
 
 #import <objc/runtime.h>
 #import <objc/message.h>

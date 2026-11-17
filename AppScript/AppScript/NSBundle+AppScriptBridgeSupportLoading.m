@@ -16,10 +16,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "NSBundle+AppScriptBridgeSupportLoading.h"
-#import "ASBridgeSupportParser.h"
-#import "ASBridgeSupportInstaller.h"
-#import "ASBridgeSupportDocument.h"
+#import <AppScript/NSBundle+AppScriptBridgeSupportLoading.h>
+#import <AppScript/ASBridgeSupportParser.h>
+#import <AppScript/ASBridgeSupportInstaller.h>
+#import <AppScript/ASBridgeSupportDocument.h>
 #import <dlfcn.h>
 
 NSString * const ASBridgeSupportLoadingErrorDomain = @"ASBridgeSupportLoadingErrorDomain";

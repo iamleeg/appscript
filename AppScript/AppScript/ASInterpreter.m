@@ -16,10 +16,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASInterpreter.h"
-#import "ASScope.h"
-#import "ASNull.h"
-#import "ASOutObject.h"
+#import <AppScript/ASInterpreter.h>
+#import <AppScript/ASScope.h>
+#import <AppScript/ASNull.h>
+#import <AppScript/ASOutObject.h>
 #import <objc/runtime.h>
 #if __has_include(<objc/objc-arc.h>)
 #import <objc/objc-arc.h>   // GNUstep's libobjc2 declares objc_retain here.
@@ -28,25 +28,25 @@
 // exports objc_retain (it is part of the ARC runtime interface the compiler itself calls).
 OBJC_EXPORT id _Nullable objc_retain(id _Nullable value);
 #endif
-#import "ASBoxer.h"
-#import "ASRuntimeInstaller.h"
-#import "ASBlockRegistry.h"
-#import "ASBlockTrampoline.h"
-#import "ASMethodNode.h"
+#import <AppScript/ASBoxer.h>
+#import <AppScript/ASRuntimeInstaller.h>
+#import <AppScript/ASBlockRegistry.h>
+#import <AppScript/ASBlockTrampoline.h>
+#import <AppScript/ASMethodNode.h>
 
 // AST node types
-#import "ASReturnNode.h"
-#import "ASVariableDeclarationNode.h"
-#import "ASAssignmentNode.h"
-#import "ASMessageSendNode.h"
-#import "ASBlockLiteralNode.h"
-#import "ASIdentifierNode.h"
-#import "ASStringLiteralNode.h"
-#import "ASNumberLiteralNode.h"
-#import "ASArrayLiteralNode.h"
-#import "ASDictionaryLiteralNode.h"
-#import "ASSuperNode.h"
-#import "NSURL+AppScriptFileReading.h"
+#import <AppScript/ASReturnNode.h>
+#import <AppScript/ASVariableDeclarationNode.h>
+#import <AppScript/ASAssignmentNode.h>
+#import <AppScript/ASMessageSendNode.h>
+#import <AppScript/ASBlockLiteralNode.h>
+#import <AppScript/ASIdentifierNode.h>
+#import <AppScript/ASStringLiteralNode.h>
+#import <AppScript/ASNumberLiteralNode.h>
+#import <AppScript/ASArrayLiteralNode.h>
+#import <AppScript/ASDictionaryLiteralNode.h>
+#import <AppScript/ASSuperNode.h>
+#import <AppScript/NSURL+AppScriptFileReading.h>
 
 // ---------------------------------------------------------------------------
 // Internal execution context

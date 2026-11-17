@@ -16,9 +16,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASClassDefinitionNode.h"
-#import "ASPropertyNode.h"
-#import "ASMethodNode.h"
+#import <AppScript/ASClassDefinitionNode.h>
+#import <AppScript/ASPropertyNode.h>
+#import <AppScript/ASMethodNode.h>
 
 @implementation ASClassDefinitionNode
 

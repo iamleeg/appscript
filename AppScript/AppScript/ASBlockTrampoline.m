@@ -16,13 +16,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASBlockTrampoline.h"
-#import "ASBoxer.h"
+#import <AppScript/ASBlockTrampoline.h>
+#import <AppScript/ASBoxer.h>
 #import "ASFfiSupport.h"
-#import "ASInterpreter.h"
-#import "ASNull.h"
-#import "ASOutObject.h"
-#import "ASStructValue.h"
+#import <AppScript/ASInterpreter.h>
+#import <AppScript/ASNull.h>
+#import <AppScript/ASOutObject.h>
+#import <AppScript/ASStructValue.h>
 #import <objc/runtime.h>
 #include <ffi.h>
 #include <stdlib.h>

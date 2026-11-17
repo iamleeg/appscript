@@ -121,11 +121,10 @@
 // ---------------------------------------------------------------------------
 
 - (void)test_loadScriptsWithError_mainBundle_doesNotCrash {
-    XCTAssertNoThrow({
-        NSError *error = nil;
-        // Discard the return value; we only care that no exception is raised.
-        (void)[[NSBundle mainBundle] loadScriptsWithError:&error];
-    }, @"Calling loadScriptsWithError: on [NSBundle mainBundle] must not throw");
+    NSError *error = nil;
+    // Discard the return value; we only care that no exception is raised.
+    XCTAssertNoThrow((void)[[NSBundle mainBundle] loadScriptsWithError:&error],
+                     @"Calling loadScriptsWithError: on [NSBundle mainBundle] must not throw");
 }
 
 @end

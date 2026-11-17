@@ -16,22 +16,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASParser.h"
-#import "ASClassDefinitionNode.h"
-#import "ASCategoryDefinitionNode.h"
-#import "ASPropertyNode.h"
-#import "ASMethodNode.h"
-#import "ASVariableDeclarationNode.h"
-#import "ASAssignmentNode.h"
-#import "ASReturnNode.h"
-#import "ASMessageSendNode.h"
-#import "ASBlockLiteralNode.h"
-#import "ASIdentifierNode.h"
-#import "ASStringLiteralNode.h"
-#import "ASNumberLiteralNode.h"
-#import "ASArrayLiteralNode.h"
-#import "ASDictionaryLiteralNode.h"
-#import "ASSuperNode.h"
+#import <AppScript/ASParser.h>
+#import <AppScript/ASClassDefinitionNode.h>
+#import <AppScript/ASCategoryDefinitionNode.h>
+#import <AppScript/ASPropertyNode.h>
+#import <AppScript/ASMethodNode.h>
+#import <AppScript/ASVariableDeclarationNode.h>
+#import <AppScript/ASAssignmentNode.h>
+#import <AppScript/ASReturnNode.h>
+#import <AppScript/ASMessageSendNode.h>
+#import <AppScript/ASBlockLiteralNode.h>
+#import <AppScript/ASIdentifierNode.h>
+#import <AppScript/ASStringLiteralNode.h>
+#import <AppScript/ASNumberLiteralNode.h>
+#import <AppScript/ASArrayLiteralNode.h>
+#import <AppScript/ASDictionaryLiteralNode.h>
+#import <AppScript/ASSuperNode.h>
 
 NSString * const ASParserErrorDomain = @"ASParserErrorDomain";
 

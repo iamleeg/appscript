@@ -16,24 +16,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASBridgeSupportInstaller.h"
-#import "ASBridgeSupportDocument.h"
-#import "ASBridgeSupportFunction.h"
-#import "ASBridgeSupportConstant.h"
-#import "ASBridgeSupportEnumeration.h"
-#import "ASBridgeSupportStruct.h"
-#import "ASStructValue.h"
-#import "ASBoxer.h"
-#import "ASNull.h"
-#import "ASOutObject.h"
-#import "ASInterpreter.h"
+#import <AppScript/ASBridgeSupportInstaller.h>
+#import <AppScript/ASBridgeSupportDocument.h>
+#import <AppScript/ASBridgeSupportFunction.h>
+#import <AppScript/ASBridgeSupportConstant.h>
+#import <AppScript/ASBridgeSupportEnumeration.h>
+#import <AppScript/ASBridgeSupportStruct.h>
+#import <AppScript/ASStructValue.h>
+#import <AppScript/ASBoxer.h>
+#import <AppScript/ASNull.h>
+#import <AppScript/ASOutObject.h>
+#import <AppScript/ASInterpreter.h>
 
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
 #include <ffi.h>
 #import "ASFfiSupport.h"
-#import "ASBlockRegistry.h"
+#import <AppScript/ASBlockRegistry.h>
 
 // ---------------------------------------------------------------------------
 // Error domain

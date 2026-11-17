@@ -16,10 +16,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASBridgeSupportParser.h"
-#import "ASBridgeSupportStructField.h"
-#import "ASBridgeSupportStruct.h"
-#import "ASStructValue.h"
+#import <AppScript/ASBridgeSupportParser.h>
+#import <AppScript/ASBridgeSupportStructField.h>
+#import <AppScript/ASBridgeSupportStruct.h>
+#import <AppScript/ASStructValue.h>
 
 NSString * const ASBridgeSupportParserErrorDomain = @"ASBridgeSupportParserErrorDomain";
 

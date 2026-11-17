@@ -16,10 +16,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASBoxer.h"
-#import "ASNull.h"
-#import "ASOutObject.h"
-#import "ASStructValue.h"
+#import <AppScript/ASBoxer.h>
+#import <AppScript/ASNull.h>
+#import <AppScript/ASOutObject.h>
+#import <AppScript/ASStructValue.h>
 #import <objc/runtime.h>
 
 // ---------------------------------------------------------------------------

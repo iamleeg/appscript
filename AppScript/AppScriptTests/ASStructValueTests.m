@@ -56,6 +56,8 @@
 }
 
 /// Calls a zero-argument instance method on `obj` via NSInvocation and returns the result.
+/// Struct field accessors (`x`, `origin`, ...) are resolved at runtime from BridgeSupport
+/// and declared nowhere, so callers name them with NSSelectorFromString, not @selector.
 - (id)callMethod:(SEL)sel onObject:(id)obj {
     NSMethodSignature *sig = [obj methodSignatureForSelector:sel];
     XCTAssertNotNil(sig, @"No method signature for %@", NSStringFromSelector(sel));
@@ -90,8 +92,8 @@
                                                canonicalName:@"CGSize"
                                          runtimeTypeEncoding:@"{CGSize=dd}"];
 
-    NSNumber *width  = [self callMethod:@selector(width)  onObject:sv];
-    NSNumber *height = [self callMethod:@selector(height) onObject:sv];
+    NSNumber *width  = [self callMethod:NSSelectorFromString(@"width")  onObject:sv];
+    NSNumber *height = [self callMethod:NSSelectorFromString(@"height") onObject:sv];
 
     XCTAssertEqualWithAccuracy([width doubleValue],  42.5, 1e-9);
     XCTAssertEqualWithAccuracy([height doubleValue], 13.0, 1e-9);
@@ -112,8 +114,8 @@
                                                canonicalName:@"CGPoint"
                                          runtimeTypeEncoding:@"{CGPoint=dd}"];
 
-    NSNumber *x = [self callMethod:@selector(x) onObject:sv];
-    NSNumber *y = [self callMethod:@selector(y) onObject:sv];
+    NSNumber *x = [self callMethod:NSSelectorFromString(@"x") onObject:sv];
+    NSNumber *y = [self callMethod:NSSelectorFromString(@"y") onObject:sv];
 
     XCTAssertEqualWithAccuracy([x doubleValue],  7.0,  1e-9);
     XCTAssertEqualWithAccuracy([y doubleValue], -3.5,  1e-9);
@@ -134,8 +136,8 @@
                                                canonicalName:@"NSRange"
                                          runtimeTypeEncoding:@"{_NSRange=QQ}"];
 
-    NSNumber *location = [self callMethod:@selector(location) onObject:sv];
-    NSNumber *length   = [self callMethod:@selector(length)   onObject:sv];
+    NSNumber *location = [self callMethod:NSSelectorFromString(@"location") onObject:sv];
+    NSNumber *length   = [self callMethod:NSSelectorFromString(@"length")   onObject:sv];
 
     XCTAssertEqual([location unsignedLongLongValue], (unsigned long long)10);
     XCTAssertEqual([length   unsignedLongLongValue], (unsigned long long)5);
@@ -158,8 +160,8 @@
                                                canonicalName:@"CGRect"
                                          runtimeTypeEncoding:@"{CGRect={CGPoint=dd}{CGSize=dd}}"];
 
-    id origin = [self callMethod:@selector(origin) onObject:sv];
-    id size   = [self callMethod:@selector(size)   onObject:sv];
+    id origin = [self callMethod:NSSelectorFromString(@"origin") onObject:sv];
+    id size   = [self callMethod:NSSelectorFromString(@"size")   onObject:sv];
 
     XCTAssertTrue([origin isKindOfClass:[ASStructValue class]],
                   @"Expected ASStructValue for origin, got %@", [origin class]);
@@ -180,8 +182,8 @@
                                                canonicalName:@"CGRect"
                                          runtimeTypeEncoding:@"{CGRect={CGPoint=dd}{CGSize=dd}}"];
 
-    ASStructValue *origin = [self callMethod:@selector(origin) onObject:sv];
-    NSNumber *x = [self callMethod:@selector(x) onObject:origin];
+    ASStructValue *origin = [self callMethod:NSSelectorFromString(@"origin") onObject:sv];
+    NSNumber *x = [self callMethod:NSSelectorFromString(@"x") onObject:origin];
     XCTAssertEqualWithAccuracy([x doubleValue], 1.0, 1e-9);
 }
 
@@ -198,8 +200,8 @@
                                                canonicalName:@"CGRect"
                                          runtimeTypeEncoding:@"{CGRect={CGPoint=dd}{CGSize=dd}}"];
 
-    ASStructValue *size = [self callMethod:@selector(size) onObject:sv];
-    NSNumber *width = [self callMethod:@selector(width) onObject:size];
+    ASStructValue *size = [self callMethod:NSSelectorFromString(@"size") onObject:sv];
+    NSNumber *width = [self callMethod:NSSelectorFromString(@"width") onObject:size];
     XCTAssertEqualWithAccuracy([width doubleValue], 100.0, 1e-9);
 }
 

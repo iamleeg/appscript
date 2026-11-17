@@ -16,8 +16,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "NSObject+AppScriptControlFlow.h"
-#import "ASNull.h"
+#import <AppScript/NSObject+AppScriptControlFlow.h>
+#import <AppScript/ASNull.h>
 
 static BOOL AppScriptIsFalsy(id _Nullable value) {
     return value == nil || value == [ASNull null] || [value isEqual:@NO];

@@ -38,6 +38,7 @@ All implementation is in Objective-C, or AppScript. Specifically:
 - No Swift source files may be added to the framework or test targets. Swift may be used in ancillary tooling (scripts, generators) but not in the runtime itself.
 - Target the macOS SDK. Use `NS_ASSUME_NONNULL_BEGIN` / `NS_ASSUME_NONNULL_END` in every header to enable nullability checking. Annotate all out-parameters and return types explicitly.
 - Use `NS_DESIGNATED_INITIALIZER` and `NS_UNAVAILABLE` to make the intended initialiser surface clear.
+- Import public framework headers as `#import <AppScript/X.h>` everywhere, including inside the framework's own headers and sources. Clients that build with `-Wquoted-include-in-framework-header` would otherwise get warnings, and GNUstep breaks when both forms of a header meet in one file. Only project-only headers that aren't installed in the framework, such as `ASFfiSupport.h`, use quotes. `ASFrameworkImportTests` checks this.
 - The AppScriptHarness app must use AppScript for its implementation wherever possible. If it's impossible to build a feature in AppScript, use Objective-C instead but create a task in beads to implement the missing AppScript capability in the framework.
 
 ## Project Structure

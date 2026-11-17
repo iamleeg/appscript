@@ -16,15 +16,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASRuntimeInstaller.h"
-#import "ASClassDefinitionNode.h"
-#import "ASCategoryDefinitionNode.h"
-#import "ASMethodNode.h"
-#import "ASPropertyNode.h"
-#import "ASInterpreter.h"
-#import "ASBoxer.h"
-#import "ASOutObject.h"
-#import "ASNull.h"
+#import <AppScript/ASRuntimeInstaller.h>
+#import <AppScript/ASClassDefinitionNode.h>
+#import <AppScript/ASCategoryDefinitionNode.h>
+#import <AppScript/ASMethodNode.h>
+#import <AppScript/ASPropertyNode.h>
+#import <AppScript/ASInterpreter.h>
+#import <AppScript/ASBoxer.h>
+#import <AppScript/ASOutObject.h>
+#import <AppScript/ASNull.h>
 
 #import <objc/runtime.h>
 #import <objc/message.h>

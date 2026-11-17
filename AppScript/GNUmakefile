@@ -199,6 +199,7 @@ AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASOwnershipTests.m \
 	AppScriptTests/ASParserStringEscapeTests.m \
 	AppScriptTests/ASParserTests.m \
+	AppScriptTests/ASFrameworkImportTests.m \
 	AppScriptTests/ASRuntimeInstallerTests.m \
 	AppScriptTests/ASUncaughtExceptionHandlerTests.m \
 	AppScriptTests/NSBundle_AppScriptBridgeSupportLoadingTests.m \

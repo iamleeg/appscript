@@ -16,11 +16,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "NSBundle+AppScriptLoading.h"
-#import "ASLexer.h"
-#import "ASParser.h"
-#import "ASRuntimeInstaller.h"
-#import "ASClassDefinitionNode.h"
+#import <AppScript/NSBundle+AppScriptLoading.h>
+#import <AppScript/ASLexer.h>
+#import <AppScript/ASParser.h>
+#import <AppScript/ASRuntimeInstaller.h>
+#import <AppScript/ASClassDefinitionNode.h>
 
 NSString * const ASBundleLoadingErrorDomain = @"ASBundleLoadingErrorDomain";
 

@@ -17,11 +17,11 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <Foundation/Foundation.h>
-#import "ASBridgeSupportFunction.h"
-#import "ASBridgeSupportConstant.h"
-#import "ASBridgeSupportEnumeration.h"
-#import "ASBridgeSupportStruct.h"
-#import "ASBridgeSupportBlockSignature.h"
+#import <AppScript/ASBridgeSupportFunction.h>
+#import <AppScript/ASBridgeSupportConstant.h>
+#import <AppScript/ASBridgeSupportEnumeration.h>
+#import <AppScript/ASBridgeSupportStruct.h>
+#import <AppScript/ASBridgeSupportBlockSignature.h>
 
 NS_ASSUME_NONNULL_BEGIN
 

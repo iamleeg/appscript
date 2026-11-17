@@ -16,8 +16,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#import "ASScope.h"
-#import "ASNull.h"
+#import <AppScript/ASScope.h>
+#import <AppScript/ASNull.h>
 
 @implementation ASScope {
     NSMutableDictionary<NSString *, id> *_bindings;

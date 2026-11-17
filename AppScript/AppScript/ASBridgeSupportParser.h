@@ -17,7 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <Foundation/Foundation.h>
-#import "ASBridgeSupportDocument.h"
+#import <AppScript/ASBridgeSupportDocument.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
