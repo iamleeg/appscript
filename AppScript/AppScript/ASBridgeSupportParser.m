@@ -143,6 +143,8 @@ static void ASParseStructTypeEncoding(NSString *typeEncoding,
 @property (nonatomic) BOOL currentIsVariadic;
 @property (nonatomic) BOOL currentIsInline;
 @property (nonatomic) BOOL currentHasFunctionPointerArgs;
+/// Block signatures of the current function's arguments, keyed by argument index.
+@property (nonatomic, strong, nullable) NSMutableDictionary<NSNumber *, ASBridgeSupportBlockSignature *> *currentFunctionBlockSignatures;
 
 // Parser error (if any)
 @property (nonatomic, strong, nullable) NSError *parseError;
@@ -170,6 +172,11 @@ static void ASParseStructTypeEncoding(NSString *typeEncoding,
     self.currentIsVariadic = NO;
     self.currentIsInline = NO;
     self.currentHasFunctionPointerArgs = NO;
+    self.currentFunctionBlockSignatures = nil;
+    self.currentBlockDepth = 0;
+    self.currentBlockArgumentIndex = nil;
+    self.currentBlockParameterTypes = nil;
+    self.currentBlockReturnType = nil;
 }
 
 // Returns type64 if present, falls back to type, or nil if neither is present.
@@ -239,16 +246,43 @@ didStartElement:(NSString *)elementName
             // arg outside a function — ignore
             return;
         }
-        if ([attributeDict[@"function_pointer"] isEqualToString:@"true"]) {
-            self.currentHasFunctionPointerArgs = YES;
+        if (self.currentBlockDepth > 0) {
+            // A parameter of a function-pointer or block argument: it describes that argument's
+            // signature, not one of the function's own arguments (asu-ugk).
+            self.currentBlockDepth++;
+            NSString *parameterType = [self typeFromAttributes:attributeDict];
+            if (self.currentBlockArgumentIndex != nil && parameterType) {
+                [self.currentBlockParameterTypes addObject:parameterType];
+            }
+            return;
         }
         NSString *type = [self typeFromAttributes:attributeDict];
+        NSUInteger index = self.currentArgTypes.count;
         if (type) {
             [self.currentArgTypes addObject:type];
+        }
+        if ([attributeDict[@"function_pointer"] isEqualToString:@"true"]) {
+            self.currentBlockDepth = 1;
+            if ([type hasPrefix:@"@?"]) {
+                // A block: record its signature from the nested <arg> and <retval> elements.
+                self.currentBlockArgumentIndex = @(index);
+                self.currentBlockParameterTypes = [NSMutableArray array];
+                self.currentBlockReturnType = nil;
+            } else {
+                // A plain C function pointer, which the runtime can't pass a script block for.
+                self.currentHasFunctionPointerArgs = YES;
+                self.currentBlockArgumentIndex = nil;
+            }
         }
 
     } else if ([elementName isEqualToString:@"retval"]) {
         if (self.currentFunctionName == nil) {
+            return;
+        }
+        if (self.currentBlockDepth > 0) {
+            if (self.currentBlockDepth == 1 && self.currentBlockArgumentIndex != nil) {
+                self.currentBlockReturnType = [self typeFromAttributes:attributeDict];
+            }
             return;
         }
         self.currentReturnType = [self typeFromAttributes:attributeDict];
@@ -301,6 +335,26 @@ didStartElement:(NSString *)elementName
   namespaceURI:(nullable NSString *)namespaceURI
  qualifiedName:(nullable NSString *)qName {
 
+    if ([elementName isEqualToString:@"arg"] && self.currentBlockDepth > 0 && self.currentFunctionName != nil) {
+        self.currentBlockDepth--;
+        if (self.currentBlockDepth == 0 && self.currentBlockArgumentIndex != nil) {
+            ASBridgeSupportBlockSignature *signature = [[ASBridgeSupportBlockSignature alloc]
+                initWithClassName:@""
+                     selectorName:self.currentFunctionName
+                    isClassMethod:YES
+                    argumentIndex:self.currentBlockArgumentIndex.unsignedIntegerValue
+           parameterTypeEncodings:self.currentBlockParameterTypes ?: @[]
+               returnTypeEncoding:self.currentBlockReturnType ?: @"v"];
+            if (self.currentFunctionBlockSignatures == nil) {
+                self.currentFunctionBlockSignatures = [NSMutableDictionary dictionary];
+            }
+            self.currentFunctionBlockSignatures[self.currentBlockArgumentIndex] = signature;
+            self.currentBlockArgumentIndex = nil;
+            self.currentBlockParameterTypes = nil;
+            self.currentBlockReturnType = nil;
+        }
+        return;
+    }
     if ([elementName isEqualToString:@"arg"] && self.currentBlockDepth > 0) {
         self.currentBlockDepth--;
         if (self.currentBlockDepth == 0 && self.currentClassName != nil &&
@@ -339,7 +393,8 @@ didStartElement:(NSString *)elementName
                                                  argumentTypeEncodings:self.currentArgTypes ?: @[]
                                                  isVariadic:self.currentIsVariadic
                                                  isInline:self.currentIsInline
-                                                 hasFunctionPointerArguments:self.currentHasFunctionPointerArgs];
+                                                 hasFunctionPointerArguments:self.currentHasFunctionPointerArgs
+                                                 blockSignatures:self.currentFunctionBlockSignatures ?: @{}];
             [self.functions addObject:function];
         }
         [self resetFunctionState];

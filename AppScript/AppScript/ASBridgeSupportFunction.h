@@ -17,6 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <Foundation/Foundation.h>
+#import <AppScript/ASBridgeSupportBlockSignature.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -38,8 +39,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Whether the function is defined inline (i.e. not available as a symbol in the binary).
 @property (nonatomic, readonly) BOOL isInline;
 
-/// Whether any argument is a function pointer, making the function unsafe to call generically.
+/// Whether any argument is a C function pointer that isn't a block, making the function unsafe to
+/// call generically. Block arguments (`@?`) don't count: their signatures are in `blockSignatures`.
 @property (nonatomic, readonly) BOOL hasFunctionPointerArguments;
+/// The signatures of the function's block arguments, keyed by argument index. Each signature's
+/// `selectorName` is the function's name and its `className` is empty.
+@property (nonatomic, readonly, copy) NSDictionary<NSNumber *, ASBridgeSupportBlockSignature *> *blockSignatures;
 
 /// Designated initializer.
 - (instancetype)initWithName:(NSString *)name
@@ -47,7 +52,15 @@ NS_ASSUME_NONNULL_BEGIN
        argumentTypeEncodings:(NSArray<NSString *> *)argumentTypeEncodings
                   isVariadic:(BOOL)isVariadic
                     isInline:(BOOL)isInline
-   hasFunctionPointerArguments:(BOOL)hasFunctionPointerArguments NS_DESIGNATED_INITIALIZER;
+   hasFunctionPointerArguments:(BOOL)hasFunctionPointerArguments
+             blockSignatures:(NSDictionary<NSNumber *, ASBridgeSupportBlockSignature *> *)blockSignatures NS_DESIGNATED_INITIALIZER;
+/// Creates a function with no block arguments.
+- (instancetype)initWithName:(NSString *)name
+          returnTypeEncoding:(NSString *)returnTypeEncoding
+       argumentTypeEncodings:(NSArray<NSString *> *)argumentTypeEncodings
+                  isVariadic:(BOOL)isVariadic
+                    isInline:(BOOL)isInline
+   hasFunctionPointerArguments:(BOOL)hasFunctionPointerArguments;
 
 - (instancetype)init NS_UNAVAILABLE;
 

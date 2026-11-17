@@ -71,6 +71,17 @@ static NSUInteger ASSizeOfTypeEncoding(const char *typeEncoding) {
 /// Returns YES if `pointee` (the encoding after a `^`, qualifiers already skipped) is a scalar or
 /// struct that a pointer out-parameter can carry. `^@` is handled separately as an object
 /// out-parameter, and `^v`, `^?`, `^*`, `^^` and unions stay opaque pointers.
+/// Returns whether `object` is a block still on the stack (`__NSStackBlock__` on Apple platforms,
+/// `_NSConcreteStackBlock` on GNUstep), which retaining doesn't keep alive.
+static BOOL ASIsStackBlock(id object) {
+    static Class stackBlockClass = Nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        stackBlockClass = objc_lookUpClass("__NSStackBlock__") ?: objc_lookUpClass("_NSConcreteStackBlock");
+    });
+    return stackBlockClass != Nil && object_getClass(object) == stackBlockClass;
+}
+
 static BOOL ASIsBridgedOutPointee(const char *pointee) {
     if (!pointee) {
         return NO;
@@ -98,6 +109,11 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             // Object pointer — the bytes hold a raw id (not retained here; ARC handles it).
             id __unsafe_unretained obj = nil;
             memcpy(&obj, bytes, sizeof(id));
+            // A block on the caller's stack (a native block passed to a script method) must be
+            // copied before a script stores it, as ARC does for block parameters (asu-ugk).
+            if (obj != nil && ASIsStackBlock(obj)) {
+                return [obj copy];
+            }
             return obj;
         }
         case '#': {
@@ -641,12 +657,39 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
     if (invIndex >= signature.numberOfArguments) {
         return nil;
     }
-    const char *typeEncoding = ASSkipTypeQualifiers([signature getArgumentTypeAtIndex:invIndex]);
+    return [self bridgedPointeeTypeEncodingForPointerEncoding:[signature getArgumentTypeAtIndex:invIndex]];
+}
+
++ (nullable NSString *)bridgedPointeeTypeEncodingForPointerEncoding:(const char *)encoding {
+    const char *typeEncoding = ASSkipTypeQualifiers(encoding);
     if (!typeEncoding || typeEncoding[0] != '^') {
         return nil;
     }
     const char *pointee = ASSkipTypeQualifiers(typeEncoding + 1);
     return ASIsBridgedOutPointee(pointee) ? @(pointee) : nil;
+}
+
++ (BOOL)prepareOutBuffer:(void *)buffer
+                    size:(NSUInteger)size
+            forOutObject:(id)outObject
+                 pointee:(NSString *)pointee {
+    memset(buffer, 0, size);
+    id seed = [outObject isKindOfClass:[ASOutObject class]] ? ((ASOutObject *)outObject).value : nil;
+    if (seed == nil || [seed isKindOfClass:[ASNull class]]) {
+        return YES;
+    }
+    return ASUnboxIntoBytes(seed, buffer, size, pointee.UTF8String);
+}
+
++ (void)writeOutBuffer:(const void *)buffer
+           toOutObject:(id)outObject
+               pointee:(NSString *)pointee {
+    if (![outObject isKindOfClass:[ASOutObject class]]) {
+        return;
+    }
+    ASOutObject *out = (ASOutObject *)outObject;
+    out.value = [self boxedObjectFromBytes:buffer typeEncoding:pointee.UTF8String];
+    out.pointeeTypeEncoding = pointee;
 }
 
 + (BOOL)writeBackObject:(nullable id)object

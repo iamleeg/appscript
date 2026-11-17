@@ -90,6 +90,40 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable NSString *)pointeeTypeEncodingOfOutParameterAtIndex:(NSUInteger)argumentIndex
                                                       inSignature:(NSMethodSignature *)signature;
 
+/// Returns the pointee encoding of a pointer type the runtime bridges as an out-parameter (a pointer
+/// to a scalar or struct, such as `^d` or `^{CGRect=...}`), or `nil` for any other type.
+///
+/// - Parameter typeEncoding: A type encoding, which may start with qualifiers.
+/// - Returns: The pointee's encoding, or `nil`.
++ (nullable NSString *)bridgedPointeeTypeEncodingForPointerEncoding:(const char *)typeEncoding;
+
+/// Prepares the scratch buffer for a scalar or struct out-parameter: zeroes it, then converts the
+/// out-object's value into it with the strict rules (ADR 11) if it has one.
+///
+/// Used for method sends, C function calls and block calls alike.
+///
+/// - Parameters:
+///   - buffer: At least `size` bytes.
+///   - size: The pointee's size.
+///   - outObject: The `ASOutObject` the script passed (its value seeds the buffer).
+///   - pointee: The pointee's type encoding.
+/// - Returns: `NO` if the value can't be converted to the pointee type.
++ (BOOL)prepareOutBuffer:(void *)buffer
+                    size:(NSUInteger)size
+            forOutObject:(id)outObject
+                 pointee:(NSString *)pointee;
+
+/// Stores what a callee wrote to an out-parameter buffer back into the script's `ASOutObject`:
+/// sets its value to the boxed pointee and its `pointeeTypeEncoding`.
+///
+/// - Parameters:
+///   - buffer: The buffer passed for the out-parameter.
+///   - outObject: The `ASOutObject` the script passed.
+///   - pointee: The pointee's type encoding.
++ (void)writeOutBuffer:(const void *)buffer
+           toOutObject:(id)outObject
+               pointee:(NSString *)pointee;
+
 /// Returns whether the argument at the given logical index in the signature is an object
 /// out-parameter (`^@`, e.g. `NSError **`).
 ///

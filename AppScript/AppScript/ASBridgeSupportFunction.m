@@ -26,6 +26,22 @@
                   isVariadic:(BOOL)isVariadic
                     isInline:(BOOL)isInline
    hasFunctionPointerArguments:(BOOL)hasFunctionPointerArguments {
+    return [self initWithName:name
+           returnTypeEncoding:returnTypeEncoding
+        argumentTypeEncodings:argumentTypeEncodings
+                   isVariadic:isVariadic
+                     isInline:isInline
+    hasFunctionPointerArguments:hasFunctionPointerArguments
+              blockSignatures:@{}];
+}
+
+- (instancetype)initWithName:(NSString *)name
+          returnTypeEncoding:(NSString *)returnTypeEncoding
+       argumentTypeEncodings:(NSArray<NSString *> *)argumentTypeEncodings
+                  isVariadic:(BOOL)isVariadic
+                    isInline:(BOOL)isInline
+   hasFunctionPointerArguments:(BOOL)hasFunctionPointerArguments
+             blockSignatures:(NSDictionary<NSNumber *, ASBridgeSupportBlockSignature *> *)blockSignatures {
     self = [super init];
     if (self) {
         _name = [name copy];
@@ -34,6 +50,7 @@
         _isVariadic = isVariadic;
         _isInline = isInline;
         _hasFunctionPointerArguments = hasFunctionPointerArguments;
+        _blockSignatures = [blockSignatures copy];
     }
     return self;
 }

@@ -125,6 +125,44 @@
     XCTAssertTrue(fn.hasFunctionPointerArguments);
 }
 
+- (void)test_parseData_functionBlockArgument_recordsSignatureNotFunctionArguments {
+    // asu-ugk: a block argument's nested <arg>/<retval> describe the block, not the function.
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='notify_register_dispatch'>"
+                    @"<arg type64='*'/><arg type64='^i'/><arg type64='@'/>"
+                    @"<arg function_pointer='true' type64='@?'><arg type64='i'/><retval type64='v'/></arg>"
+                    @"<retval type64='I'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportFunction *fn = [self parseXML:xml].functions.firstObject;
+
+    XCTAssertEqualObjects(fn.argumentTypeEncodings, (@[@"*", @"^i", @"@", @"@?"]));
+    XCTAssertEqualObjects(fn.returnTypeEncoding, @"I");
+    XCTAssertFalse(fn.hasFunctionPointerArguments, @"a block argument isn't a C function pointer");
+    ASBridgeSupportBlockSignature *block = fn.blockSignatures[@3];
+    XCTAssertEqualObjects(block.parameterTypeEncodings, @[@"i"]);
+    XCTAssertEqualObjects(block.returnTypeEncoding, @"v");
+    XCTAssertEqualObjects(block.selectorName, @"notify_register_dispatch");
+    XCTAssertEqual(block.argumentIndex, 3u);
+}
+
+- (void)test_parseData_functionBlockAndFunctionPointer_onlyBlockRecorded {
+    NSString *xml = @"<?xml version='1.0'?>"
+                    @"<signatures version='1.0'>"
+                    @"<function name='mixed'>"
+                    @"<arg function_pointer='true' type64='^?'><arg type64='i'/><retval type64='v'/></arg>"
+                    @"<arg function_pointer='true' type64='@?'><retval type64='v'/></arg>"
+                    @"<retval type64='v'/>"
+                    @"</function>"
+                    @"</signatures>";
+    ASBridgeSupportFunction *fn = [self parseXML:xml].functions.firstObject;
+
+    XCTAssertEqualObjects(fn.argumentTypeEncodings, (@[@"^?", @"@?"]));
+    XCTAssertTrue(fn.hasFunctionPointerArguments);
+    XCTAssertEqualObjects(fn.blockSignatures.allKeys, @[@1]);
+}
+
 // ---------------------------------------------------------------------------
 // Constant parsing
 // ---------------------------------------------------------------------------

@@ -206,7 +206,32 @@ id sorted = [@[@"b", @"a", @"c"] sortedArrayUsingComparator:^(a b) {
 }]
 ```
 
-**Limits.** BridgeSupport isn't available on GNUstep, so only the built-in helpers accept blocks there. Block wrappers are built on 64-bit platforms only, and they patch the block's `invoke` pointer, so they don't support arm64e processes (pointer authentication). Block parameters of `<informal_protocol>` methods, blocks that Cocoa passes to a script, and C functions that take blocks aren't covered.
+**C functions that take blocks.** A BridgeSupport `<function>` with a block argument (`<arg function_pointer='true' type64='@?'>`, whose nested `<arg>` and `<retval>` give the block's signature) is installed on the framework's proxy class, and a script block passed to it follows the same rules as for methods: the parameter count must match, an object-only signature takes the block as it is, and any other gets a wrapper with the C signature. A native block (for example one a script received) is passed as it is, and `nil` passes `NULL`. Functions that take a plain C function pointer (`qsort`'s comparator, `NSSetUncaughtExceptionHandler`) are still not installed. The system's BridgeSupport describes 169 block-taking functions (Network, Security, AudioToolbox, CoreFoundation's `CFRunLoopPerformBlock`, libSystem's `notify_register_dispatch`), but not libdispatch or `qsort_b`; an app that wants those writes its own `<function>` entries and loads them with `-[ASBridgeSupportInstaller installDocument:frameworkName:error:]`:
+
+```appscript
+[ASMyDispatch dispatch_sync: queue : ^{
+    [results addObject: @"ran"]
+}]
+```
+
+**Limits.** BridgeSupport isn't available on GNUstep, so only the built-in helpers accept blocks there. Block wrappers are built on 64-bit platforms only, and they patch the block's `invoke` pointer, so they don't support arm64e processes (pointer authentication).
+
+#### Calling blocks
+
+A script calls a block by sending it `value` (no parameters) or one `value:` per parameter:
+
+```appscript
+id join = ^(a b) {
+    return [a stringByAppendingString: b]
+}
+id ab = [join value: @"a" value: @"b"]
+
+- task:task finishedWith:completionHandler {
+    [completionHandler value: YES value: nil]   // a native void (^)(BOOL, NSError *)
+}
+```
+
+This works for the script's own blocks and for native blocks it receives, such as a completion handler passed to a delegate method or a block returned by a Cocoa call. A native block is called with the C types from its own type signature, which compilers store in every block, so no BridgeSupport is needed: arguments are converted with the strict rules above, an `ASOutObject` passed for a pointer to a scalar or struct (`BOOL *stop`) is seeded and then updated with what the block wrote, and the result comes back boxed (`nil` for `void`). Only messages made of `value`/`value:` sent to a block are treated this way. Calling a block with the wrong number of arguments, or a native block that has no type signature, raises an `ASRuntimeErrorException` with code `ASErrorCodeValueConversionFailed`: "The block takes 1 parameters, but was called with 2".
 
 ### Defining classes
 
@@ -624,6 +649,8 @@ id n = [count value]                     // @42
 - A seed the C type cannot accept (for example an `NSString` for an `NSInteger *`) raises an `ASRuntimeErrorException` with code `ASErrorCodeValueConversionFailed` at the message send, and the method is not called.
 - After the call `-value` holds what the method wrote, and `-pointeeTypeEncoding` records the type.
 - Passing `nil` passes a `NULL` pointer, for methods that accept one.
+
+The same applies to C functions installed from BridgeSupport (`[ASFoundation NSDivideRect: rect : slice : remainder : 30 : 0]` with `ASOutObject`s for `slice` and `remainder`) and to native blocks a script calls.
 
 #### Implementing a method with a scalar or struct out-parameter in AppScript
 

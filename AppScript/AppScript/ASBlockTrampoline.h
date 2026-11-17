@@ -27,6 +27,15 @@ extern NSString * const ASBlockTrampolineErrorDomain;
 /// Error code: the signature has a type the runtime can't pass through a block.
 extern const NSInteger ASBlockTrampolineErrorUnsupportedType;
 
+/// Error code: a block was called with a different number of arguments than it takes.
+extern const NSInteger ASBlockTrampolineErrorWrongArgumentCount;
+
+/// Error code: a native block carries no type signature, so it can't be called from a script.
+extern const NSInteger ASBlockTrampolineErrorNoSignature;
+
+/// Error code: an argument can't be converted to the type the block takes.
+extern const NSInteger ASBlockTrampolineErrorArgumentConversion;
+
 /// Wraps a script block in a block with the C signature a Cocoa method expects.
 ///
 /// A script block is built as `id (^)(id…)`, so a Cocoa method that calls it with an `NSUInteger`, a
@@ -58,6 +67,13 @@ extern const NSInteger ASBlockTrampolineErrorUnsupportedType;
 /// - Returns: `YES` for a script block.
 + (BOOL)isScriptBlock:(nullable id)object;
 
+/// Returns whether `object` is a block: a script block, or a native block (an instance of a
+/// subclass of `NSBlock` on Apple platforms, `_NSBlock` on GNUstep).
+///
+/// - Parameter object: Any object.
+/// - Returns: `YES` for a block.
++ (BOOL)isBlock:(nullable id)object;
+
 /// Returns the number of parameters a script block declared.
 ///
 /// - Parameter block: A script block.
@@ -74,6 +90,32 @@ extern const NSInteger ASBlockTrampolineErrorUnsupportedType;
 + (nullable id)blockWrappingScriptBlock:(id)scriptBlock
                               signature:(ASBridgeSupportBlockSignature *)signature
                                   error:(NSError * _Nullable * _Nullable)error;
+
+/// Returns the type signature a native block carries in its descriptor (for example
+/// `v16@?0q8`), or `NULL` if it has none. Compilers set it for every block they emit.
+///
+/// - Parameter block: A native block.
+/// - Returns: The signature, valid as long as the block's code is loaded, or `NULL`.
++ (nullable const char *)typeSignatureOfNativeBlock:(id)block;
+
+/// Calls a block from a script (`[block value: x value: y]`).
+///
+/// A script block runs its body with `arguments`. A native block is called with the C types of its
+/// own signature: arguments are converted with the strict rules (ADR 11), an `ASOutObject` for a
+/// pointer to a scalar or struct is passed as a seeded buffer and updated afterwards, and the
+/// result is boxed (`nil` for `void`).
+///
+/// - Parameters:
+///   - block: A script block or a native block (see `+isBlock:`).
+///   - arguments: Boxed arguments; `ASNull` stands for `nil`.
+///   - result: Set to the block's boxed result.
+///   - error: On failure, set to an error in `ASBlockTrampolineErrorDomain`.
+/// - Returns: `NO` if the argument count is wrong, the block has no signature, or an argument
+///   can't be converted.
++ (BOOL)callBlock:(id)block
+    withArguments:(NSArray *)arguments
+           result:(id _Nullable * _Nonnull)result
+            error:(NSError * _Nullable * _Nullable)error;
 
 @end
 

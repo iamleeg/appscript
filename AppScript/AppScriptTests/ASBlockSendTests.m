@@ -21,6 +21,9 @@
 #import <AppScript/ASInterpreter.h>
 #import <AppScript/ASBridgeSupportParser.h>
 #import <AppScript/ASBridgeSupportDocument.h>
+#import <AppScript/ASBridgeSupportInstaller.h>
+#import <AppScript/ASStructValue.h>
+#import <AppScript/ASBridgeSupportFunction.h>
 
 /// A Foundation stand-in for Cocoa APIs that take blocks (ADR 31). Its block signatures are registered
 /// from BridgeSupport XML below, as the system's BridgeSupport files do for the real classes.
@@ -84,6 +87,9 @@
 - (id)run;
 - (id)runWithResults:(NSMutableArray *)results semaphore:(id)semaphore;
 - (id)runWithRange:(NSRange)range;
+- (id)runWith:(id)value;
+- (id)runWith:(id)value and:(id)other;
+- (void)finishTask:(id)task completionHandler:(void (^)(BOOL success, NSError *error))handler;
 @end
 
 /// An object a script can send `-signal` to, running a block (stands in for a dispatch semaphore).
@@ -359,6 +365,198 @@ static NSString *uniqueClassName(NSString *prefix) {
         @"    }]"];
     XCTAssertEqualObjects(ex.name, ASRuntimeErrorException);
     XCTAssertEqualObjects(ex.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+}
+
+// ---------------------------------------------------------------------------
+// Block arguments to C functions (asu-ugk). libdispatch and qsort_b have no
+// BridgeSupport, so these use real functions with metadata written here.
+// ---------------------------------------------------------------------------
+
+/// Installs the functions in `functionsXML` under a new proxy class and returns its name.
+- (NSString *)installFunctions:(NSString *)functionsXML {
+    static NSUInteger counter = 0;
+    NSString *frameworkName = [NSString stringWithFormat:@"BlockFunctions%lu_%@", (unsigned long)++counter,
+                               [[[NSUUID UUID] UUIDString] substringToIndex:8]];
+    NSString *xml = [NSString stringWithFormat:@"<?xml version='1.0'?><signatures version='1.0'>%@</signatures>",
+                     functionsXML];
+    ASBridgeSupportDocument *document = [[[ASBridgeSupportParser alloc] init]
+        parseData:[xml dataUsingEncoding:NSUTF8StringEncoding] error:nil];
+    NSError *error = nil;
+    XCTAssertTrue([[[ASBridgeSupportInstaller alloc] init] installDocument:document
+                                                             frameworkName:frameworkName
+                                                                     error:&error], @"%@", error);
+    return [@"AS" stringByAppendingString:frameworkName];
+}
+
+static NSString * const ASTestDispatchXML =
+    @"<function name='dispatch_get_global_queue'><arg type64='q'/><arg type64='Q'/><retval type64='@'/></function>"
+    @"<function name='dispatch_sync'><arg type64='@'/>"
+    @"<arg function_pointer='true' type64='@?'><retval type64='v'/></arg><retval type64='v'/></function>";
+
+- (void)test_cFunctionBlock_dispatchSync_runsScriptBlockBeforeReturning {
+    NSString *proxy = [self installFunctions:ASTestDispatchXML];
+    id result = [self resultOfRunning:[NSString stringWithFormat:
+        @"    id seen = [NSMutableArray array]\n"
+        @"    id queue = [%@ dispatch_get_global_queue: 0 : 0]\n"
+        @"    [%@ dispatch_sync: queue : ^{\n"
+        @"        [seen addObject:@\"ran\"]\n"
+        @"    }]\n"
+        @"    [seen addObject:@\"after\"]\n"
+        @"    return seen", proxy, proxy]];
+    XCTAssertEqualObjects(result, (@[@"ran", @"after"]));
+}
+
+- (void)test_cFunctionBlock_qsortB_sortsWithScriptComparator {
+    // qsort_b's comparator really takes (const void *, const void *); declaring the elements as
+    // int * gives the script each element as an ASOutObject holding its value.
+    NSString *proxy = [self installFunctions:
+        @"<function name='qsort_b'><arg type64='^v'/><arg type64='Q'/><arg type64='Q'/>"
+        @"<arg function_pointer='true' type64='@?'><arg type64='^i'/><arg type64='^i'/><retval type64='i'/></arg>"
+        @"<retval type64='v'/></function>"];
+    int numbers[] = { 5, -2, 9, 0, 3 };
+    id<ASTestBlockScript> script = [self scriptWithMethods:[NSString stringWithFormat:
+        @"- runWith:base {\n"
+        @"    [%@ qsort_b: base : 5 : 4 : ^(a b) {\n"
+        @"        return [[a value] compare: [b value]]\n"
+        @"    }]\n"
+        @"    return nil\n"
+        @"}", proxy] conformingToProtocol:YES];
+
+    [script runWith:[NSValue valueWithPointer:numbers]];
+
+    XCTAssertEqual(numbers[0], -2);
+    XCTAssertEqual(numbers[1], 0);
+    XCTAssertEqual(numbers[2], 3);
+    XCTAssertEqual(numbers[3], 5);
+    XCTAssertEqual(numbers[4], 9);
+}
+
+- (void)test_cFunctionBlock_wrongParameterCount_raises {
+    NSString *proxy = [self installFunctions:ASTestDispatchXML];
+    NSException *ex = [self exceptionRunning:[NSString stringWithFormat:
+        @"    id queue = [%@ dispatch_get_global_queue: 0 : 0]\n"
+        @"    [%@ dispatch_sync: queue : ^(unexpected) {\n"
+        @"        return nil\n"
+        @"    }]\n"
+        @"    return nil", proxy, proxy]];
+    XCTAssertNotNil(ex);
+    XCTAssertTrue([ex.reason containsString:@"dispatch_sync"], @"%@", ex.reason);
+    XCTAssertTrue([ex.reason containsString:@"takes 1 parameters"], @"%@", ex.reason);
+}
+
+- (void)test_cFunctionBlock_realLibSystemMetadata_installsNotifyRegisterDispatch {
+    // The one block-taking function in libSystem.bridgesupport. It's installed, not called,
+    // so the test doesn't register a system notification.
+    NSString *path = @"/System/Library/BridgeSupport/libSystem.bridgesupport";
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (data == nil) {
+        return; // No system BridgeSupport (GNUstep).
+    }
+    ASBridgeSupportDocument *document = [[[ASBridgeSupportParser alloc] init] parseData:data error:nil];
+    ASBridgeSupportFunction *function = nil;
+    for (ASBridgeSupportFunction *candidate in document.functions) {
+        if ([candidate.name isEqualToString:@"notify_register_dispatch"]) {
+            function = candidate;
+        }
+    }
+    XCTAssertEqual(function.argumentTypeEncodings.count, 4u);
+    XCTAssertEqualObjects(function.blockSignatures[@3].parameterTypeEncodings, @[@"i"]);
+
+    NSString *frameworkName = [NSString stringWithFormat:@"libSystemCopy%@", [[[NSUUID UUID] UUIDString] substringToIndex:8]];
+    XCTAssertTrue([[[ASBridgeSupportInstaller alloc] init] installDocument:document frameworkName:frameworkName error:nil]);
+    Class proxy = NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+    XCTAssertTrue([proxy respondsToSelector:NSSelectorFromString(@"notify_register_dispatch::::")]);
+}
+
+// ---------------------------------------------------------------------------
+// Scripts calling blocks with value/value: (asu-ugk). A native block is called
+// with the type signature from its own descriptor.
+// ---------------------------------------------------------------------------
+
+- (void)test_scriptCallsNativeBlock_scalarArgument {
+    __block NSInteger received = 0;
+    id<ASTestBlockScript> script = [self scriptWithMethods:
+        @"- runWith:handler {\n    [handler value: 41]\n    return nil\n}" conformingToProtocol:YES];
+
+    [script runWith:^(NSInteger code) { received = code; }];
+
+    XCTAssertEqual(received, 41);
+}
+
+- (void)test_scriptCallsNativeBlock_structAndOutArguments {
+    NSRange range = NSMakeRange(2, 3);
+    ASStructValue *rangeValue = [[ASStructValue alloc] initWithBytes:&range length:sizeof(NSRange)
+                                                       canonicalName:@"_NSRange"
+                                                 runtimeTypeEncoding:@(@encode(NSRange))];
+    id<ASTestBlockScript> script = [self scriptWithMethods:
+        @"- runWith:handler and:range {\n"
+        @"    id stop = [ASOutObject outObject]\n"
+        @"    id matched = [handler value: @\"x\" value: range value: stop]\n"
+        @"    return @[matched, [stop value]]\n"
+        @"}" conformingToProtocol:YES];
+
+    id result = [script runWith:^BOOL(id object, NSRange r, BOOL *stop) {
+        *stop = YES;
+        return [object isEqual:@"x"] && r.location == 2 && r.length == 3;
+    } and:rangeValue];
+
+    XCTAssertEqualObjects(result, (@[@YES, @YES]), @"BOOL result and the out-parameter both come back");
+}
+
+- (void)test_scriptCallsNativeBlock_objectResult {
+    NSString *greeting = [@"hel" stringByAppendingString:@"lo"];
+    id<ASTestBlockScript> script = [self scriptWithMethods:
+        @"- runWith:handler {\n    return [handler value]\n}" conformingToProtocol:YES];
+
+    XCTAssertEqualObjects([script runWith:^id { return greeting; }], @"hello");
+}
+
+- (void)test_scriptCallsOwnBlock {
+    id result = [self resultOfRunning:
+        @"    id join = ^(a b) {\n"
+        @"        return [a stringByAppendingString: b]\n"
+        @"    }\n"
+        @"    id hello = ^{\n"
+        @"        return @\"hi\"\n"
+        @"    }\n"
+        @"    return @[[join value: @\"a\" value: @\"b\"], [hello value]]"];
+    XCTAssertEqualObjects(result, (@[@"ab", @"hi"]));
+}
+
+- (void)test_delegateCompletionHandler_calledByScript {
+    // An Objective-C caller passes a completion handler to a script's delegate method, as Cocoa
+    // does for delegate callbacks; no BridgeSupport describes it.
+    __block BOOL succeeded = NO;
+    __block BOOL called = NO;
+    id<ASTestBlockScript> script = [self scriptWithMethods:
+        @"- finishTask:task completionHandler:handler {\n"
+        @"    [handler value: YES value: nil]\n"
+        @"}" conformingToProtocol:YES];
+
+    [script finishTask:@"task" completionHandler:^(BOOL success, NSError *error) {
+        called = YES;
+        succeeded = success && error == nil;
+    }];
+
+    XCTAssertTrue(called);
+    XCTAssertTrue(succeeded);
+}
+
+- (void)test_callBlock_wrongArgumentCount_raises {
+    id<ASTestBlockScript> nativeCaller = [self scriptWithMethods:
+        @"- runWith:handler {\n    return [handler value]\n}" conformingToProtocol:YES];
+    NSException *nativeEx = nil;
+    @try {
+        [nativeCaller runWith:^(NSInteger code) { (void)code; }];
+    } @catch (NSException *ex) {
+        nativeEx = ex;
+    }
+    XCTAssertTrue([nativeEx.reason containsString:@"takes 1 parameters, but was called with 0"], @"%@", nativeEx.reason);
+
+    NSException *scriptEx = [self exceptionRunning:
+        @"    id one = ^(a) {\n        return a\n    }\n"
+        @"    return [one value: 1 value: 2]"];
+    XCTAssertTrue([scriptEx.reason containsString:@"takes 1 parameters, but was called with 2"], @"%@", scriptEx.reason);
 }
 
 @end

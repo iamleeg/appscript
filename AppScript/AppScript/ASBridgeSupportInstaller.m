@@ -34,6 +34,7 @@
 #include <ffi.h>
 #import "ASFfiSupport.h"
 #import <AppScript/ASBlockRegistry.h>
+#import <AppScript/ASBlockTrampoline.h>
 
 // ---------------------------------------------------------------------------
 // Error domain
@@ -74,6 +75,8 @@ static NSString *ASResolveBridgeSupportTypeEncoding(NSString *rawEncoding) {
 @property (nonatomic, copy, readonly) NSString *name;
 @property (nonatomic, copy, readonly) NSString *returnTypeEncoding;
 @property (nonatomic, copy, readonly) NSArray<NSString *> *argTypeEncodings;
+/// Signatures of the function's block arguments, keyed by argument index (asu-ugk).
+@property (nonatomic, copy) NSDictionary<NSNumber *, ASBridgeSupportBlockSignature *> *blockSignatures;
 - (nullable instancetype)initWithName:(NSString *)name
                                funcPtr:(void *)funcPtr
                     returnTypeEncoding:(NSString *)returnTypeEncoding
@@ -147,18 +150,95 @@ static NSString *ASResolveBridgeSupportTypeEncoding(NSString *rawEncoding) {
     free(_argFfiTypes);
 }
 
+/// What to pass for block argument `index`: NULL for nil, a script block as it is or wrapped in a
+/// block with the signature's C types (ADR 33), or any other block as it is. Raises for anything else.
+- (nullable id)blockArgumentFor:(nullable id)boxedArg
+                      signature:(ASBridgeSupportBlockSignature *)signature
+                          index:(NSUInteger)index {
+    if (boxedArg == nil || [boxedArg isKindOfClass:[ASNull class]] || [boxedArg isKindOfClass:[NSNull class]]) {
+        return nil;
+    }
+    if ([ASBlockTrampoline isScriptBlock:boxedArg]) {
+        NSUInteger given = [ASBlockTrampoline parameterCountOfScriptBlock:boxedArg];
+        NSUInteger expected = signature.parameterTypeEncodings.count;
+        if (given != expected) {
+            ASRaiseRuntimeError([NSString stringWithFormat:
+                                 @"The block passed as argument %lu of function '%@' takes %lu parameters, "
+                                 @"but the function calls it with %lu",
+                                 (unsigned long)(index + 1), _name, (unsigned long)given, (unsigned long)expected],
+                                ASErrorCodeValueConversionFailed, nil, 0);
+        }
+        if ([signature isObjectOnly]) {
+            return boxedArg;
+        }
+        NSError *error = nil;
+        id wrapper = [ASBlockTrampoline blockWrappingScriptBlock:boxedArg signature:signature error:&error];
+        if (wrapper == nil) {
+            ASRaiseRuntimeError([NSString stringWithFormat:@"Cannot pass the block as argument %lu of function '%@': %@",
+                                 (unsigned long)(index + 1), _name, error.localizedDescription],
+                                ASErrorCodeValueConversionFailed, nil, 0);
+        }
+        return wrapper;
+    }
+    if ([ASBlockTrampoline isBlock:boxedArg]) {
+        return boxedArg;
+    }
+    ASRaiseRuntimeError([NSString stringWithFormat:@"Cannot convert argument %lu of function '%@' from %@ to block",
+                         (unsigned long)(index + 1), _name, NSStringFromClass([boxedArg class])],
+                        ASErrorCodeValueConversionFailed, nil, 0);
+    return nil;
+}
+
 - (nullable id)invokeWithBoxedArguments:(NSArray<id> *)boxedArgs {
     NSUInteger argCount = _argTypeEncodings.count;
+    // Blocks passed to the function (script blocks may be wrapped), kept alive until it returns.
+    NSMutableArray *blockArguments = [NSMutableArray array];
     void **argValues = (argCount > 0) ? alloca(argCount * sizeof(void *)) : NULL;
+    // Scratch buffers for scalar and struct out-parameters, written back after the call.
+    void **outBuffers = (argCount > 0) ? alloca(argCount * sizeof(void *)) : NULL;
 
     for (NSUInteger i = 0; i < argCount; i++) {
         NSUInteger argSize = MAX((NSUInteger)_argFfiTypes[i]->size, sizeof(void *));
         void *argBuf = alloca(argSize);
         memset(argBuf, 0, argSize);
         argValues[i] = argBuf;
+        outBuffers[i] = NULL;
 
         id boxedArg = (i < boxedArgs.count) ? boxedArgs[i] : nil;
         const char *enc = _argTypeEncodings[i].UTF8String;
+        ASBridgeSupportBlockSignature *blockSignature = _blockSignatures[@(i)];
+        if (blockSignature != nil) {
+            id block = [self blockArgumentFor:boxedArg signature:blockSignature index:i];
+            if (block != nil) {
+                [blockArguments addObject:block];
+            }
+            void *blockPointer = (__bridge void *)block;
+            memcpy(argBuf, &blockPointer, sizeof(void *));
+            continue;
+        }
+        NSString *pointee = [boxedArg isKindOfClass:[ASOutObject class]]
+            ? [ASBoxer bridgedPointeeTypeEncodingForPointerEncoding:enc] : nil;
+        if (pointee != nil) {
+            // A pointer to a scalar or struct, given an ASOutObject: pass a seeded scratch
+            // buffer, as method sends do (asu-vwg).
+            NSUInteger pointeeSize = 0;
+            NSGetSizeAndAlignment(pointee.UTF8String, &pointeeSize, NULL);
+            void *buffer = alloca(pointeeSize > 0 ? pointeeSize : 1);
+            if (![ASBoxer prepareOutBuffer:buffer size:(pointeeSize > 0 ? pointeeSize : 1)
+                              forOutObject:boxedArg pointee:pointee]) {
+                ASRaiseRuntimeError([NSString stringWithFormat:
+                                     @"Cannot convert argument %lu of function '%@' from %@ to %@",
+                                     (unsigned long)(i + 1), _name,
+                                     NSStringFromClass([((ASOutObject *)boxedArg).value class]),
+                                     [ASBoxer displayNameForTypeEncoding:pointee.UTF8String]],
+                                    ASErrorCodeValueConversionFailed,
+                                    nil,
+                                    0);
+            }
+            outBuffers[i] = buffer;
+            memcpy(argBuf, &buffer, sizeof(void *));
+            continue;
+        }
         if (![ASBoxer unboxObject:boxedArg
                         intoBytes:argBuf
                            ofSize:(NSUInteger)_argFfiTypes[i]->size
@@ -183,6 +263,15 @@ static NSString *ASResolveBridgeSupportTypeEncoding(NSString *rawEncoding) {
     memset(retBuffer, 0, retBufSize);
 
     ffi_call(&_cif, FFI_FN(_funcPtr), retBuffer, argValues);
+
+    for (NSUInteger i = 0; i < argCount; i++) {
+        if (outBuffers[i] != NULL) {
+            [ASBoxer writeOutBuffer:outBuffers[i]
+                        toOutObject:boxedArgs[i]
+                            pointee:[ASBoxer bridgedPointeeTypeEncodingForPointerEncoding:
+                                     _argTypeEncodings[i].UTF8String]];
+        }
+    }
 
     const char *retEnc = ASFfiSkipQualifiers(_returnTypeEncoding.UTF8String);
     if (!retEnc || retEnc[0] == 'v') {
@@ -379,6 +468,7 @@ static NSMethodSignature *ASBridgeSupportMethodSignatureIMP(id self, SEL _cmd, S
             // Unsupported type encoding in signature — skip silently.
             continue;
         }
+        info.blockSignatures = function.blockSignatures;
 
         // Build the ObjC selector: "funcName" (0 args), "funcName:" (1 arg), "funcName::" (2), etc.
         NSMutableString *selectorString = [NSMutableString stringWithString:function.name];

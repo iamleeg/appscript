@@ -467,6 +467,8 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
 // Message send
 // ---------------------------------------------------------------------------
 
+static BOOL ASSelectorCallsBlock(NSString *selector, NSUInteger argumentCount);
+
 - (nullable id)evaluateMessageSend:(ASMessageSendNode *)node context:(ASExecutionContext *)ctx {
     // Detect super sends before evaluating the receiver as an expression.
     // For super: the actual receiver is self; method lookup starts from
@@ -495,6 +497,19 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
     for (ASASTNode *argNode in argNodes) {
         id argValue = [self evaluateExpression:argNode context:ctx];
         [argValues addObject:argValue ?: [ASNull null]];
+    }
+
+    // [block value], [block value: x value: y]: call the block (asu-ugk).
+    if (!isSuperSend && ASSelectorCallsBlock(node.selector, argValues.count) && [ASBlockTrampoline isBlock:receiver]) {
+        id result = nil;
+        NSError *error = nil;
+        if (![ASBlockTrampoline callBlock:receiver withArguments:argValues result:&result error:&error]) {
+            [self reportError:error.localizedDescription
+                         code:ASErrorCodeValueConversionFailed
+                         node:node
+                      context:ctx];
+        }
+        return result;
     }
 
     // Obtain the method and its signature by querying the runtime directly.
@@ -593,17 +608,12 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
             NSUInteger pointeeSize = 0;
             NSGetSizeAndAlignment(pointee.UTF8String, &pointeeSize, NULL);
             void *buffer = alloca(pointeeSize > 0 ? pointeeSize : 1);
-            memset(buffer, 0, pointeeSize > 0 ? pointeeSize : 1);
-            id seed = ((ASOutObject *)arg).value;
-            if ([seed isKindOfClass:[ASNull class]]) {
-                seed = nil;
-            }
-            if (seed != nil &&
-                ![ASBoxer unboxObject:seed intoBytes:buffer ofSize:pointeeSize typeEncoding:pointee.UTF8String]) {
+            if (![ASBoxer prepareOutBuffer:buffer size:(pointeeSize > 0 ? pointeeSize : 1)
+                              forOutObject:arg pointee:pointee]) {
                 [self reportError:[NSString stringWithFormat:
                                    @"Cannot convert argument %lu of '%@' from %@ to %@",
                                    (unsigned long)(i + 1), node.selector,
-                                   NSStringFromClass([seed class]),
+                                   NSStringFromClass([((ASOutObject *)arg).value class]),
                                    [ASBoxer displayNameForTypeEncoding:pointee.UTF8String]]
                               code:ASErrorCodeValueConversionFailed
                               node:node
@@ -713,9 +723,7 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
         } else if ([arg isKindOfClass:[ASOutObject class]] && outBuffers[i] != NULL) {
             // Scalar or struct out-parameter: box what the native method wrote.
             NSString *pointee = [ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:i inSignature:sig];
-            ASOutObject *outObj = (ASOutObject *)arg;
-            outObj.value = [ASBoxer boxedObjectFromBytes:outBuffers[i] typeEncoding:pointee.UTF8String];
-            outObj.pointeeTypeEncoding = pointee;
+            [ASBoxer writeOutBuffer:outBuffers[i] toOutObject:arg pointee:pointee];
         }
     }
 
@@ -1095,6 +1103,16 @@ void ASRaiseRuntimeError(NSString *message, ASErrorCode code,
                          NSString * _Nullable scriptPath, NSUInteger line) {
     [ASMakeRuntimeErrorException(message, code, scriptPath, line, 0, @{}, scriptPath == nil) raise];
     __builtin_unreachable();
+}
+
+/// Returns whether `selector` is `value` (no arguments) or `value:` repeated once per argument,
+/// the messages a script uses to call a block.
+static BOOL ASSelectorCallsBlock(NSString *selector, NSUInteger argumentCount) {
+    if (argumentCount == 0) {
+        return [selector isEqualToString:@"value"];
+    }
+    return selector.length == argumentCount * 6 &&
+           [[selector stringByReplacingOccurrencesOfString:@"value:" withString:@""] length] == 0;
 }
 
 /// Returns whether argument `index` of the method signature is a block (`@?`).

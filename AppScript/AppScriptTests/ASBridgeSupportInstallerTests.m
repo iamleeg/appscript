@@ -26,6 +26,7 @@
 #import <AppScript/ASStructValue.h>
 #import <AppScript/ASBoxer.h>
 #import <AppScript/ASInterpreter.h>
+#import <AppScript/ASOutObject.h>
 
 @interface ASBridgeSupportInstallerTests : XCTestCase
 @end
@@ -81,6 +82,23 @@ static NSInteger _ASTestCounter = 0;
 }
 
 /// Calls a two-argument class method on `cls` and returns the result.
+/// Calls a proxy class method with any number of object arguments; NSNull stands for nil.
+- (id)callClassMethod:(SEL)sel onClass:(Class)cls withArgs:(NSArray *)args {
+    NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
+    XCTAssertNotNil(sig);
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.selector = sel;
+    inv.target = cls;
+    for (NSUInteger i = 0; i < args.count; i++) {
+        __unsafe_unretained id arg = (args[i] == [NSNull null]) ? nil : args[i];
+        [inv setArgument:&arg atIndex:(NSInteger)(i + 2)];
+    }
+    [inv invoke];
+    __unsafe_unretained id result = nil;
+    [inv getReturnValue:&result];
+    return result;
+}
+
 - (id)callClassMethod:(SEL)sel onClass:(Class)cls withArg:(id)arg1 arg:(id)arg2 {
     NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
     XCTAssertNotNil(sig);
@@ -787,4 +805,104 @@ static NSInteger _ASTestCounter = 0;
                           @"A call from Objective-C has no script location");
 }
 
+// ---------------------------------------------------------------------------
+// Pointer out-parameters of C functions (asu-vwg)
+// ---------------------------------------------------------------------------
+
+static NSString * const ASTestGeometryStructs =
+    @"<struct name='NSPoint' type64='{CGPoint=\"x\"d\"y\"d}'/>"
+    @"<struct name='NSSize' type64='{CGSize=\"width\"d\"height\"d}'/>"
+    @"<struct name='NSRect' type64='{CGRect=\"origin\"{CGPoint}\"size\"{CGSize}}'/>";
+
+- (Class)installFunctionsXML:(NSString *)functions {
+    NSString *xml = [NSString stringWithFormat:@"<?xml version='1.0'?><signatures version='1.0'>%@%@</signatures>",
+                     ASTestGeometryStructs, functions];
+    ASBridgeSupportDocument *doc = [self parseXML:xml];
+    NSString *frameworkName = [self uniqueFrameworkName];
+    NSError *error = nil;
+    XCTAssertTrue([[[ASBridgeSupportInstaller alloc] init] installDocument:doc frameworkName:frameworkName error:&error],
+                  @"%@", error);
+    return NSClassFromString([@"AS" stringByAppendingString:frameworkName]);
+}
+
+static NSString * const ASTestDivideRectXML =
+    @"<function name='NSDivideRect'>"
+    @"<arg type64='{CGRect={CGPoint=dd}{CGSize=dd}}'/>"
+    @"<arg type64='^{CGRect={CGPoint=dd}{CGSize=dd}}' type_modifier='o'/>"
+    @"<arg type64='^{CGRect={CGPoint=dd}{CGSize=dd}}' type_modifier='o'/>"
+    @"<arg type64='d'/><arg type64='Q'/><retval type64='v'/></function>";
+
+static NSString * const ASTestSizeAndAlignmentXML =
+    @"<function name='NSGetSizeAndAlignment'>"
+    @"<arg type64='*'/><arg type64='^Q' type_modifier='o'/><arg type64='^Q' type_modifier='o'/>"
+    @"<retval type64='*'/></function>";
+
+- (ASStructValue *)rectValue:(NSRect)rect {
+    return [[ASStructValue alloc] initWithBytes:&rect length:sizeof(NSRect)
+                                  canonicalName:@"CGRect"
+                            runtimeTypeEncoding:@"{CGRect={CGPoint=dd}{CGSize=dd}}"];
+}
+
+- (NSRect)rectFromOutObject:(ASOutObject *)outObject {
+    NSRect rect = NSZeroRect;
+    XCTAssertTrue([outObject.value isKindOfClass:[ASStructValue class]], @"got %@", outObject.value);
+    ASStructValue *value = outObject.value;
+    XCTAssertEqual(value.bytes.length, sizeof(NSRect));
+    if (value.bytes.length == sizeof(NSRect)) {
+        memcpy(&rect, value.bytes.bytes, sizeof(NSRect));
+    }
+    return rect;
+}
+
+- (void)test_function_NSDivideRect_outParameters {
+    Class cls = [self installFunctionsXML:ASTestDivideRectXML];
+    ASOutObject *slice = [ASOutObject outObject];
+    ASOutObject *remainder = [ASOutObject outObject];
+
+    [self callClassMethod:NSSelectorFromString(@"NSDivideRect:::::") onClass:cls
+                 withArgs:@[[self rectValue:NSMakeRect(0, 0, 100, 50)], slice, remainder, @30.0, @(NSMinXEdge)]];
+
+    XCTAssertTrue(NSEqualRects([self rectFromOutObject:slice], NSMakeRect(0, 0, 30, 50)));
+    XCTAssertTrue(NSEqualRects([self rectFromOutObject:remainder], NSMakeRect(30, 0, 70, 50)));
+}
+
+- (void)test_function_NSGetSizeAndAlignment_outParameters {
+    Class cls = [self installFunctionsXML:ASTestSizeAndAlignmentXML];
+    ASOutObject *size = [ASOutObject outObject];
+    ASOutObject *alignment = [ASOutObject outObject];
+
+    [self callClassMethod:NSSelectorFromString(@"NSGetSizeAndAlignment:::") onClass:cls
+                 withArgs:@[@"d", size, alignment]];
+
+    XCTAssertEqualObjects(size.value, @8);
+    XCTAssertEqualObjects(alignment.value, @8);
+}
+
+- (void)test_function_outParameter_seedIsPassedIn {
+    // A seed is converted into the buffer before the call: one that can't convert to the
+    // pointee type is rejected, and a convertible seed is replaced by what the function writes.
+    Class cls = [self installFunctionsXML:ASTestDivideRectXML];
+    ASOutObject *slice = [[ASOutObject alloc] initWithValue:[self rectValue:NSMakeRect(9, 9, 9, 9)]];
+    ASOutObject *remainder = [[ASOutObject alloc] initWithValue:@"not a rect"];
+
+    XCTAssertThrows(([self callClassMethod:NSSelectorFromString(@"NSDivideRect:::::") onClass:cls
+                                  withArgs:@[[self rectValue:NSMakeRect(0, 0, 100, 50)], slice, remainder, @30.0, @(NSMinXEdge)]]));
+
+    remainder.value = nil;
+    [self callClassMethod:NSSelectorFromString(@"NSDivideRect:::::") onClass:cls
+                 withArgs:@[[self rectValue:NSMakeRect(0, 0, 100, 50)], slice, remainder, @30.0, @(NSMinXEdge)]];
+    XCTAssertTrue(NSEqualRects([self rectFromOutObject:slice], NSMakeRect(0, 0, 30, 50)));
+}
+
+- (void)test_function_outParameter_nilPassesNull {
+    Class cls = [self installFunctionsXML:ASTestSizeAndAlignmentXML];
+    ASOutObject *size = [ASOutObject outObject];
+
+    [self callClassMethod:NSSelectorFromString(@"NSGetSizeAndAlignment:::") onClass:cls
+                 withArgs:@[@"q", size, [NSNull null]]];
+
+    XCTAssertEqualObjects(size.value, @8);
+}
+
 @end
+

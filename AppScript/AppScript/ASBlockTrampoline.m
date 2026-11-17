@@ -29,6 +29,22 @@
 
 NSString * const ASBlockTrampolineErrorDomain = @"ASBlockTrampolineErrorDomain";
 const NSInteger ASBlockTrampolineErrorUnsupportedType = 1;
+const NSInteger ASBlockTrampolineErrorWrongArgumentCount = 2;
+const NSInteger ASBlockTrampolineErrorNoSignature = 3;
+const NSInteger ASBlockTrampolineErrorArgumentConversion = 4;
+
+// The parts of the block ABI used to call a native block (clang's Block_private.h).
+enum {
+    ASBlockHasCopyDispose = (1 << 25),
+    ASBlockHasSignature = (1 << 30),
+};
+typedef struct {
+    void *isa;
+    int flags;
+    int reserved;
+    void (*invoke)(void *, ...);
+    void *descriptor;
+} ASBlockLayout;
 
 // The Block ABI lays a block out as: isa, flags, reserved, invoke, descriptor, then its captured
 // variables. These offsets are for 64-bit platforms; a wrapper isn't built on 32-bit ones.
@@ -216,6 +232,182 @@ static void ASBlockClosureHandler(ffi_cif *cif, void *ret, void **args, void *us
 
 + (BOOL)isScriptBlock:(nullable id)object {
     return object != nil && objc_getAssociatedObject(object, &ASScriptBlockInfoKey) != nil;
+}
+
++ (BOOL)isBlock:(nullable id)object {
+    if (object == nil) {
+        return NO;
+    }
+    if ([self isScriptBlock:object]) {
+        return YES;
+    }
+    for (Class cls = object_getClass(object); cls != Nil; cls = class_getSuperclass(cls)) {
+        const char *name = class_getName(cls);
+        if (strcmp(name, "NSBlock") == 0 || strcmp(name, "_NSBlock") == 0) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
++ (nullable const char *)typeSignatureOfNativeBlock:(id)block {
+    ASBlockLayout *layout = (__bridge ASBlockLayout *)block;
+    if ((layout->flags & ASBlockHasSignature) == 0 || layout->descriptor == NULL) {
+        return NULL;
+    }
+    // The descriptor is { reserved, size, [copy, dispose,] signature, ... }.
+    void **fields = (void **)layout->descriptor;
+    NSUInteger index = (layout->flags & ASBlockHasCopyDispose) ? 4 : 2;
+    return (const char *)fields[index];
+}
+
+static NSError *ASBlockCallError(NSInteger code, NSString *message) {
+    return [NSError errorWithDomain:ASBlockTrampolineErrorDomain code:code
+                           userInfo:@{NSLocalizedDescriptionKey: message}];
+}
+
+static void ASFreeStructFfiTypes(NSArray<NSValue *> *structs) {
+    for (NSValue *value in structs) {
+        ffi_type *type = (ffi_type *)value.pointerValue;
+        if (type) {
+            free(type->elements);
+            free(type);
+        }
+    }
+}
+
++ (BOOL)callBlock:(id)block
+    withArguments:(NSArray *)arguments
+           result:(id _Nullable * _Nonnull)result
+            error:(NSError * _Nullable * _Nullable)error {
+    *result = nil;
+    ASScriptBlockInfo *info = objc_getAssociatedObject(block, &ASScriptBlockInfoKey);
+    if (info != nil) {
+        if (arguments.count != info.parameterCount) {
+            if (error) {
+                *error = ASBlockCallError(ASBlockTrampolineErrorWrongArgumentCount, [NSString stringWithFormat:
+                    @"The block takes %lu parameters, but was called with %lu",
+                    (unsigned long)info.parameterCount, (unsigned long)arguments.count]);
+            }
+            return NO;
+        }
+        *result = info.invoker(arguments);
+        return YES;
+    }
+
+    const char *types = [self typeSignatureOfNativeBlock:block];
+    if (types == NULL) {
+        if (error) {
+            *error = ASBlockCallError(ASBlockTrampolineErrorNoSignature,
+                                      @"This block has no type signature, so AppScript can't call it");
+        }
+        return NO;
+    }
+    NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:types];
+    NSUInteger parameterCount = signature.numberOfArguments - 1; // argument 0 is the block itself
+    if (arguments.count != parameterCount) {
+        if (error) {
+            *error = ASBlockCallError(ASBlockTrampolineErrorWrongArgumentCount, [NSString stringWithFormat:
+                @"The block takes %lu parameters, but was called with %lu",
+                (unsigned long)parameterCount, (unsigned long)arguments.count]);
+        }
+        return NO;
+    }
+
+    NSMutableArray<NSValue *> *structs = [NSMutableArray array];
+    NSUInteger count = parameterCount + 1;
+    ffi_type **ffiTypes = alloca(count * sizeof(ffi_type *));
+    void **values = alloca(count * sizeof(void *));
+    void **outBuffers = alloca(count * sizeof(void *));
+    void *blockPointer = (__bridge void *)block;
+    ffiTypes[0] = &ffi_type_pointer;
+    values[0] = &blockPointer;
+    outBuffers[0] = NULL;
+
+    for (NSUInteger i = 1; i < count; i++) {
+        const char *encoding = [signature getArgumentTypeAtIndex:i];
+        const char *cursor = encoding;
+        ffi_type *type = ASFfiTypeForEncodingCursor(&cursor, structs);
+        NSString *typeName = [ASBoxer displayNameForTypeEncoding:encoding];
+        if (type == NULL) {
+            ASFreeStructFfiTypes(structs);
+            if (error) {
+                *error = ASBlockCallError(ASBlockTrampolineErrorUnsupportedType, [NSString stringWithFormat:
+                    @"Argument %lu of the block has a type AppScript can't pass (%@)", (unsigned long)i, typeName]);
+            }
+            return NO;
+        }
+        ffiTypes[i] = type;
+        // A struct ffi_type's size is only set by ffi_prep_cif, so take the size from the encoding.
+        NSUInteger argumentSize = 0;
+        NSGetSizeAndAlignment(encoding, &argumentSize, NULL);
+        NSUInteger size = MAX(argumentSize, sizeof(void *));
+        void *buffer = alloca(size);
+        memset(buffer, 0, size);
+        values[i] = buffer;
+        outBuffers[i] = NULL;
+
+        id argument = arguments[i - 1];
+        NSString *pointee = [argument isKindOfClass:[ASOutObject class]]
+            ? [ASBoxer bridgedPointeeTypeEncodingForPointerEncoding:encoding] : nil;
+        BOOL converted;
+        if (pointee != nil) {
+            NSUInteger pointeeSize = 0;
+            NSGetSizeAndAlignment(pointee.UTF8String, &pointeeSize, NULL);
+            void *outBuffer = alloca(pointeeSize > 0 ? pointeeSize : 1);
+            converted = [ASBoxer prepareOutBuffer:outBuffer size:(pointeeSize > 0 ? pointeeSize : 1)
+                                     forOutObject:argument pointee:pointee];
+            outBuffers[i] = outBuffer;
+            memcpy(buffer, &outBuffer, sizeof(void *));
+        } else {
+            converted = [ASBoxer unboxObject:argument intoBytes:buffer ofSize:argumentSize
+                                typeEncoding:encoding];
+        }
+        if (!converted) {
+            ASFreeStructFfiTypes(structs);
+            if (error) {
+                id value = [argument isKindOfClass:[ASOutObject class]] ? ((ASOutObject *)argument).value : argument;
+                *error = ASBlockCallError(ASBlockTrampolineErrorArgumentConversion, [NSString stringWithFormat:
+                    @"Cannot convert argument %lu of the block from %@ to %@", (unsigned long)i,
+                    [value isKindOfClass:[ASNull class]] ? @"nil" : NSStringFromClass([value class]), typeName]);
+            }
+            return NO;
+        }
+    }
+
+    const char *returnEncoding = signature.methodReturnType;
+    const char *returnCursor = returnEncoding;
+    ffi_type *returnType = (ASFfiSkipQualifiers(returnEncoding)[0] == 'v')
+        ? &ffi_type_void : ASFfiTypeForEncodingCursor(&returnCursor, structs);
+    ffi_cif cif;
+    if (returnType == NULL ||
+        ffi_prep_cif(&cif, FFI_DEFAULT_ABI, (unsigned int)count, returnType, ffiTypes) != FFI_OK) {
+        ASFreeStructFfiTypes(structs);
+        if (error) {
+            *error = ASBlockCallError(ASBlockTrampolineErrorUnsupportedType, [NSString stringWithFormat:
+                @"The block returns a type AppScript can't receive (%@)",
+                [ASBoxer displayNameForTypeEncoding:returnEncoding]]);
+        }
+        return NO;
+    }
+    NSUInteger returnSize = MAX((NSUInteger)returnType->size, sizeof(ffi_arg));
+    void *returnBuffer = alloca(returnSize);
+    memset(returnBuffer, 0, returnSize);
+
+    ffi_call(&cif, FFI_FN(((__bridge ASBlockLayout *)block)->invoke), returnBuffer, values);
+
+    for (NSUInteger i = 1; i < count; i++) {
+        if (outBuffers[i] != NULL) {
+            [ASBoxer writeOutBuffer:outBuffers[i] toOutObject:arguments[i - 1]
+                            pointee:[ASBoxer bridgedPointeeTypeEncodingForPointerEncoding:
+                                     [signature getArgumentTypeAtIndex:i]]];
+        }
+    }
+    if (returnType != &ffi_type_void) {
+        *result = [ASBoxer boxedObjectFromBytes:returnBuffer typeEncoding:ASFfiSkipQualifiers(returnEncoding)];
+    }
+    ASFreeStructFfiTypes(structs);
+    return YES;
 }
 
 + (NSUInteger)parameterCountOfScriptBlock:(id)block {
