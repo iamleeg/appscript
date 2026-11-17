@@ -605,8 +605,7 @@ static BOOL ASSelectorCallsBlock(NSString *selector, NSUInteger argumentCount);
             // Scalar or struct out-parameter: pass the address of a pointee-sized scratch buffer,
             // seeded from the out-object's value (zero if it has none).
             NSString *pointee = [ASBoxer pointeeTypeEncodingOfOutParameterAtIndex:i inSignature:sig];
-            NSUInteger pointeeSize = 0;
-            NSGetSizeAndAlignment(pointee.UTF8String, &pointeeSize, NULL);
+            NSUInteger pointeeSize = [ASBoxer sizeOfTypeEncoding:pointee.UTF8String];
             void *buffer = alloca(pointeeSize > 0 ? pointeeSize : 1);
             if (![ASBoxer prepareOutBuffer:buffer size:(pointeeSize > 0 ? pointeeSize : 1)
                               forOutObject:arg pointee:pointee]) {

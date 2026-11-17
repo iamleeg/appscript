@@ -106,6 +106,7 @@ Each C type accepts only the objects listed below. `nil` is accepted only where 
 | `__int128`, `unsigned __int128` | `NSNumber` (sign-extended for `__int128`, zero-extended from the unsigned value for `unsigned __int128`), or an `NSValue` of the same type | Rejected |
 | `_Complex` | Nothing: Foundation can't size or wrap it | Rejected |
 | `_Atomic T` | The same objects as `T` | As for `T` |
+| Struct with a bitfield, `_Atomic` or `_Complex` member (e.g. `NSDecimal`, `{?=b8b4b1b1b18[8S]}`) | Nothing: Foundation can't size it, and Apple's bitfield encoding drops the declared type, so `{C=b4b4}` may be 1, 4 or 8 bytes. Boxing one also raises `ASErrorCodeValueConversionFailed`, naming the type, and a pointer to one isn't bridged as an out-parameter. | Rejected |
 
 When the runtime cannot convert an object to the C type that the method signature requires (for example a number passed where a `SEL` is expected, a string passed for an `int`, `nil` passed for an `NSRect`, or a struct of the wrong size), it raises an `ASRuntimeErrorException` with error code `ASErrorCodeValueConversionFailed`. It never proceeds with a zeroed or reinterpreted value. Objective-C would reject such a mismatch at compile time, or produce undefined behaviour if forced through a cast; AppScript has no compile step, so the run-time error stands in for the compiler diagnostic.
 

@@ -145,8 +145,7 @@ static void ASStoreBlockResult(void *ret, NSString *returnType, id _Nullable res
         *(void **)ret = (__bridge void *)handedBack;
         return;
     }
-    NSUInteger size = 0;
-    NSGetSizeAndAlignment(encoding, &size, NULL);
+    NSUInteger size = [ASBoxer sizeOfTypeEncoding:encoding];
     void *buffer = alloca(size > 0 ? size : 1);
     memset(buffer, 0, size > 0 ? size : 1);
     if (size == 0 || ![ASBoxer unboxObject:result intoBytes:buffer ofSize:size typeEncoding:encoding]) {
@@ -203,8 +202,7 @@ static void ASBlockClosureHandler(ffi_cif *cif, void *ret, void **args, void *us
         }
         ASOutObject *out = boxed[i];
         const char *pointee = out.pointeeTypeEncoding.UTF8String;
-        NSUInteger size = 0;
-        NSGetSizeAndAlignment(pointee, &size, NULL);
+        NSUInteger size = [ASBoxer sizeOfTypeEncoding:pointee];
         void *buffer = alloca(size > 0 ? size : 1);
         memset(buffer, 0, size > 0 ? size : 1);
         if (size == 0 || ![ASBoxer unboxObject:out.value intoBytes:buffer ofSize:size typeEncoding:pointee]) {
@@ -339,8 +337,7 @@ static void ASFreeStructFfiTypes(NSArray<NSValue *> *structs) {
         }
         ffiTypes[i] = type;
         // A struct ffi_type's size is only set by ffi_prep_cif, so take the size from the encoding.
-        NSUInteger argumentSize = 0;
-        NSGetSizeAndAlignment(encoding, &argumentSize, NULL);
+        NSUInteger argumentSize = [ASBoxer sizeOfTypeEncoding:encoding];
         NSUInteger size = MAX(argumentSize, sizeof(void *));
         void *buffer = alloca(size);
         memset(buffer, 0, size);
@@ -352,8 +349,7 @@ static void ASFreeStructFfiTypes(NSArray<NSValue *> *structs) {
             ? [ASBoxer bridgedPointeeTypeEncodingForPointerEncoding:encoding] : nil;
         BOOL converted;
         if (pointee != nil) {
-            NSUInteger pointeeSize = 0;
-            NSGetSizeAndAlignment(pointee.UTF8String, &pointeeSize, NULL);
+            NSUInteger pointeeSize = [ASBoxer sizeOfTypeEncoding:pointee.UTF8String];
             void *outBuffer = alloca(pointeeSize > 0 ? pointeeSize : 1);
             converted = [ASBoxer prepareOutBuffer:outBuffer size:(pointeeSize > 0 ? pointeeSize : 1)
                                      forOutObject:argument pointee:pointee];

@@ -559,4 +559,18 @@ static NSString * const ASTestDispatchXML =
     XCTAssertTrue([scriptEx.reason containsString:@"takes 1 parameters, but was called with 2"], @"%@", scriptEx.reason);
 }
 
+- (void)test_scriptCallsNativeBlockTakingBitfieldStruct_raisesConversionError {
+    // asu-r9q: NSDecimal is a struct of bitfields, whose size can't be determined.
+    id<ASTestBlockScript> script = [self scriptWithMethods:
+        @"- runWith:handler {\n    return [handler value: 1]\n}" conformingToProtocol:YES];
+    NSException *raised = nil;
+    @try {
+        [script runWith:^(NSDecimal decimal) { (void)decimal; }];
+    } @catch (NSException *exception) {
+        raised = exception;
+    }
+    XCTAssertEqualObjects(raised.name, ASRuntimeErrorException, @"%@: %@", raised.name, raised.reason);
+    XCTAssertEqualObjects(raised.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed));
+}
+
 @end

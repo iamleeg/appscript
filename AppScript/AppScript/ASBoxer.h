@@ -210,6 +210,25 @@ typedef NS_ENUM(NSInteger, ASReturnOwnership) {
 /// - Returns: The display name.
 + (NSString *)displayNameForTypeEncoding:(const char *)typeEncoding;
 
+/// Returns the size of a type, or 0 when Foundation can't determine it.
+///
+/// `NSGetSizeAndAlignment` raises `NSInvalidArgumentException` for encodings it doesn't support:
+/// unions, and structs with bitfield (`b`), `_Atomic` (`A`) or `_Complex` (`j`) members. Apple's
+/// bitfield encoding drops the declared type, so such a size can't be computed by other means
+/// either. Every size the runtime takes goes through this method.
+///
+/// - Parameter typeEncoding: A type encoding.
+/// - Returns: The size in bytes, or 0 if it can't be determined.
++ (NSUInteger)sizeOfTypeEncoding:(const char *)typeEncoding;
+
+/// Like `+sizeOfTypeEncoding:`, and also returns the type's alignment (0 when unknown).
+///
+/// - Parameters:
+///   - typeEncoding: A type encoding.
+///   - alignment: If not NULL, set to the alignment in bytes, or 0.
+/// - Returns: The size in bytes, or 0 if it can't be determined.
++ (NSUInteger)sizeOfTypeEncoding:(const char *)typeEncoding alignment:(nullable NSUInteger *)alignment;
+
 /// Boxes the raw value in `bytes` into an Objective-C object according to `typeEncoding`.
 ///
 /// Struct encodings (`{...}`) are boxed into `ASStructValue` instances.

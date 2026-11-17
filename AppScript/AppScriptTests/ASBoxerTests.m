@@ -23,6 +23,7 @@
 #import <AppScript/ASStructValue.h>
 #import <AppScript/ASBridgeSupportStruct.h>
 #import <AppScript/ASBridgeSupportStructField.h>
+#import <AppScript/ASInterpreter.h>
 
 /// A union passed by value, for the wide-type tests (asu-3b4).
 union ASBoxerTestUnion { int i; double d; };
@@ -1038,6 +1039,54 @@ union ASBoxerTestUnion { int i; double d; };
     XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(long double _Complex)], @"long double _Complex");
     XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(union ASBoxerTestUnion)], @"ASBoxerTestUnion");
     XCTAssertEqualObjects([ASBoxer displayNameForTypeEncoding:@encode(_Atomic int)], @"_Atomic int");
+}
+
+// ---------------------------------------------------------------------------
+// Structs whose size can't be determined (asu-r9q): bitfield, _Atomic and _Complex members.
+// ---------------------------------------------------------------------------
+
+struct ASTestAtomicHolder { _Atomic int value; };
+struct ASTestComplexHolder { double _Complex value; };
+
+- (void)assertBoxingRaisesConversionError:(const void *)bytes typeEncoding:(const char *)encoding {
+    NSException *raised = nil;
+    @try {
+        (void)[ASBoxer boxedObjectFromBytes:bytes typeEncoding:encoding];
+    } @catch (NSException *exception) {
+        raised = exception;
+    }
+    XCTAssertEqualObjects(raised.name, ASRuntimeErrorException, @"%s raised %@: %@", encoding, raised.name, raised.reason);
+    XCTAssertEqualObjects(raised.userInfo[ASErrorMessageCodeKey], @(ASErrorCodeValueConversionFailed), @"%s", encoding);
+    XCTAssertTrue([raised.reason containsString:@(encoding)], @"the message names the type: %@", raised.reason);
+}
+
+- (void)test_boxedObjectFromBytes_bitfieldStruct_raisesConversionError {
+    NSDecimal decimal = {0};
+    [self assertBoxingRaisesConversionError:&decimal typeEncoding:@encode(NSDecimal)];
+}
+
+- (void)test_boxedObjectFromBytes_atomicMemberStruct_raisesConversionError {
+    struct ASTestAtomicHolder holder = {0};
+    [self assertBoxingRaisesConversionError:&holder typeEncoding:@encode(struct ASTestAtomicHolder)];
+}
+
+- (void)test_boxedObjectFromBytes_complexMemberStruct_raisesConversionError {
+    struct ASTestComplexHolder holder = {0};
+    [self assertBoxingRaisesConversionError:&holder typeEncoding:@encode(struct ASTestComplexHolder)];
+}
+
+- (void)test_sizeOfTypeEncoding_unsizableTypesAreZero_othersMatchSizeof {
+    XCTAssertEqual([ASBoxer sizeOfTypeEncoding:@encode(NSDecimal)], 0u);
+    XCTAssertEqual([ASBoxer sizeOfTypeEncoding:@encode(struct ASTestAtomicHolder)], 0u);
+    XCTAssertEqual([ASBoxer sizeOfTypeEncoding:@encode(struct ASTestComplexHolder)], 0u);
+    XCTAssertEqual([ASBoxer sizeOfTypeEncoding:@encode(NSRect)], sizeof(NSRect));
+    XCTAssertEqual([ASBoxer sizeOfTypeEncoding:@encode(double)], sizeof(double));
+    XCTAssertEqual([ASBoxer sizeOfTypeEncoding:@encode(long long)], sizeof(long long));
+}
+
+- (void)test_outParameterPointee_unsizableStruct_isNotBridged {
+    XCTAssertNil([ASBoxer bridgedPointeeTypeEncodingForPointerEncoding:"^{?=b8b4b1b1b18[8S]}"]);
+    XCTAssertEqualObjects([ASBoxer bridgedPointeeTypeEncodingForPointerEncoding:@encode(NSRect *)], @(@encode(NSRect)));
 }
 
 @end

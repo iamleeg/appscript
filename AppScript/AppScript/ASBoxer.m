@@ -20,6 +20,7 @@
 #import <AppScript/ASNull.h>
 #import <AppScript/ASOutObject.h>
 #import <AppScript/ASStructValue.h>
+#import <AppScript/ASInterpreter.h>
 #import <objc/runtime.h>
 
 // ---------------------------------------------------------------------------
@@ -58,14 +59,22 @@ static BOOL ASInvocationCannotCarry(const char *typeEncoding) {
 
 /// Returns the size of a union or other type encoding without letting Foundation's exception
 /// escape: NSGetSizeAndAlignment raises for encodings it doesn't know. Returns 0 when unknown.
-static NSUInteger ASSizeOfTypeEncoding(const char *typeEncoding) {
-    NSUInteger size = 0;
+static NSUInteger ASSizeAndAlignmentOfTypeEncoding(const char *typeEncoding, NSUInteger *alignment) {
+    NSUInteger size = 0, align = 0;
     @try {
-        NSGetSizeAndAlignment(typeEncoding, &size, NULL);
+        NSGetSizeAndAlignment(typeEncoding, &size, &align);
     } @catch (NSException *exception) {
         size = 0;
+        align = 0;
+    }
+    if (alignment) {
+        *alignment = align;
     }
     return size;
+}
+
+static NSUInteger ASSizeOfTypeEncoding(const char *typeEncoding) {
+    return ASSizeAndAlignmentOfTypeEncoding(typeEncoding, NULL);
 }
 
 /// Returns YES if `pointee` (the encoding after a `^`, qualifiers already skipped) is a scalar or
@@ -90,7 +99,9 @@ static BOOL ASIsBridgedOutPointee(const char *pointee) {
         case 'B': case 'c': case 'C': case 's': case 'S': case 'i': case 'I':
         case 'l': case 'L': case 'q': case 'Q': case 'f': case 'd':
         case '{':
-            return YES;
+            // A struct whose size Foundation can't determine (bitfield, _Atomic or _Complex
+            // members) can't be given a scratch buffer, so it isn't bridged.
+            return ASSizeOfTypeEncoding(pointee) > 0;
         default:
             return NO;
     }
@@ -275,8 +286,15 @@ static id _Nullable ASBoxBytes(const void *bytes, const char *typeEncoding) {
             }
             NSString *runtimeEnc = [ASStructValue runtimeTypeEncodingForStructTypeEncoding:typeEncodingString];
             if ([runtimeEnc containsString:@"="]) {
-                NSUInteger structSize = 0;
-                NSGetSizeAndAlignment(runtimeEnc.UTF8String, &structSize, NULL);
+                NSUInteger structSize = ASSizeOfTypeEncoding(runtimeEnc.UTF8String);
+                if (structSize == 0) {
+                    // Bitfield, _Atomic or _Complex members: Foundation can't size the struct, and
+                    // Apple's bitfield encoding drops the declared type, so nothing else can.
+                    ASRaiseRuntimeError([NSString stringWithFormat:
+                                         @"AppScript can't box %s: its size can't be determined from a "
+                                         @"bitfield, _Atomic or _Complex encoding", typeEncoding],
+                                        ASErrorCodeValueConversionFailed, nil, 0);
+                }
                 if (structSize > 0) {
                     return [[ASStructValue alloc] initWithBytes:bytes
                                                         length:structSize
@@ -522,7 +540,7 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
                 const char *valType = nsv.objCType;
                 NSUInteger valSize = 0;
                 if (valType && strchr(valType, '=') != NULL) {
-                    NSGetSizeAndAlignment(valType, &valSize, NULL);
+                    valSize = ASSizeOfTypeEncoding(valType);
                 }
                 if (valSize != outSize) {
                     return NO;
@@ -591,8 +609,7 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
         return [[ASOutObject alloc] initWithValue:initialValue pointeeTypeEncoding:pointee];
     }
 
-    NSUInteger argSize = 0;
-    NSGetSizeAndAlignment(typeEncoding, &argSize, NULL);
+    NSUInteger argSize = ASSizeOfTypeEncoding(typeEncoding);
     if (argSize == 0) {
         return nil;
     }
@@ -660,6 +677,20 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
     return [self bridgedPointeeTypeEncodingForPointerEncoding:[signature getArgumentTypeAtIndex:invIndex]];
 }
 
++ (NSUInteger)sizeOfTypeEncoding:(const char *)typeEncoding {
+    return [self sizeOfTypeEncoding:typeEncoding alignment:NULL];
+}
+
++ (NSUInteger)sizeOfTypeEncoding:(const char *)typeEncoding alignment:(nullable NSUInteger *)alignment {
+    if (typeEncoding == NULL) {
+        if (alignment) {
+            *alignment = 0;
+        }
+        return 0;
+    }
+    return ASSizeAndAlignmentOfTypeEncoding(typeEncoding, alignment);
+}
+
 + (nullable NSString *)bridgedPointeeTypeEncodingForPointerEncoding:(const char *)encoding {
     const char *typeEncoding = ASSkipTypeQualifiers(encoding);
     if (!typeEncoding || typeEncoding[0] != '^') {
@@ -708,8 +739,7 @@ static BOOL ASUnboxIntoBytes(id _Nullable object,
         if (pointer == NULL) {
             return YES;
         }
-        NSUInteger size = 0;
-        NSGetSizeAndAlignment(pointee.UTF8String, &size, NULL);
+        NSUInteger size = ASSizeOfTypeEncoding(pointee.UTF8String);
         if (size == 0) {
             return NO;
         }
@@ -749,8 +779,7 @@ intoArgumentAtIndex:(NSUInteger)argumentIndex
         return NO;
     }
 
-    NSUInteger argSize = 0;
-    NSGetSizeAndAlignment(typeEncoding, &argSize, NULL);
+    NSUInteger argSize = ASSizeOfTypeEncoding(typeEncoding);
     if (argSize == 0) {
         return YES;
     }

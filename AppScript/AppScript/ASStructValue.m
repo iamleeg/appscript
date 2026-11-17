@@ -17,6 +17,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #import <AppScript/ASStructValue.h>
+#import <AppScript/ASBoxer.h>
 #import <AppScript/ASBridgeSupportStruct.h>
 #import <AppScript/ASBridgeSupportStructField.h>
 
@@ -90,8 +91,8 @@ static void ASSizeAndAlignForEncoding(NSString *typeEncoding,
         // references like "{CGPoint}" because it tries to parse the struct name as type
         // encoding characters. Only call it for complete encodings where every '{' has '='.
         if (ASIsCompleteStructEncoding(typeEncoding.UTF8String)) {
-            NSUInteger size = 0, align = 0;
-            NSGetSizeAndAlignment(typeEncoding.UTF8String, &size, &align);
+            NSUInteger align = 0;
+            NSUInteger size = [ASBoxer sizeOfTypeEncoding:typeEncoding.UTF8String alignment:&align];
             if (size > 0) {
                 *outSize  = size;
                 *outAlign = (align > 0) ? align : 1;
@@ -119,8 +120,8 @@ static void ASSizeAndAlignForEncoding(NSString *typeEncoding,
         }
     } else {
         // Primitive type — safe to call NSGetSizeAndAlignment directly.
-        NSUInteger size = 0, align = 0;
-        NSGetSizeAndAlignment(typeEncoding.UTF8String, &size, &align);
+        NSUInteger align = 0;
+        NSUInteger size = [ASBoxer sizeOfTypeEncoding:typeEncoding.UTF8String alignment:&align];
         if (size > 0) {
             *outSize  = size;
             *outAlign = (align > 0) ? align : 1;

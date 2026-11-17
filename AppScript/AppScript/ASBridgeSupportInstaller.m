@@ -221,8 +221,7 @@ static NSString *ASResolveBridgeSupportTypeEncoding(NSString *rawEncoding) {
         if (pointee != nil) {
             // A pointer to a scalar or struct, given an ASOutObject: pass a seeded scratch
             // buffer, as method sends do (asu-vwg).
-            NSUInteger pointeeSize = 0;
-            NSGetSizeAndAlignment(pointee.UTF8String, &pointeeSize, NULL);
+            NSUInteger pointeeSize = [ASBoxer sizeOfTypeEncoding:pointee.UTF8String];
             void *buffer = alloca(pointeeSize > 0 ? pointeeSize : 1);
             if (![ASBoxer prepareOutBuffer:buffer size:(pointeeSize > 0 ? pointeeSize : 1)
                               forOutObject:boxedArg pointee:pointee]) {
