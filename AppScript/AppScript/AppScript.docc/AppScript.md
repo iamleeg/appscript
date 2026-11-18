@@ -11,6 +11,7 @@ AppScript lets you embed a safe, memory-managed scripting runtime in any macOS a
 ### Loading and running scripts
 
 - <doc:LoadingAndRunningAppScriptFiles>
+- <doc:HandlingExceptions>
 
 ### Defining classes and categories
 

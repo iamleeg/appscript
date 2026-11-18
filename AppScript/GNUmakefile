@@ -90,6 +90,8 @@ AppScript_OBJC_FILES = \
 	AppScript/ASStringLiteralNode.m \
 	AppScript/ASSuperNode.m \
 	AppScript/ASToken.m \
+	AppScript/ASExceptionContext.m \
+	AppScript/ASLoggingExceptionHandler.m \
 	AppScript/ASUncaughtExceptionHandler.m \
 	AppScript/ASVariableDeclarationNode.m \
 	AppScript/NSBundle+AppScriptBridgeSupportLoading.m \
@@ -140,6 +142,10 @@ AppScript_HEADER_FILES = \
 	ASReturnNode.h \
 	ASRuntimeInstaller.h \
 	ASScope.h \
+	ASExceptionContext.h \
+	ASExceptionDisposition.h \
+	ASExceptionHandler.h \
+	ASLoggingExceptionHandler.h \
 	ASUncaughtExceptionHandler.h \
 	ASStringLiteralNode.h \
 	ASSuperNode.h \
@@ -192,6 +198,7 @@ AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASBridgeSupportParserTests.m \
 	AppScriptTests/ASBridgeSupportStructTests.m \
 	AppScriptTests/ASStructValueTests.m \
+	AppScriptTests/ASInterpreterExceptionHandlingTests.m \
 	AppScriptTests/ASInterpreterTests.m \
 	AppScriptTests/ASLexerTests.m \
 	AppScriptTests/ASLoaderTests.m \
@@ -201,6 +208,8 @@ AppScriptTests_OBJC_FILES = \
 	AppScriptTests/ASParserTests.m \
 	AppScriptTests/ASFrameworkSourceTests.m \
 	AppScriptTests/ASRuntimeInstallerTests.m \
+	AppScriptTests/ASExceptionContextTests.m \
+	AppScriptTests/ASLoggingExceptionHandlerTests.m \
 	AppScriptTests/ASUncaughtExceptionHandlerTests.m \
 	AppScriptTests/NSBundle_AppScriptBridgeSupportLoadingTests.m \
 	AppScriptTests/NSBundle_AppScriptLoadingTests.m \

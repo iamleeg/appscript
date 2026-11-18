@@ -30,6 +30,10 @@ FOUNDATION_EXPORT const unsigned char AppScriptVersionString[];
 #import <AppScript/NSObject+AppScriptControlFlow.h>
 #import <AppScript/ASLoader.h>
 #import <AppScript/ASUncaughtExceptionHandler.h>
+#import <AppScript/ASExceptionDisposition.h>
+#import <AppScript/ASExceptionContext.h>
+#import <AppScript/ASExceptionHandler.h>
+#import <AppScript/ASLoggingExceptionHandler.h>
 #import <AppScript/ASBridgeSupportStructField.h>
 #import <AppScript/ASBridgeSupportStruct.h>
 #import <AppScript/ASStructValue.h>

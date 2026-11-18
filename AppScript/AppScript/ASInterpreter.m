@@ -18,6 +18,7 @@
 
 #import <AppScript/ASInterpreter.h>
 #import <AppScript/ASScope.h>
+#import <AppScript/ASLoggingExceptionHandler.h>
 #import <AppScript/ASNull.h>
 #import <AppScript/ASOutObject.h>
 #import <objc/runtime.h>
@@ -242,6 +243,23 @@ NSString *const ASErrorHybridCallStackKey  = @"ASErrorHybridCallStack";
 // ---------------------------------------------------------------------------
 
 @implementation ASInterpreter
+
+static id<ASExceptionHandler> ASInstalledExceptionHandler = nil;
+static ASLoggingExceptionHandler *ASDefaultExceptionHandler = nil;
+
++ (void)setExceptionHandler:(id<ASExceptionHandler>)handler {
+    @synchronized (self) {
+        ASInstalledExceptionHandler = handler;
+    }
+}
+
++ (id<ASExceptionHandler>)exceptionHandler {
+    @synchronized (self) {
+        if (ASInstalledExceptionHandler) return ASInstalledExceptionHandler;
+        if (!ASDefaultExceptionHandler) ASDefaultExceptionHandler = [[ASLoggingExceptionHandler alloc] init];
+        return ASDefaultExceptionHandler;
+    }
+}
 
 // Public entry point — called from ObjC (ASRuntimeInstaller forwarding).
 // callSiteNode is nil because there is no AppScript AST node at the call site.
@@ -512,6 +530,22 @@ static BOOL ASSelectorCallsBlock(NSString *selector, NSUInteger argumentCount);
         return result;
     }
 
+    return [self dispatchMessageSendConsultingHandler:node
+                                             receiver:receiver
+                                             selector:sel
+                                            arguments:argValues
+                                          isSuperSend:isSuperSend
+                                              context:ctx];
+}
+
+/// Looks up the method for an already-evaluated send, converts the arguments, invokes it
+/// and boxes the result. Everything that can fail while delivering the message happens here.
+- (nullable id)dispatchMessageSend:(ASMessageSendNode *)node
+                          receiver:(id)receiver
+                          selector:(SEL)sel
+                         arguments:(NSArray *)argValues
+                       isSuperSend:(BOOL)isSuperSend
+                           context:(ASExecutionContext *)ctx {
     // Obtain the method and its signature by querying the runtime directly.
     //
     // For super sends, start lookup from [definingClass superclass].
@@ -1215,6 +1249,97 @@ static BOOL ASArgumentIsBlock(NSMethodSignature *signature, NSUInteger index) {
     // -[NSException raise] is noreturn; __builtin_unreachable() satisfies
     // the compiler's flow analysis for our __attribute__((noreturn)) declaration.
     __builtin_unreachable();
+}
+
+// ---------------------------------------------------------------------------
+// Exception handler boundary
+// ---------------------------------------------------------------------------
+
+/// Marks an exception the installed handler has already been asked about, so the sends
+/// it propagates through don't ask again.
+static const void *ASExceptionHandledKey = &ASExceptionHandledKey;
+/// Thread-dictionary key set while a handler runs, so its own failures aren't re-offered to it.
+static NSString *const ASInsideExceptionHandlerKey = @"ASInsideExceptionHandler";
+
+static BOOL ASExceptionWasHandled(NSException *ex) {
+    return objc_getAssociatedObject(ex, ASExceptionHandledKey) != nil;
+}
+
+static void ASMarkExceptionHandled(NSException *ex) {
+    objc_setAssociatedObject(ex, ASExceptionHandledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+/// Builds the context handed to the handler for a failed send.
+static ASExceptionContext *ASExceptionContextFor(NSException *ex, ASMessageSendNode *node, id receiver,
+                                                 SEL sel, ASExecutionContext *ctx) {
+    BOOL isRuntimeError = [ex.name isEqualToString:ASRuntimeErrorException];
+    NSDictionary *userInfo = isRuntimeError ? ex.userInfo : nil;
+
+    NSDictionary *locals = userInfo[ASErrorLocalsKey] ?: [ctx.currentScope allVisibleBindings] ?: @{};
+    NSString *hybrid = userInfo[ASErrorHybridCallStackKey] ?: ASBuildHybridBacktrace(ASCurrentCallStack());
+    NSMutableArray<NSString *> *frames = [NSMutableArray array];
+    [hybrid enumerateLinesUsingBlock:^(NSString *line, BOOL *stop) {
+        if (line.length > 0) [frames addObject:line];
+    }];
+    NSUInteger line = userInfo[ASErrorLineKey] ? [userInfo[ASErrorLineKey] unsignedIntegerValue] : node.lineNumber;
+    NSString *path = userInfo[ASErrorScriptPathKey] ?: ctx.scriptPath;
+
+    return [[ASExceptionContext alloc] initWithReceiver:(receiver == [ASNull null] ? nil : receiver)
+                                               selector:sel
+                                             scriptPath:path
+                                                   line:line
+                                                 locals:locals
+                                        hybridCallStack:frames
+                                  crossedScriptBoundary:!isRuntimeError];
+}
+
+/// Dispatches a send; if it fails, asks the installed ASExceptionHandler what to do.
+/// The handler is consulted once per exception, and a retried send is dispatched afresh
+/// (so the method is looked up again) at most once.
+- (nullable id)dispatchMessageSendConsultingHandler:(ASMessageSendNode *)node
+                                           receiver:(id)receiver
+                                           selector:(SEL)sel
+                                          arguments:(NSArray *)argValues
+                                        isSuperSend:(BOOL)isSuperSend
+                                            context:(ASExecutionContext *)ctx {
+    @try {
+        return [self dispatchMessageSend:node receiver:receiver selector:sel
+                               arguments:argValues isSuperSend:isSuperSend context:ctx];
+    } @catch (NSException *ex) {
+        NSMutableDictionary *threadDictionary = NSThread.currentThread.threadDictionary;
+        if (ASExceptionWasHandled(ex) || threadDictionary[ASInsideExceptionHandlerKey] != nil) {
+            @throw;
+        }
+        ASMarkExceptionHandled(ex);
+
+        ASExceptionDisposition disposition = ASExceptionDispositionReraise;
+        threadDictionary[ASInsideExceptionHandlerKey] = @YES;
+        @try {
+            disposition = [[ASInterpreter exceptionHandler]
+                           handleException:ex
+                                   context:ASExceptionContextFor(ex, node, receiver, sel, ctx)];
+        } @catch (NSException *handlerFailure) {
+            // A handler that itself raises replaces the original exception, which
+            // enclosing sends must not offer to the handler again.
+            ASMarkExceptionHandled(handlerFailure);
+            @throw;
+        } @finally {
+            [threadDictionary removeObjectForKey:ASInsideExceptionHandlerKey];
+        }
+        if (disposition != ASExceptionDispositionRetry) {
+            @throw;
+        }
+    }
+
+    // Retry once. A failure now is final: ASMarkExceptionHandled stops enclosing sends
+    // from offering it to the handler, and nothing here asks again.
+    @try {
+        return [self dispatchMessageSend:node receiver:receiver selector:sel
+                               arguments:argValues isSuperSend:isSuperSend context:ctx];
+    } @catch (NSException *retryFailure) {
+        ASMarkExceptionHandled(retryFailure);
+        @throw;
+    }
 }
 
 @end

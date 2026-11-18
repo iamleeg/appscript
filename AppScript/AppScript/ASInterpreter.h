@@ -18,6 +18,7 @@
 
 #import <Foundation/Foundation.h>
 #import <AppScript/ASASTNode.h>
+#import <AppScript/ASExceptionHandler.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -190,6 +191,15 @@ FOUNDATION_EXPORT void ASRaiseRuntimeError(NSString *message,
 /// > thread safety — frames from concurrent evaluations on different threads
 /// > are fully isolated from one another.
 @interface ASInterpreter : NSObject
+
+/// Installs the handler that is consulted when a message send fails.
+///
+/// The handler is process-wide and may be set from any thread. Pass `nil` to restore
+/// the default, an ``ASLoggingExceptionHandler`` that logs and re-raises.
++ (void)setExceptionHandler:(nullable id<ASExceptionHandler>)handler;
+
+/// The installed handler, or the default logging handler if none is installed.
++ (id<ASExceptionHandler>)exceptionHandler;
 
 /// Evaluates the body statements of a method, and returns the result.
 ///

@@ -35,6 +35,8 @@
 #import <AppScript/ASBridgeSupportParser.h>
 #import <AppScript/ASBridgeSupportDocument.h>
 #import <AppScript/ASBridgeSupportInstaller.h>
+#import <AppScript/ASExceptionHandler.h>
+#import <AppScript/ASLoggingExceptionHandler.h>
 
 // ---------------------------------------------------------------------------
 // Concrete Objective-C class hierarchy used by super-dispatch tests.
@@ -195,6 +197,18 @@ static NSException * _Nullable runAndCatch(ASInterpreter *interp,
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Exception handler registry fixtures
+// ---------------------------------------------------------------------------
+
+@interface ASNoopExceptionHandler : NSObject <ASExceptionHandler>
+@end
+@implementation ASNoopExceptionHandler
+- (ASExceptionDisposition)handleException:(NSException *)exception context:(ASExceptionContext *)context {
+    return ASExceptionDispositionReraise;
+}
+@end
 
 /// Tests for ASInterpreter, exercising evaluation of various AST shapes.
 @interface ASInterpreterTests : XCTestCase
@@ -1592,6 +1606,24 @@ static NSException * _Nullable runAndCatchWithPath(ASInterpreter *interp,
     XCTAssertEqualObjects(caught.name, ASRuntimeErrorException);
     XCTAssertEqualObjects(caught.userInfo[ASErrorScriptPathKey], @"<unknown>");
     XCTAssertEqualObjects(caught.userInfo[ASErrorLineKey], @0);
+}
+
+- (void)test_exceptionHandler_defaultsToLoggingHandler {
+    [ASInterpreter setExceptionHandler:nil];
+    XCTAssertTrue([[ASInterpreter exceptionHandler] isKindOfClass:[ASLoggingExceptionHandler class]]);
+}
+
+- (void)test_setExceptionHandler_installsHandler {
+    ASNoopExceptionHandler *handler = [[ASNoopExceptionHandler alloc] init];
+    [ASInterpreter setExceptionHandler:handler];
+    XCTAssertEqual([ASInterpreter exceptionHandler], handler);
+    [ASInterpreter setExceptionHandler:nil];
+}
+
+- (void)test_setExceptionHandler_nilRestoresDefault {
+    [ASInterpreter setExceptionHandler:[[ASNoopExceptionHandler alloc] init]];
+    [ASInterpreter setExceptionHandler:nil];
+    XCTAssertTrue([[ASInterpreter exceptionHandler] isKindOfClass:[ASLoggingExceptionHandler class]]);
 }
 
 @end
